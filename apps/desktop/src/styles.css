@@ -1,0 +1,285 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: #e8edf4;
+  background: #10151c;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top right, rgba(31, 111, 235, 0.16), transparent 28%),
+    linear-gradient(180deg, #0e1319 0%, #111821 100%);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+}
+
+.sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 12, 18, 0.82);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.brand-block {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2d8cff 0%, #0fb97f 100%);
+  color: #03101d;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+}
+
+.eyebrow,
+.section-label {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #7f91a7;
+}
+
+.brand-block h1,
+.hero-copy h2,
+.milestone-item h3 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.brand-block h1 {
+  margin-top: 6px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.sidebar-section {
+  display: grid;
+  gap: 12px;
+}
+
+.priority-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.priority-list li {
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d7dfea;
+}
+
+.status-panel {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.status-panel p,
+.hero-text,
+.error-text {
+  margin: 6px 0 0;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 6px;
+}
+
+.status-loading {
+  background: #f59e0b;
+}
+
+.status-success {
+  background: #10b981;
+}
+
+.status-error {
+  background: #ef4444;
+}
+
+.status-idle {
+  background: #64748b;
+}
+
+.main-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-band,
+.roadmap-band {
+  padding: 32px;
+}
+
+.hero-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 420px);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.hero-copy {
+  padding: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hero-copy h2 {
+  margin-top: 10px;
+  font-size: 34px;
+  line-height: 1.2;
+}
+
+.hero-text {
+  margin-top: 16px;
+  max-width: 60ch;
+}
+
+.health-card {
+  padding: 24px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(13, 24, 38, 0.92), rgba(10, 18, 29, 0.92));
+  border: 1px solid rgba(80, 138, 206, 0.22);
+}
+
+.health-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0 0;
+}
+
+.health-grid div {
+  min-height: 76px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.health-grid dt {
+  color: #7f91a7;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.health-grid dd {
+  margin: 0;
+  color: #edf2f7;
+  word-break: break-word;
+}
+
+.roadmap-band {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding-top: 0;
+}
+
+.milestone-item {
+  min-height: 164px;
+  padding: 22px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.milestone-item h3 {
+  margin-top: 10px;
+  font-size: 21px;
+  line-height: 1.35;
+}
+
+@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .hero-band {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-band,
+  .roadmap-band {
+    padding: 20px;
+  }
+
+  .roadmap-band,
+  .health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-block h1 {
+    font-size: 24px;
+  }
+
+  .hero-copy h2 {
+    font-size: 28px;
+  }
+}

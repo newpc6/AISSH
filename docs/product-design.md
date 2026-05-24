@@ -1,293 +1,293 @@
-# AI SSH Product Design
+# AI SSH 产品设计文档
 
-## 1. Document Purpose
+## 1. 文档目的
 
-This document defines the product goals, target users, capability scope, architecture direction, technology choices, and non-functional requirements for AI SSH.
+本文档用于定义 AI SSH 的产品目标、目标用户、能力范围、架构方向、技术选型以及非功能性要求。
 
-It is the baseline design document for follow-up implementation. If major product, architecture, or milestone scope changes happen later, this document must be updated together with `docs/development-plan.md`.
+它是后续开发的基础设计文档。今后如果产品定位、架构方向或里程碑范围发生明显变化，必须同步更新本文档以及 `docs/development-plan.md`。
 
-## 2. Product Vision
+## 2. 产品愿景
 
-Build a modern SSH tool that feels as smooth as a native desktop client, while adding practical AI capabilities that improve daily operations instead of becoming a gimmick.
+打造一个现代化的 SSH 工具：既要有接近原生桌面应用的顺滑体验，又要把 AI 能力做成真正有用、能提升日常运维和开发效率的辅助能力，而不是噱头。
 
-Core experience goals:
+核心体验目标：
 
-- Fast connection and terminal interaction
-- Good-looking and easy-to-use interface
-- Efficient server and session management
-- Convenient file upload, download, and remote file browsing
-- AI-assisted commands, diagnostics, and operational guidance
-- Safe, auditable, controllable AI behavior
-- Cross-platform delivery for Windows, macOS, and Linux
+- 连接快、终端交互顺滑
+- 界面美观、信息密度合理、容易上手
+- 服务器与会话管理高效
+- 文件浏览、上传、下载足够方便
+- AI 能辅助命令、诊断、解释与操作建议
+- AI 行为安全、可控、可审计
+- 支持 Windows、macOS、Linux 跨平台交付
 
-## 3. Target Users
+## 3. 目标用户
 
-### 3.1 Primary users
+### 3.1 主要用户
 
-- Developers
-- DevOps / SRE engineers
-- Backend engineers
-- Small teams maintaining cloud hosts
-- AI application developers who often manage remote GPU servers
+- 开发者
+- DevOps / SRE 工程师
+- 后端工程师
+- 维护云主机的小团队
+- 需要频繁管理远程 GPU / Linux 服务器的 AI 应用开发者
 
-### 3.2 Typical scenarios
+### 3.2 典型使用场景
 
-- Connect to multiple hosts quickly
-- Keep multiple tabs and sessions organized
-- Browse remote directories and transfer files
-- View logs and run common commands efficiently
-- Let AI explain error messages and suggest commands
-- Turn natural language into reviewed shell commands
-- Summarize server state and recent operational context
+- 快速连接和切换多台主机
+- 管理多个标签页和会话
+- 浏览远程目录并进行文件传输
+- 查看日志、执行常用命令
+- 让 AI 解释报错信息并给出建议
+- 通过自然语言生成待审核的 Shell 命令
+- 总结当前服务器状态和最近的终端上下文
 
-## 4. Product Principles
+## 4. 产品原则
 
-- Desktop-first: terminal, clipboard, drag-and-drop, and file transfer should feel local and responsive.
-- AI as copilot, not autopilot: AI suggestions must be reviewable and controllable.
-- Security by default: host verification, secrets protection, audit logging, and permission boundaries are first-class.
-- Progressive capability: deliver a strong SSH core first, then layer AI and collaboration.
-- Reusable architecture: even if desktop is the first product form, backend/core modules should be reusable by a future browser version.
+- 桌面优先：终端、剪贴板、拖拽、文件传输要尽可能接近本地工具体验。
+- AI 是副驾驶，不是自动驾驶：AI 只做建议，不默认代替用户执行。
+- 安全默认开启：主机校验、密钥保护、审计日志、权限边界都要前置考虑。
+- 先把 SSH 核心能力做扎实，再逐步叠加 AI 和协作能力。
+- 架构可复用：虽然首发是桌面版，但核心能力和数据模型要为未来浏览器版本保留复用空间。
 
-## 5. Form Factor Decision
+## 5. 产品形态决策
 
-## 5.1 Options considered
+### 5.1 方案对比
 
-### Option A: Browser-based frontend + backend service
+#### 方案 A：浏览器前端 + 后端服务
 
-Pros:
+优点：
 
-- Easy remote access from any browser
-- Centralized deployment and updates
-- Good for team collaboration and managed enterprise scenarios
+- 浏览器即可访问，使用门槛低
+- 集中部署、更新方便
+- 更适合未来团队协作或企业托管场景
 
-Cons:
+缺点：
 
-- Terminal and local integration feel weaker than desktop
-- Local key management, agent integration, drag-and-drop, and filesystem access are more complex
-- More security complexity around browser-to-backend transport
-- Offline and local-only usage experience is worse
+- 终端体验、本地集成体验通常弱于桌面端
+- 本地密钥、agent、拖拽上传、文件系统访问更复杂
+- 浏览器到后端的数据链路安全复杂度更高
+- 离线、本地直连场景体验较差
 
-### Option B: Electron desktop app
+#### 方案 B：Electron 桌面应用
 
-Pros:
+优点：
 
-- Mature ecosystem
-- Excellent support for terminal UI, local filesystem, tray, notifications, and auto-update
-- Good compatibility with frontend stacks
+- 生态成熟
+- 对终端 UI、本地文件系统、托盘、通知、自动更新支持较好
+- 与常见前端技术栈兼容性强
 
-Cons:
+缺点：
 
-- Larger package size and higher memory footprint
-- Security hardening requires discipline
-- JavaScript/Node backend is workable, but not ideal for high-confidence SSH core code
+- 安装包体积和运行内存占用通常更大
+- 安全加固需要额外注意
+- 用 JavaScript / Node 直接承载 SSH 核心逻辑可行，但不是最理想
 
-### Option C: Go cross-platform app with native or webview UI
+#### 方案 C：纯 Go 跨平台应用（原生 UI 或 WebView UI）
 
-Pros:
+优点：
 
-- Strong fit for SSH, SFTP, connection management, concurrency, and packaging
-- Good binary portability and low resource usage
-- Easier to build a reusable core engine
+- 非常适合实现 SSH、SFTP、连接管理、并发处理
+- 二进制分发方便，资源占用低
+- 核心能力更容易沉淀为可复用引擎
 
-Cons:
+缺点：
 
-- Pure native UI stacks slow down product iteration
-- UI polish cost is higher unless a webview-based shell is used
-- Some ecosystem choices are less mature than frontend web tooling
+- 如果走纯原生 UI，产品迭代和界面打磨成本较高
+- UI 质感和复杂交互效率通常不如成熟前端生态
+- 纯 Go UI 方案的生态选择相对弱一些
 
-### Option D: Hybrid desktop architecture
+#### 方案 D：混合式桌面架构
 
-Recommended structure:
+推荐结构：
 
-- UI: web frontend
-- Desktop shell: Tauri 2
-- Core engine: Go service/library
-
-Pros:
-
-- Better UX than pure browser delivery
-- Lower memory footprint than Electron
-- Strong fit for SSH/SFTP implemented in Go
-- Clean separation between UI and connection engine
-- Future backend/API reuse remains possible
-
-Cons:
-
-- Slightly more moving parts
-- Need to define IPC and process lifecycle carefully
-
-## 5.2 Recommended decision
+- UI：Web 前端
+- 桌面壳：Tauri 2
+- 核心引擎：Go
+
+优点：
+
+- 保留桌面端体验优势
+- 相比 Electron，资源占用更轻
+- Go 很适合承载 SSH / SFTP 核心能力
+- UI 与连接引擎边界清晰
+- 未来仍可复用核心能力到浏览器/服务端架构
+
+缺点：
+
+- 组件更多，工程组织要更清晰
+- 需要设计好 IPC 与进程生命周期
+
+### 5.2 推荐结论
 
-Recommend **desktop-first hybrid architecture**:
-
-- **Frontend**: React + TypeScript + a desktop-oriented component system
-- **Desktop shell**: Tauri 2
-- **Core engine**: Go
+推荐采用 **桌面优先的混合式架构**：
+
+- **前端**：React + TypeScript
+- **桌面壳**：Tauri 2
+- **核心引擎**：Go
 
-This gives the best balance for this product in the current phase.
+这是当前阶段最平衡的方案。
 
-Reasoning:
-
-1. SSH, SFTP, key handling, concurrent sessions, and file streaming fit Go very well.
-2. A browser UI alone cannot match desktop ergonomics for terminal, local file integration, drag-and-drop upload/download, and agent-related workflows.
-3. Electron is still viable, but Tauri + Go is a better long-term fit for lower overhead and a cleaner separation between UI and core.
-4. The frontend remains web-tech based, so UI development speed and visual quality stay high.
+原因：
+
+1. SSH、SFTP、密钥处理、并发会话、文件流传输这些核心能力非常适合用 Go 实现。
+2. 如果只做浏览器版，很难把本地集成、拖拽上传下载、密钥与 agent 体验做到足够顺手。
+3. Electron 仍然可行，但从资源占用和长期架构清晰度看，Tauri + Go 更适合这个产品。
+4. UI 仍然保持 Web 技术栈，界面开发速度和美观度都更容易保障。
 
-## 6. High-Level Product Scope
+## 6. 产品范围
 
-## 6.1 MVP scope
-
-- Host management
-  - Save hosts, tags, and groups
-  - Support password, private key, and agent-based authentication
-  - Host key verification and known_hosts handling
-- Terminal
-  - Multi-tab and split sessions
-  - Reconnect and session history
-  - Search within terminal output
-  - Preset snippets / quick commands
-- File management
-  - Remote file tree browsing
-  - Upload/download
-  - Drag-and-drop transfers
-  - Basic file operations: rename, mkdir, delete, move
-- AI assistance
-  - Explain command output and errors
-  - Suggest shell commands from natural language
-  - Suggest next steps for common ops tasks
-  - Summarize server status and recent terminal context
-- Usability
-  - Dark/light theme
-  - Keyboard shortcuts
-  - Connection health indicators
-  - Transfer progress and retry feedback
+### 6.1 MVP 范围
+
+- 主机管理
+  - 保存主机、标签、分组
+  - 支持密码、私钥、agent 认证
+  - 支持 host key 校验和 known_hosts 管理
+- 终端能力
+  - 多标签 / 分屏会话
+  - 重连与会话状态管理
+  - 终端内容搜索
+  - 快捷命令 / 常用片段
+- 文件管理
+  - 远程文件树浏览
+  - 上传 / 下载
+  - 拖拽传输
+  - 基础文件操作：重命名、创建目录、删除、移动
+- AI 辅助
+  - 解释命令输出和错误
+  - 自然语言生成 Shell 命令草稿
+  - 给出常见运维任务下一步建议
+  - 总结服务器状态和最近上下文
+- 易用性
+  - 深色 / 浅色主题
+  - 键盘快捷键
+  - 连接健康状态提示
+  - 传输进度与失败重试反馈
 
-## 6.2 Post-MVP scope
+### 6.2 MVP 之后的扩展范围
 
-- Port forwarding management
-- SSH tunnel templates
-- Cluster/server fleet view
-- Multi-host execution with review
-- Remote editor integration
-- Team sharing / encrypted sync
-- RBAC / enterprise policy controls
-- Session recording and enhanced audit trails
-- Browser companion version
+- 端口转发管理
+- SSH 隧道模板
+- 集群 / 服务器视图
+- 多主机批量执行（需审核）
+- 远程编辑器联动
+- 团队共享与加密同步
+- RBAC / 企业策略能力
+- 会话录制与更完整的审计链路
+- 浏览器伴生版本
 
-## 7. AI Capability Design
+## 7. AI 能力设计
 
-## 7.1 AI use cases
+### 7.1 AI 典型能力
 
-- Error explanation: explain stderr/stdout in plain language
-- Command generation: natural language to shell command draft
-- Command completion: recommend likely next commands based on context
-- Safety review: warn on risky commands
-- Log summarization: summarize selected log output
-- Ops assistant: answer "how do I do X on this server" using session context
+- 错误解释：把 stderr / stdout 转成易懂说明
+- 命令生成：自然语言转命令草稿
+- 命令补全建议：根据上下文推荐下一步命令
+- 安全提醒：识别高风险命令并提醒
+- 日志总结：总结选中的日志内容
+- 运维问答：围绕当前会话上下文回答“这台机器上怎么做某件事”
 
-## 7.2 AI interaction rules
+### 7.2 AI 交互规则
 
-- AI-generated commands must never auto-run by default.
-- The user must explicitly review and execute suggested commands.
-- Risky commands must display warnings and require confirmation.
-- Sensitive data sent to AI must be masked where possible.
-- Users must be able to disable AI completely.
-- AI features should support configurable providers and model settings.
+- AI 生成的命令默认不能自动执行
+- 用户必须显式审核并确认执行
+- 高风险命令必须有额外提醒或确认
+- 发给 AI 的敏感信息尽量先脱敏
+- 用户必须可以完全关闭 AI 功能
+- AI 提供方和模型配置需要可配置
 
-## 7.3 AI context sources
+### 7.3 AI 上下文来源
 
-- Current terminal buffer
-- Selected text
-- Recent commands and outputs
-- Current path and OS info
-- Optional host metadata
+- 当前终端缓冲区
+- 用户选中的文本
+- 最近执行过的命令和输出
+- 当前工作目录、远程系统信息
+- 可选的主机元数据
 
-## 7.4 AI provider abstraction
+### 7.4 AI 提供方抽象
 
-Define a provider-neutral AI service layer:
+需要设计提供方无关的 AI 服务层：
 
-- OpenAI-compatible providers first
-- Local model endpoint optional later
-- Per-feature prompt templates
-- Structured response schema for commands, summaries, warnings, and explanations
+- 优先支持 OpenAI 兼容接口
+- 预留后续本地模型端点支持
+- 按功能拆分提示词模板
+- 使用结构化响应格式承载命令、总结、警告、解释等结果
 
-## 8. UX Design Direction
+## 8. 交互与界面设计方向
 
-The UI should feel like a serious productivity tool, not a demo.
+这个产品应该像一个严肃、顺手的生产力工具，而不是演示性质的 AI 页面。
 
-### Layout
+### 布局建议
 
-- Left sidebar: hosts, groups, saved connections
-- Main area: terminal tabs, split panes, file manager, AI panel
-- Right side panel or bottom drawer: AI assistant, command explanation, transfer tasks
+- 左侧边栏：主机、分组、收藏连接
+- 主区域：终端标签、分屏区域、文件管理区、AI 区域
+- 右侧面板或底部抽屉：AI 助手、命令解释、传输任务
 
-### Key UX requirements
+### 关键体验要求
 
-- Fast connect flow
-- Clear active host/session state
-- Dense but readable information layout
-- Minimal friction for upload/download
-- Keyboard-first operation for power users
-- Good empty states and error states
+- 连接流程足够快
+- 主机 / 会话状态清晰
+- 信息密度高但不拥挤
+- 上传下载阻力小
+- 支持键盘优先操作
+- 空状态、错误状态有良好反馈
 
-### Visual direction
+### 视觉方向
 
-- Clean dark theme first, with light theme support
-- Restrained color usage with clear status colors
-- Small-radius panels and dense layouts
-- Strong typography and icon consistency
+- 优先打磨深色主题，同时支持浅色主题
+- 色彩克制，状态色清晰
+- 面板圆角小、布局紧凑
+- 图标和排版统一
 
-## 9. Technical Architecture
+## 9. 技术架构设计
 
-## 9.1 Architecture overview
+### 9.1 架构总览
 
-Use a three-layer desktop architecture:
+采用三层桌面架构：
 
-1. Presentation layer
+1. 表现层
    - React + TypeScript
-   - xterm.js for terminal rendering
-   - File manager, AI panel, settings, connection views
-2. Desktop integration layer
-   - Tauri commands/events
-   - Window lifecycle, filesystem dialogs, tray, notifications, secure local storage integration
-3. Core engine
-   - Go-based SSH/SFTP/session service
-   - Connection pool
-   - Transfer engine
-   - AI orchestration adapter
+   - 使用 xterm.js 渲染终端
+   - 承载文件管理、AI 面板、设置页、连接视图
+2. 桌面集成层
+   - Tauri commands / events
+   - 负责窗口生命周期、文件选择、托盘、通知、安全本地能力
+3. 核心引擎层
+   - Go 实现 SSH / SFTP / 会话服务
+   - 连接池
+   - 传输引擎
+   - AI 调度适配层
 
-## 9.2 Why Go for the core
+### 9.2 为什么核心用 Go
 
-- Strong SSH ecosystem and standard concurrency primitives
-- Easier to build resilient long-lived sessions
-- Efficient streaming for terminal and file transfer
-- Reusable core for later CLI or server-side reuse
+- SSH 生态成熟，标准并发模型适合长连接和流式处理
+- 更容易实现稳定的会话管理
+- 终端流和文件传输性能更好
+- 后续更容易沉淀为 CLI、服务端或独立核心引擎
 
-Suggested packages to evaluate during implementation:
+建议在实现阶段重点评估这些包：
 
 - `golang.org/x/crypto/ssh`
 - `golang.org/x/crypto/ssh/agent`
 - `golang.org/x/crypto/ssh/knownhosts`
 - `github.com/pkg/sftp`
 
-## 9.3 Process model
+### 9.3 进程模型
 
-Recommended approach:
+推荐模式：
 
-- Tauri app launches the Go core as a managed sidecar process.
-- Frontend communicates with the Tauri layer.
-- Tauri and Go communicate through structured IPC.
-- Session streams use event-based transport, with chunked terminal and transfer updates.
+- Tauri 启动 Go sidecar 作为受控子进程
+- 前端通过 Tauri 层调用本地能力
+- Tauri 与 Go 之间通过结构化 IPC 通信
+- 终端流和传输进度通过事件或流式消息向前端推送
 
-Why this model:
+这样做的好处：
 
-- Keeps SSH logic outside the frontend runtime
-- Easier crash isolation and restart behavior
-- Cleaner security boundary than exposing raw local capabilities to the UI
+- SSH 逻辑不暴露给前端运行时
+- 进程隔离更利于崩溃恢复和稳定性
+- 安全边界更清楚
 
-## 9.4 Data model overview
+### 9.4 核心数据模型
 
-Core domain entities:
+关键实体建议包括：
 
 - Host
 - CredentialRef
@@ -297,120 +297,120 @@ Core domain entities:
 - CommandTemplate
 - Setting
 
-## 10. Security Design
+## 10. 安全设计
 
-Security is a product requirement, not a later enhancement.
+安全不是后补功能，而是 MVP 要求的一部分。
 
-### Minimum requirements
+### 最低要求
 
-- Encrypted local secret storage via OS credential vault where possible
-- Strict host key verification with manageable trust-on-first-use flow
-- Clear distinction between saved credentials and session-only credentials
-- Audit trail for AI-generated command suggestions and user execution
-- No default silent command execution from AI
-- Configurable redaction before sending context to AI provider
+- 敏感凭据优先存入操作系统安全存储
+- 严格 host key 校验，提供可管理的首次信任流程
+- 区分“持久保存凭据”和“仅本次会话使用”
+- 记录 AI 生成命令与用户执行行为的审计信息
+- AI 默认不静默执行命令
+- 向 AI 发送上下文前支持脱敏
 
-### Security boundaries
+### 安全边界
 
-- Frontend should not directly manage raw SSH secrets when avoidable.
-- Core engine owns connection establishment and secret use.
-- Tauri capabilities must be minimal and explicit.
+- 前端尽量不直接管理原始 SSH 密钥
+- 连接建立与凭据使用由核心引擎负责
+- Tauri 能力范围尽量最小化、显式化
 
-## 11. Local Data Storage
+## 11. 本地数据存储
 
-Recommended local persistence:
+推荐本地持久化方式：
 
-- SQLite for app metadata
-- OS keychain / credential manager for sensitive secrets
-- Structured logs on disk with retention settings
+- SQLite：存业务元数据
+- OS Keychain / Credential Manager：存敏感凭据
+- 本地结构化日志：存调试和审计信息
 
-Data categories:
+主要数据类别：
 
-- Hosts and groups
-- UI preferences
-- Command history / snippets
-- Transfer history
-- AI settings and audit entries
+- 主机与分组
+- UI 偏好
+- 命令历史 / 片段
+- 传输历史
+- AI 设置与审计记录
 
-## 12. Sync and Future Collaboration Model
+## 12. 同步与未来协作模型
 
-Initial release should be local-first.
+首个版本建议采用本地优先。
 
-Future optional capabilities:
+未来可选能力：
 
-- Encrypted cloud sync
-- Team workspace sharing
-- Shared host catalogs
-- Team policies and approvals
+- 加密云同步
+- 团队工作空间共享
+- 共享主机目录
+- 团队策略和审批能力
 
-These should not block MVP architecture, but data structures should avoid making later sync impossible.
+这些能力不应该阻塞 MVP，但数据结构不要把未来同步路径堵死。
 
-## 13. Recommended Tech Stack
+## 13. 推荐技术栈
 
-### Frontend
+### 前端
 
 - React
 - TypeScript
 - Vite
 - TanStack Router
 - TanStack Query
-- Zustand or Jotai
+- Zustand 或 Jotai
 - Tailwind CSS
-- a11y-friendly headless component primitives
+- 可访问性友好的 Headless UI 基础组件
 - xterm.js
 
-### Desktop
+### 桌面层
 
 - Tauri 2
 
-### Core
+### 核心层
 
 - Go 1.24+
-- SSH/SFTP libraries listed above
+- SSH / SFTP 相关库
 
-### Storage
+### 存储
 
 - SQLite
-- OS keychain integration
+- 系统安全存储集成
 
-### Testing
+### 测试
 
-- Frontend: Vitest + Testing Library
-- E2E: Playwright
-- Go: standard `go test`
+- 前端：Vitest + Testing Library
+- 端到端：Playwright
+- Go：`go test`
 
-## 14. Decision Summary
+## 14. 结论摘要
 
-Final recommendation:
+最终推荐方案：
 
-- Build **desktop-first**
-- Use **Tauri 2 + React + TypeScript** for product UI
-- Use **Go** for SSH/SFTP/AI orchestration core
-- Design the core and data model so a future browser/server mode can reuse major parts
+- **产品形态：桌面优先**
+- **UI 技术：Tauri 2 + React + TypeScript**
+- **核心引擎：Go**
+- **架构原则：为未来浏览器 / 服务端复用预留核心能力**
 
-This is the best tradeoff between:
+这个组合在以下维度上最平衡：
 
-- UX quality
-- cross-platform delivery
-- SSH reliability
-- performance
-- security
-- future extensibility
+- 用户体验
+- 跨平台交付
+- SSH 可靠性
+- 性能
+- 安全性
+- 长期扩展性
 
-## 15. Open Questions
+## 15. 当前阶段待确认问题
 
-These can be resolved during milestone 0 and milestone 1:
+这些问题可以在 Milestone 0 或 1 里继续收敛：
 
-- Which AI providers ship in v1
-- Whether shell snippets are local only or sync-ready
-- Whether terminal session replay is in MVP or post-MVP
-- Whether port forwarding enters MVP
-- Which enterprise features are intentionally deferred
+- v1 默认支持哪些 AI 提供方
+- 命令片段是否要从一开始就考虑同步
+- 终端会话回放是否进入 MVP
+- 端口转发是否进入 MVP
+- 哪些企业能力明确延期
 
-## 16. Change Management Rule
+## 16. 文档变更规则
 
-Whenever architecture direction, milestone scope, or delivery sequence changes:
+当架构方向、里程碑范围或交付顺序发生变化时：
 
-1. Update this document
-2. Update `docs/development-plan.md`
-3. Commit both changes in git together with the related implementation change when applicable
+1. 更新本文档
+2. 更新 `docs/development-plan.md`
+3. 如果有对应实现改动，文档与代码要一起提交到 git

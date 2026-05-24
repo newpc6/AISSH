@@ -1,269 +1,285 @@
-# AI SSH Development Plan
+# AI SSH 开发计划文档
 
-## 1. Document Purpose
+## 1. 文档目的
 
-This document defines the execution plan, milestone breakdown, deliverables, engineering rules, and update process for AI SSH.
+本文档用于定义 AI SSH 的开发执行计划、里程碑拆分、交付物、工程规则和更新流程。
 
-It must stay synchronized with actual project progress. Any meaningful scope, architecture, or sequence adjustment must be reflected here before or together with the corresponding implementation change.
+它必须始终与项目实际进度保持同步。任何较大的范围、架构、优先级或交付顺序变化，都需要体现在本文档中。
 
-## 2. Working Agreement
+## 2. 工作约定
 
-Project execution rules:
+项目执行规则：
 
-1. Every milestone or scope adjustment updates this file.
-2. If the adjustment also affects product direction or architecture, update `docs/product-design.md` in the same change.
-3. After each completed adjustment or implementation batch, create a git commit with a clear message.
-4. Do not allow the implementation to drift far ahead of the documented plan.
+1. 每次里程碑调整或范围调整，都要更新本文档。
+2. 如果调整同时影响产品设计或架构方向，需要同步更新 `docs/product-design.md`。
+3. 每完成一批明确改动，都要进行一次清晰的 git 提交。
+4. 不允许实现长期跑在文档前面，计划与实际要尽量同步。
 
-Current repository note:
+当前仓库说明：
 
-- The current workspace is not yet initialized as a git repository.
-- Before implementation begins, run `git init` and create the initial baseline commit for these documents.
+- 仓库已初始化 git
+- 当前阶段正在进行 Milestone 0
+- 本机当前缺少 Rust 工具链，因此 Tauri 桌面壳的实际运行和构建暂时受阻
+- 在 Rust 环境补齐前，先推进前端工程骨架、Go core 骨架与接口契约设计
+- 当前已完成 React + TypeScript 前端骨架、Go core health server、共享契约包与本地联调配置
 
-## 3. Delivery Strategy
+## 3. 交付策略
 
-Build in phases:
+整体按阶段推进：
 
-1. Prove the desktop shell and SSH core architecture
-2. Deliver a genuinely usable SSH + file transfer MVP
-3. Add AI assistance on top of a solid operational product
-4. Polish, harden, and prepare for broader release
+1. 先证明桌面壳与 SSH 核心架构方向是可行的
+2. 再交付真正可用的 SSH + 文件传输 MVP
+3. 在 SSH 核心体验稳定后叠加 AI 能力
+4. 最后做稳定性、打磨和发布准备
 
-## 4. Milestones
+## 4. 里程碑
 
-## Milestone 0: Project Bootstrap
+## Milestone 0：项目启动与骨架搭建
 
-Goal:
+目标：
 
-- Establish the repo, app skeleton, coding standards, and architecture baseline
+- 建立仓库结构、工程脚手架、编码规范和架构基线
 
-Deliverables:
+交付物：
 
-- Git repository initialized
-- Monorepo or structured workspace layout created
-- Tauri desktop shell initialized
-- React + TypeScript frontend initialized
-- Go core service initialized
-- Basic IPC contract defined
-- CI baseline
-- Lint, format, and test scripts
-- This development plan and product design document committed
+- 基础目录结构
+- 前端工程初始化
+- Go core 服务初始化
+- 桌面壳方案设计落地
+- 基础 IPC / API 契约
+- lint / format / test 基础命令
+- CI 基线
+- 产品设计与开发计划文档
 
-Suggested structure:
+建议目录结构：
 
 - `apps/desktop`
 - `apps/core-go`
 - `packages/shared-contracts`
 - `docs/`
 
-Exit criteria:
+当前阶段说明：
 
-- App can open desktop shell
-- Frontend can call a simple core health-check
-- Initial docs and repo structure are committed
+- 文档基线已完成
+- 当前先以“前端 + Go core + 可替代桌面集成层”的方式推进
+- 待 Rust 环境补齐后，再接入和验证 Tauri 实际工程
 
-## Milestone 1: SSH Core Connectivity
+退出标准：
 
-Goal:
+- 前端项目可运行
+- Go core 可运行
+- 前端可以通过最小接口拿到 core 的健康检查结果
+- 目录结构、基础脚本、文档都已提交
 
-- Deliver reliable SSH connections and terminal streaming
+## Milestone 1：SSH 核心连接能力
 
-Deliverables:
+目标：
 
-- Host model and local persistence
-- Password/private key/agent auth support
-- Known hosts verification flow
-- Terminal tab management
-- xterm.js integration
-- SSH session open/close/reconnect flow
-- Basic command history
+- 交付稳定的 SSH 连接与终端流能力
 
-Exit criteria:
+交付物：
 
-- User can save a host and open an interactive shell
-- Terminal is stable for daily command execution
-- Disconnect/reconnect states are handled clearly
+- Host 数据模型与本地持久化
+- 密码 / 私钥 / agent 认证支持
+- known_hosts 校验流程
+- 终端标签管理
+- xterm.js 集成
+- SSH 会话打开 / 关闭 / 重连
+- 基础命令历史
 
-## Milestone 2: File Management and Transfer
+退出标准：
 
-Goal:
+- 用户可以保存主机并打开交互式 shell
+- 终端足够稳定，可支撑日常命令执行
+- 断开、重连状态清晰可控
 
-- Make remote file operations practical and fast
+## Milestone 2：文件管理与传输
 
-Deliverables:
+目标：
 
-- Remote file browser
-- Upload/download
-- Drag-and-drop transfer
-- Progress reporting
-- Retry and failure handling
-- Basic file operations
+- 让远程文件操作变得高频可用
 
-Exit criteria:
+交付物：
 
-- User can browse remote files and transfer files reliably
-- Common transfer failures are visible and recoverable
+- 远程文件浏览器
+- 上传 / 下载
+- 拖拽传输
+- 传输进度展示
+- 失败重试与错误反馈
+- 基础文件操作
 
-## Milestone 3: AI Copilot Foundation
+退出标准：
 
-Goal:
+- 用户可以稳定浏览远程文件并进行上传下载
+- 常见传输失败有清晰反馈并可恢复
 
-- Add AI features that are useful, safe, and controllable
+## Milestone 3：AI 副驾驶基础能力
 
-Deliverables:
+目标：
 
-- AI provider abstraction
-- Settings for provider/model/API key
-- Explain error/output action
-- Natural language to command draft
-- Risk classification for suggested commands
-- AI audit entries
+- 加入真正有用、可控、安全的 AI 能力
 
-Exit criteria:
+交付物：
 
-- User can ask AI to explain output or draft a command
-- AI suggestions are reviewable and never auto-run by default
+- AI 提供方抽象层
+- Provider / Model / API Key 设置
+- 输出 / 错误解释能力
+- 自然语言转命令草稿
+- 命令风险分级
+- AI 审计记录
 
-## Milestone 4: UX Polish and Productivity
+退出标准：
 
-Goal:
+- 用户可以让 AI 解释输出或生成命令草稿
+- AI 默认不会自动执行命令
 
-- Make the tool feel fast, refined, and habit-forming
+## Milestone 4：交互打磨与生产力增强
 
-Deliverables:
+目标：
 
-- Split panes
-- Quick commands/snippets
-- Better keyboard shortcuts
-- Theme polish
-- Empty/error state polish
-- Transfer manager UI improvements
-- Search and filtering in hosts and sessions
+- 让产品具备长期日常使用的顺手感
 
-Exit criteria:
+交付物：
 
-- Product is comfortable for daily power-user workflows
+- 分屏能力
+- 快捷命令 / 片段
+- 更完整的键盘快捷键
+- 主题和视觉细节打磨
+- 空状态 / 错误状态优化
+- 传输管理器 UI 改进
+- 主机与会话搜索筛选
 
-## Milestone 5: Hardening and Release Preparation
+退出标准：
 
-Goal:
+- 产品适合日常重度使用
 
-- Improve reliability, packaging, observability, and release readiness
+## Milestone 5：稳定性加固与发布准备
 
-Deliverables:
+目标：
 
-- Crash recovery behaviors
-- Better structured logging
-- Telemetry hooks if enabled by settings
-- Packaging and signing pipeline
-- Update strategy
-- Performance tuning
-- Security review checklist
+- 做好可靠性、打包、观测和发布准备
 
-Exit criteria:
+交付物：
 
-- Cross-platform release candidates can be generated reliably
+- 崩溃恢复机制
+- 更完善的结构化日志
+- 可选遥测埋点
+- 打包与签名流程
+- 更新策略
+- 性能优化
+- 安全检查清单
 
-## 5. Initial Technical Tasks
+退出标准：
 
-Recommended immediate next implementation tasks:
+- 能稳定产出跨平台候选版本
 
-1. Initialize git repository
-2. Create base folder structure
-3. Scaffold Tauri 2 + React + TypeScript app
-4. Scaffold Go core sidecar
-5. Define IPC contract for:
-   - app health
-   - host CRUD
-   - session open/close
-   - terminal stream events
-6. Set up lint, formatting, and test commands
-7. Create baseline CI workflow
+## 5. 当前立即执行任务
 
-## 6. Engineering Standards
+当前建议按以下顺序推进：
 
-### Architecture rules
+1. 完成文档中文化并保持基线一致
+2. 完成基础目录结构
+3. 完成 React + TypeScript 前端工程初始化
+4. 完成 Go core 服务初始化
+5. 完成最小共享契约：
+   - health check
+   - host 基础结构
+   - session 基础结构
+6. 完成前端到 core 的最小健康检查链路
+7. 接入 Tauri 桌面壳（等待 Rust 环境）
+8. 开始 SSH 会话管理与终端容器开发
 
-- Keep SSH and SFTP logic in Go core, not in frontend code.
-- Keep UI and core communication contract explicit and versionable.
-- Avoid coupling AI provider code directly into terminal UI components.
+## 6. 工程规则
 
-### Product rules
+### 架构规则
 
-- AI suggestions require user review before execution.
-- Host key verification cannot be skipped silently.
-- Sensitive secrets should use OS-backed secure storage whenever possible.
+- SSH / SFTP 逻辑放在 Go core，不直接放在前端
+- 前端与 core 的通信契约必须显式定义、可演进
+- AI provider 逻辑不要直接耦合进终端 UI 组件
 
-### Documentation rules
+### 产品规则
 
-- Update milestone status in this document when scope or progress changes.
-- Record any milestone split/merge/resequence here immediately.
+- AI 建议必须经过用户审核后才可执行
+- host key 校验不能被静默跳过
+- 敏感凭据优先使用操作系统安全存储
 
-## 7. Plan Tracking
+### 文档规则
 
-Current status:
+- 范围、优先级、阶段变化必须同步更新本文档
+- 若架构假设变化，需要同步更新产品设计文档
+- 每次提交前检查文档是否仍和实现一致
 
-- Milestone 0: In progress
-- Milestone 1: Not started
-- Milestone 2: Not started
-- Milestone 3: Not started
-- Milestone 4: Not started
-- Milestone 5: Not started
+## 7. 计划跟踪
 
-Near-term checklist:
+当前状态：
 
-- [x] Define product direction
-- [x] Define development milestones
-- [ ] Initialize git repository
-- [ ] Create scaffolded workspace
-- [ ] Implement core-to-frontend health-check
+- Milestone 0：进行中
+- Milestone 1：未开始
+- Milestone 2：未开始
+- Milestone 3：未开始
+- Milestone 4：未开始
+- Milestone 5：未开始
 
-## 8. Git Commit Convention
+当前检查项：
 
-Recommended commit style:
+- [x] 明确产品方向
+- [x] 明确开发里程碑
+- [x] 初始化 git 仓库
+- [x] 创建工程目录结构
+- [x] 初始化前端工程
+- [x] 初始化 Go core
+- [x] 打通健康检查链路
+- [ ] 接入 Tauri 桌面壳
+- [ ] 开始 SSH 会话管理
 
-- `docs: add initial product design and development plan`
-- `chore: initialize tauri desktop workspace`
-- `feat(core): add ssh session manager`
-- `feat(files): add sftp upload and download`
-- `feat(ai): add command explanation flow`
-- `docs(plan): update milestone sequencing`
+## 8. Git 提交约定
 
-Rule:
+推荐提交风格：
 
-- If a change alters planned scope or sequence, the related commit must include the plan update in the same commit or in an immediately adjacent commit.
+- `docs: 中文化产品设计与开发计划`
+- `chore: 初始化前端与 Go core 工程骨架`
+- `feat(core): 增加 ssh 会话管理器`
+- `feat(files): 增加 sftp 上传下载`
+- `feat(ai): 增加命令解释能力`
+- `docs(plan): 更新里程碑顺序`
 
-## 9. Risks and Mitigations
+规则：
 
-### Risk: architecture spread too early
+- 任何影响范围或顺序的改动，都需要把计划文档更新包含在同一次提交或相邻提交中
 
-Mitigation:
+## 9. 风险与应对
 
-- Keep browser version as a future reuse target, not a day-one delivery target.
+### 风险：桌面壳环境阻塞开发
 
-### Risk: AI features distract from SSH basics
+应对：
 
-Mitigation:
+- 先将前端和 Go core 独立跑通
+- 用清晰接口把桌面集成层留出来
+- Rust 环境补齐后再接入 Tauri
 
-- Do not start Milestone 3 until Milestones 1 and 2 are usable.
+### 风险：AI 功能喧宾夺主
 
-### Risk: security debt
+应对：
 
-Mitigation:
+- 在 SSH 与文件管理体验可用前，不提前推进大量 AI 功能
 
-- Treat secret storage, host verification, and command safety as MVP concerns.
+### 风险：安全债务积累
 
-### Risk: UI polish slows core delivery
+应对：
 
-Mitigation:
+- 将密钥管理、host 校验、命令风险控制前置到 MVP
 
-- Use a staged approach: strong shell first, deep polish after main workflows work.
+### 风险：界面打磨拖慢核心能力
 
-## 10. Change Management Rule
+应对：
 
-Whenever implementation direction changes:
+- 先保证主流程可用，再逐步做高质量打磨
 
-1. Update this file first or in the same change set
-2. Update `docs/product-design.md` if architectural assumptions changed
-3. Commit the documentation update with the related code change
-4. Keep milestone status accurate
+## 10. 文档变更规则
+
+当实现方向发生变化时：
+
+1. 先更新本文档，或与实现一起更新
+2. 如果架构假设变化，同时更新 `docs/product-design.md`
+3. 文档变更与相关代码一并提交
+4. 保持里程碑状态准确

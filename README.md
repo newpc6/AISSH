@@ -1,13 +1,15 @@
 # AI SSH
 
-AI SSH is a desktop-first intelligent SSH tool focused on terminal experience, file management, AI assistance, and cross-platform usability.
+AI SSH 是一个面向桌面端优先的智能 SSH 工具，目标是把终端体验、文件管理、AI 辅助能力和跨平台可用性结合起来，做成一个真正顺手的日常生产力工具。
 
-Current project status:
+当前状态：
 
-- Product direction and architecture are defined in the docs.
-- Development will proceed in milestones with the plan kept in sync on every scope change.
+- 产品方向与技术架构已完成基线设计
+- Milestone 0 已开始，前端骨架与 Go core 健康检查链路已打通
+- 当前可先通过浏览器方式运行前端开发界面
+- 后续每次范围、架构或计划调整，都需要同步更新计划文档并提交 git
 
-Documents:
+项目文档：
 
-- [Product Design](docs/product-design.md)
-- [Development Plan](docs/development-plan.md)
+- [产品设计文档](docs/product-design.md)
+- [开发计划文档](docs/development-plan.md)

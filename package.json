@@ -1,0 +1,16 @@
+{
+  "name": "ai-ssh-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:desktop": "npm run dev -w apps/desktop",
+    "build:desktop": "npm run build -w apps/desktop",
+    "typecheck:desktop": "npm run typecheck -w apps/desktop",
+    "dev:core": "go run ./apps/core-go/cmd/server",
+    "test:core": "go test ./apps/core-go/..."
+  }
+}
