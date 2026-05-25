@@ -96,6 +96,8 @@ const emptyHostForm: HostUpsertRequest = {
 const defaultSettings: AppSettings = {
   metricsRefreshIntervalSeconds: 2,
   metricsHistoryWindowMinutes: 5,
+  metricsCompactPointLimit: 6,
+  metricsExpandedPointLimit: 24,
   terminalRetainedLines: 1000,
   aiBaseUrl: '',
   aiApiKey: '',
@@ -199,6 +201,14 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
     metricsHistoryWindowMinutes: Math.max(
       1,
       Number(value.metricsHistoryWindowMinutes ?? defaultSettings.metricsHistoryWindowMinutes) || 5,
+    ),
+    metricsCompactPointLimit: Math.max(
+      2,
+      Math.min(30, Number(value.metricsCompactPointLimit ?? defaultSettings.metricsCompactPointLimit) || 6),
+    ),
+    metricsExpandedPointLimit: Math.max(
+      2,
+      Math.min(120, Number(value.metricsExpandedPointLimit ?? defaultSettings.metricsExpandedPointLimit) || 24),
     ),
     terminalRetainedLines: Math.max(
       100,
@@ -995,6 +1005,8 @@ export function App() {
     appendLog('info', 'ui.settings', 'settings saved', {
       metricsRefreshIntervalSeconds: normalized.metricsRefreshIntervalSeconds,
       metricsHistoryWindowMinutes: normalized.metricsHistoryWindowMinutes,
+      metricsCompactPointLimit: normalized.metricsCompactPointLimit,
+      metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
       terminalRetainedLines: normalized.terminalRetainedLines,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
     })
@@ -1550,7 +1562,10 @@ export function App() {
     const path = buildMetricPath(metricHistory, key, chartWidth, chartHeight)
     const [startLabel, endLabel] = metricXAxisLabels(metricHistory)
     const latestValue = metricHistory[metricHistory.length - 1]?.[key] ?? serverMetrics?.[key] ?? 0
-    const visiblePointIndexes = metricPointIndexes(metricHistory.length, compact ? 6 : metricHistory.length)
+    const visiblePointIndexes = metricPointIndexes(
+      metricHistory.length,
+      compact ? settings.metricsCompactPointLimit : settings.metricsExpandedPointLimit,
+    )
     const hoveredSample =
       metricHover?.key === key && metricHistory[metricHover.index] ? metricHistory[metricHover.index] : null
     const chartTitle = key === 'memoryPercent' ? formatMemorySummary(serverMetrics) : serverMetrics ? `${latestValue}%` : '-'
@@ -2501,6 +2516,38 @@ export function App() {
                 }
               />
             </label>
+            <div className="form-row settings-pair">
+              <label>
+                <span>小图圆点数量</span>
+                <input
+                  min="2"
+                  max="30"
+                  type="number"
+                  value={settings.metricsCompactPointLimit}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      metricsCompactPointLimit: Number(event.target.value) || 6,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>放大图圆点数量</span>
+                <input
+                  min="2"
+                  max="120"
+                  type="number"
+                  value={settings.metricsExpandedPointLimit}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      metricsExpandedPointLimit: Number(event.target.value) || 24,
+                    }))
+                  }
+                />
+              </label>
+            </div>
             <label>
               <span>每个 SSH 标签保留终端行数</span>
               <input
