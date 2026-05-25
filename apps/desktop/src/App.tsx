@@ -83,21 +83,6 @@ type WindowWithSaveFilePicker = Window & {
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 
-const aiSuggestions = [
-  {
-    title: '检查当前目录',
-    command: 'pwd && ls -lah',
-  },
-  {
-    title: '查看资源占用',
-    command: 'top',
-  },
-  {
-    title: '定位磁盘压力',
-    command: 'df -h && du -sh * | sort -h',
-  },
-]
-
 const emptyHostForm: HostUpsertRequest = {
   name: '',
   address: '',
@@ -471,6 +456,7 @@ export function App() {
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [aiPredictions, setAiPredictions] = useState<string[]>([])
+  const [aiPredictionIndex, setAiPredictionIndex] = useState(0)
   const [aiPredictionState, setAiPredictionState] = useState<LoadState>('idle')
   const [aiPredictionError, setAiPredictionError] = useState('')
   const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
@@ -508,6 +494,8 @@ export function App() {
   const pendingAIPredictionTimerRef = useRef<number | undefined>(undefined)
   const pendingAIPredictionCommandRef = useRef('')
   const aiPredictionRequestRef = useRef(0)
+  const aiPredictionCursorRef = useRef(0)
+  const aiPredictionCycleStartedRef = useRef(false)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
@@ -544,8 +532,11 @@ export function App() {
       aiPredictionRequestRef.current += 1
     }
     setAiPredictions([])
+    setAiPredictionIndex(0)
     setAiPredictionState('idle')
     setAiPredictionError('')
+    aiPredictionCursorRef.current = 0
+    aiPredictionCycleStartedRef.current = false
   }
 
   const queueSessionInput = (sessionId: string, data: string) => {
@@ -861,7 +852,7 @@ export function App() {
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
-  const primaryPrediction = aiPredictions[0] ?? ''
+  const primaryPrediction = commandBufferRef.current.trim() ? '' : (aiPredictions[aiPredictionIndex] ?? aiPredictions[0] ?? '')
   const isAIProviderConfigured = Boolean(settings.aiBaseUrl.trim() && settings.aiModel.trim())
   const groupedHosts = useMemo<HostGroupView[]>(() => {
     const groups = normalizeHostGroups(hostGroups, hosts)
@@ -1525,6 +1516,9 @@ export function App() {
         return
       }
       setAiPredictions(data.commands.slice(0, normalized.aiPredictionCount))
+      aiPredictionCursorRef.current = 0
+      aiPredictionCycleStartedRef.current = false
+      setAiPredictionIndex(0)
       setAiPredictionState('success')
       setAiPredictionError('')
       pendingAIPredictionCommandRef.current = ''
@@ -1540,10 +1534,6 @@ export function App() {
         error: error instanceof Error ? error.message : String(error),
       })
     }
-  }
-
-  const selectPrediction = (command: string) => {
-    setAiPredictions((current) => [command, ...current.filter((item) => item !== command)])
   }
 
   const updateAlternateScreenMode = (sessionId: string, data: string) => {
@@ -1562,31 +1552,64 @@ export function App() {
     }
   }
 
-  const observeCommandKey = (sessionId: string, event: KeyboardEvent) => {
-    if (alternateScreenSessionsRef.current.has(sessionId) || event.isComposing) {
+  const setCommandDraft = (sessionId: string, draft: string) => {
+    commandBufferRef.current = draft
+    setSessionCommandDraft(sessionId, draft)
+  }
+
+  const observeTerminalInput = (sessionId: string, data: string) => {
+    if (alternateScreenSessionsRef.current.has(sessionId)) {
       return
     }
 
     let next = commandBufferRef.current
-    if (event.key === 'Enter') {
-      recordCommand(next)
-      next = ''
-    } else if (event.key === 'Backspace') {
-      next = next.slice(0, -1)
-    } else if (event.key === 'c' && event.ctrlKey) {
-      next = ''
-    } else if (event.key === 'u' && event.ctrlKey) {
-      next = ''
-    } else if (event.key === 'w' && event.ctrlKey) {
-      next = next.replace(/\s*\S+\s*$/, '')
-    } else if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) {
-      next += event.key
-    } else {
+    for (let index = 0; index < data.length; index += 1) {
+      const char = data[index]
+      const code = char.charCodeAt(0)
+      if (char === '\r' || char === '\n') {
+        recordCommand(next)
+        next = ''
+        continue
+      }
+      if (char === '\u007f' || char === '\b') {
+        next = next.slice(0, -1)
+        continue
+      }
+      if (char === '\u0003' || char === '\u0015') {
+        next = ''
+        continue
+      }
+      if (char === '\u0017') {
+        next = next.replace(/\s*\S+\s*$/, '')
+        continue
+      }
+      if (char === '\u0001' || char === '\u0005' || char === '\t') {
+        continue
+      }
+      if (char === '\u001b') {
+        const sequence = data.slice(index).match(/^\u001b(?:\[[0-9;?]*[ -/]*[@-~]|O.)/)
+        if (sequence) {
+          index += sequence[0].length - 1
+        }
+        continue
+      }
+      if (code >= 32) {
+        next += char
+      }
+    }
+    setCommandDraft(sessionId, next)
+  }
+
+  const cyclePrediction = () => {
+    if (commandBufferRef.current.trim() || aiPredictions.length === 0) {
       return
     }
-
-    commandBufferRef.current = next
-    setSessionCommandDraft(sessionId, next)
+    const nextIndex = aiPredictionCycleStartedRef.current
+      ? (aiPredictionCursorRef.current + 1) % aiPredictions.length
+      : 0
+    aiPredictionCycleStartedRef.current = true
+    aiPredictionCursorRef.current = nextIndex
+    setAiPredictionIndex(nextIndex)
   }
 
   useEffect(() => {
@@ -1595,28 +1618,34 @@ export function App() {
     }
 
     const disposable = xtermRef.current.onData((data) => {
-      if (data === '\t' && primaryPrediction) {
-        applyPrediction()
+      if (data === '\t' && aiPredictions.length > 0 && !commandBufferRef.current.trim()) {
+        cyclePrediction()
         return
       }
       const isEnter = data === '\r' || data === '\n' || data === '\r\n'
-      if (data !== '\t' && !isEnter) {
+      if (isEnter && primaryPrediction && !commandBufferRef.current.trim()) {
+        const command = primaryPrediction
+        writeCommand(command)
+        recordCommand(command)
+        setCommandDraft(activeSession.id, '')
+        setAiPredictions([])
+        setAiPredictionIndex(0)
+        aiPredictionCursorRef.current = 0
+        aiPredictionCycleStartedRef.current = false
+        queueSessionInput(activeSession.id, '\r')
+        return
+      }
+      if (!isEnter) {
         clearAIPrediction()
       }
+      observeTerminalInput(activeSession.id, data)
       queueSessionInput(activeSession.id, data)
-    })
-    xtermRef.current.attachCustomKeyEventHandler((event) => {
-      if (event.type === 'keydown') {
-        observeCommandKey(activeSession.id, event)
-      }
-      return true
     })
 
     return () => {
       disposable.dispose()
-      xtermRef.current?.attachCustomKeyEventHandler(() => true)
     }
-  }, [activeSession, primaryPrediction, settings.aiPredictionEnabled, aiEnabled])
+  }, [activeSession, primaryPrediction, aiPredictions, aiPredictionIndex, settings.aiPredictionEnabled, aiEnabled])
 
   useEffect(() => {
     if (leftMode === 'files') {
@@ -2401,7 +2430,6 @@ export function App() {
               {activeSession && primaryPrediction ? (
                 <button className="terminal-ghost-prediction" type="button" title="应用 AI 预测命令" onClick={applyPrediction}>
                   {primaryPrediction}
-                  <span>Tab</span>
                 </button>
               ) : null}
             </div>
@@ -2541,46 +2569,26 @@ export function App() {
                 {!isAIProviderConfigured && aiEnabled && settings.aiPredictionEnabled ? (
                   <p className="hint-text">请先在设置里填写大模型地址和模型，保存后才会调用 AI 预测。</p>
                 ) : null}
-                {aiPredictionState === 'idle' && aiEnabled && settings.aiPredictionEnabled && isAIProviderConfigured ? (
-                  <p className="hint-text">AI 预测已开启，输入命令并回车后会自动预测下一步。</p>
-                ) : null}
-                {aiPredictionState === 'success' && aiPredictions.length === 0 ? (
-                  <p className="hint-text">本次没有可用预测，继续输入命令后会再次尝试。</p>
-                ) : null}
                 {aiPredictionError ? <p className="error-text">{aiPredictionError}</p> : null}
-                {aiSuggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.command}
-                    className="suggestion-row"
-                    type="button"
-                    title={`输入建议命令：${suggestion.command}`}
-                    onClick={() => writeCommand(suggestion.command)}
-                    disabled={!aiEnabled}
-                  >
-                    <strong>{suggestion.title}</strong>
-                    <code>{suggestion.command}</code>
-                  </button>
-                ))}
                 {aiPredictions.map((command, index) => (
                   <button
-                    className={`prediction-row ${index === 0 ? 'primary' : ''}`}
+                    className={`prediction-row ${index === aiPredictionIndex ? 'primary' : ''}`}
                     key={command}
                     type="button"
-                    title={index === 0 ? '应用首选 AI 预测命令' : '设为首选预测命令'}
+                    title={`切换到第 ${index + 1} 条 AI 预测命令`}
                     onClick={() => {
-                      if (index === 0) {
-                        applyPrediction()
-                      } else {
-                        selectPrediction(command)
-                      }
+                      aiPredictionCursorRef.current = index
+                      aiPredictionCycleStartedRef.current = true
+                      setAiPredictionIndex(index)
                     }}
                   >
-                    <strong>{index === 0 ? 'Tab 默认' : `预测 ${index + 1}`}</strong>
+                    <strong>{index === aiPredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
                     <code>{command}</code>
-                    <small>{index === 0 ? 'Tab 应用' : '点击设为默认'}</small>
                   </button>
                 ))}
-                <p className="hint-text">预测会读取终端上下文和最近命令，通过 Go Core 调用 OpenAI 兼容接口。</p>
+                {aiPredictions.length > 0 ? (
+                  <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
+                ) : null}
               </div>
             ) : (
               <div className="history-list">

@@ -248,7 +248,7 @@ button {
 
 .file-tree button,
 .history-list button,
-.suggestion-row {
+.prediction-row {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
@@ -1157,11 +1157,6 @@ button {
 }
 
 .primary-button:disabled,
-.suggestion-row:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .tool-panel {
   padding: 0;
   min-height: 0;
@@ -1197,28 +1192,14 @@ button {
   font-size: 13px;
 }
 
-.suggestion-row {
-  height: 64px;
-  padding: 10px;
-  display: grid;
-  gap: 8px;
-  align-content: center;
-}
-
 .prediction-row {
-  width: 100%;
-  height: 74px;
+  height: 58px;
   display: grid;
   gap: 6px;
   padding: 10px;
-  border: 1px solid rgba(34, 211, 238, 0.35);
-  border-radius: 8px;
-  background: rgba(34, 211, 238, 0.08);
-  text-align: left;
-  cursor: pointer;
+  align-content: center;
 }
 
-.suggestion-row code,
 .prediction-row code,
 .history-list button {
   overflow: hidden;
