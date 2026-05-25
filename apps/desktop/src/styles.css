@@ -151,7 +151,6 @@ button {
 
 .server-row,
 .file-tree button,
-.credential-box button,
 .history-list button,
 .suggestion-row {
   width: 100%;
@@ -180,7 +179,6 @@ button {
   background: rgba(59, 130, 246, 0.13);
 }
 
-.credential-box,
 .file-tree,
 .history-list,
 .ai-box {
@@ -188,12 +186,6 @@ button {
   gap: 8px;
 }
 
-.credential-box {
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.credential-box button,
 .file-tree button,
 .history-list button {
   min-height: 34px;
@@ -308,8 +300,6 @@ button {
 }
 
 .info-panel,
-.connect-panel,
-.host-editor,
 .tool-panel {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
@@ -318,8 +308,7 @@ button {
 }
 
 .info-panel h3,
-.connect-panel h3,
-.host-editor h3 {
+.host-modal h3 {
   margin: 6px 0 12px;
   font-size: 18px;
 }
@@ -336,46 +325,36 @@ button {
   gap: 12px;
 }
 
-.info-panel dt,
-.connect-panel span {
+.info-panel dt {
   color: #7f91a7;
   font-size: 12px;
 }
 
-.host-editor span {
+.host-modal span {
   color: #7f91a7;
   font-size: 12px;
 }
 
-.connect-panel,
-.host-editor {
+.host-modal {
   display: grid;
   gap: 10px;
 }
 
-.connect-panel label,
-.host-editor label {
+.host-modal label {
   display: grid;
   gap: 6px;
 }
 
-.host-editor label > span {
+.host-modal label > span {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.credential-state {
-  font-style: normal;
-  color: #86efac;
-  font-size: 11px;
-}
-
-.connect-panel input,
-.host-editor input,
-.host-editor select,
-.host-editor textarea {
+.host-modal input,
+.host-modal select,
+.host-modal textarea {
   width: 100%;
   min-height: 36px;
   border-radius: 7px;
@@ -386,16 +365,15 @@ button {
   outline: none;
 }
 
-.host-editor textarea {
+.host-modal textarea {
   min-height: 82px;
   resize: vertical;
   padding: 9px 10px;
 }
 
-.connect-panel input:focus,
-.host-editor input:focus,
-.host-editor select:focus,
-.host-editor textarea:focus {
+.host-modal input:focus,
+.host-modal select:focus,
+.host-modal textarea:focus {
   border-color: rgba(79, 140, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }
@@ -418,28 +396,9 @@ button {
 }
 
 .primary-button:disabled,
-.suggestion-row:disabled,
-.button-row button:disabled {
+.suggestion-row:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.button-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-}
-
-.button-row button {
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  cursor: pointer;
-}
-
-.full-width {
-  width: 100%;
 }
 
 .tool-panel {
@@ -506,6 +465,70 @@ code {
 
 .status-idle {
   background: #64748b;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 7, 12, 0.68);
+}
+
+.host-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #101821;
+  padding: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.modal-header,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-header button,
+.modal-actions button {
+  min-height: 34px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  padding: 0 12px;
+}
+
+.secret-area {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.checkbox-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-row input {
+  width: 15px;
+  min-height: 15px;
+}
+
+.host-modal input:disabled,
+.host-modal textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1180px) {

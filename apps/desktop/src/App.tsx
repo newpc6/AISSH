@@ -12,7 +12,6 @@ import {
   type SessionOpenResponse,
   type SessionRecord,
   type TerminalEvent,
-  type TransientHostConfig,
 } from '@ai-ssh/shared-contracts'
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
@@ -70,20 +69,13 @@ export function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [selectedHostId, setSelectedHostId] = useState<string>('')
   const [activeSessionId, setActiveSessionId] = useState<string>('')
-  const [sessionState, setSessionState] = useState<LoadState>('idle')
   const [leftMode, setLeftMode] = useState<LeftMode>('servers')
   const [rightTool, setRightTool] = useState<RightTool>('ai')
   const [aiEnabled, setAiEnabled] = useState(true)
-  const [editingHostId, setEditingHostId] = useState<string>('')
+  const [isHostDialogOpen, setIsHostDialogOpen] = useState(false)
   const [hostForm, setHostForm] = useState<HostUpsertRequest>(emptyHostForm)
-  const editingHost = hosts.find((host) => host.id === editingHostId) ?? null
-  const [transientHost, setTransientHost] = useState<TransientHostConfig>({
-    address: '',
-    port: 22,
-    username: '',
-    password: '',
-    authType: 'password',
-  })
+  const [savePassword, setSavePassword] = useState(false)
+  const [savePrivateKey, setSavePrivateKey] = useState(false)
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -124,7 +116,7 @@ export function App() {
       terminal.open(terminalRef.current)
       fitAddon.fit()
       terminal.writeln('AI SSH workspace ready.')
-      terminal.writeln('选择左侧服务器或填写右侧临时连接信息。')
+      terminal.writeln('选择左侧服务器并创建会话，或点击左侧 + 添加 SSH 连接。')
     }
 
     const onResize = () => fitAddon.fit()
@@ -187,24 +179,20 @@ export function App() {
     }
   }
 
-  const editHost = (host: HostRecord) => {
-    setEditingHostId(host.id)
-    setHostForm({
-      name: host.name,
-      address: host.address,
-      port: host.port || 22,
-      username: host.username,
-      authType: host.authType,
-      group: host.group || '默认',
-      description: host.description ?? '',
-      password: '',
-      privateKey: '',
-    })
+  const resetHostForm = () => {
+    setHostForm(emptyHostForm)
+    setSavePassword(false)
+    setSavePrivateKey(false)
   }
 
-  const resetHostForm = () => {
-    setEditingHostId('')
-    setHostForm(emptyHostForm)
+  const openAddHostDialog = () => {
+    resetHostForm()
+    setIsHostDialogOpen(true)
+  }
+
+  const closeAddHostDialog = () => {
+    setIsHostDialogOpen(false)
+    resetHostForm()
   }
 
   const saveHost = async () => {
@@ -213,15 +201,16 @@ export function App() {
       return
     }
 
-    const url = editingHostId ? `${CORE_API_BASE}/hosts/${editingHostId}` : `${CORE_API_BASE}/hosts`
-    const response = await fetch(url, {
-      method: editingHostId ? 'PUT' : 'POST',
+    const response = await fetch(`${CORE_API_BASE}/hosts`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         ...hostForm,
         port: Number(hostForm.port) || 22,
+        password: hostForm.authType === 'password' && savePassword ? hostForm.password : '',
+        privateKey: hostForm.authType === 'privateKey' && savePrivateKey ? hostForm.privateKey : '',
       }),
     })
 
@@ -230,25 +219,7 @@ export function App() {
       return
     }
 
-    resetHostForm()
-    await loadHosts()
-  }
-
-  const deleteHost = async () => {
-    if (!editingHostId || editingHostId === 'local-demo') {
-      return
-    }
-
-    const response = await fetch(`${CORE_API_BASE}/hosts/${editingHostId}`, {
-      method: 'DELETE',
-    })
-
-    if (!response.ok) {
-      setErrorMessage(`删除主机失败：${response.status}`)
-      return
-    }
-
-    resetHostForm()
+    closeAddHostDialog()
     await loadHosts()
   }
 
@@ -351,36 +322,15 @@ export function App() {
     })
   }
 
-  const createSession = async (mode: 'saved' | 'transient') => {
-    if (mode === 'saved' && !selectedHostId) {
+  const createSession = async () => {
+    if (!selectedHostId) {
       return
     }
 
-    if (mode === 'transient' && (!transientHost.address || !transientHost.username)) {
-      setErrorMessage('请填写主机地址和用户名')
-      return
-    }
-
-    setSessionState('loading')
     xtermRef.current?.clear()
-    xtermRef.current?.writeln(
-      mode === 'saved'
-        ? `正在为主机 ${selectedHostId} 创建会话...`
-        : `正在连接 ${transientHost.username}@${transientHost.address}:${transientHost.port}...`,
-    )
+    xtermRef.current?.writeln(`正在为主机 ${selectedHostId} 创建会话...`)
 
-    const payload: SessionOpenRequest =
-      mode === 'saved'
-        ? { hostId: selectedHostId }
-        : {
-            hostId: 'transient',
-            transientHost: {
-              ...transientHost,
-              name: `${transientHost.username}@${transientHost.address}`,
-              port: Number(transientHost.port) || 22,
-              authType: 'password',
-            },
-          }
+    const payload: SessionOpenRequest = { hostId: selectedHostId }
 
     try {
       const response = await fetch(`${CORE_API_BASE}/sessions`, {
@@ -398,7 +348,6 @@ export function App() {
       const data = (await response.json()) as SessionOpenResponse
       setSessions((current) => [data.session, ...current])
       setActiveSessionId(data.session.id)
-      setSessionState('success')
 
       xtermRef.current?.writeln('')
       xtermRef.current?.writeln(`Session: ${data.session.id}`)
@@ -408,7 +357,6 @@ export function App() {
       fitAddonRef.current?.fit()
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建会话失败'
-      setSessionState('error')
       setErrorMessage(message)
       xtermRef.current?.writeln('')
       xtermRef.current?.writeln(`ERROR: ${message}`)
@@ -447,7 +395,6 @@ export function App() {
         <div className="top-actions">
           <button type="button" onClick={() => void importSampleHost()}>导入</button>
           <button type="button" onClick={() => void exportHosts()}>导出</button>
-          <button type="button" onClick={() => void saveHost()}>保存凭据</button>
           <span className={`status-dot status-${healthState}`} />
         </div>
       </header>
@@ -476,7 +423,7 @@ export function App() {
               <div className="panel-toolbar">
                 <strong>服务器</strong>
                 <div>
-                  <button type="button" onClick={resetHostForm}>+</button>
+                  <button type="button" onClick={openAddHostDialog}>+</button>
                   <button type="button" onClick={() => void exportHosts()}>⇅</button>
                 </div>
               </div>
@@ -485,29 +432,21 @@ export function App() {
                 <section className="server-group" key={group.name}>
                   <p>{group.name}</p>
                   {group.hosts.map((host) => (
-                      <button
-                        key={host.id}
-                        className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
-                        onClick={() => {
-                          setSelectedHostId(host.id)
-                          editHost(host)
-                        }}
-                        type="button"
-                      >
-                        <span>{host.name}</span>
-                        <small>
-                          {host.username}@{host.address}:{host.port}
-                        </small>
-                      </button>
+                    <button
+                      key={host.id}
+                      className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedHostId(host.id)}
+                      onDoubleClick={() => void createSession()}
+                      type="button"
+                    >
+                      <span>{host.name}</span>
+                      <small>
+                        {host.username}@{host.address}:{host.port}
+                      </small>
+                    </button>
                   ))}
                 </section>
               ))}
-
-              <div className="credential-box">
-                <strong>凭据</strong>
-                <button type="button" onClick={() => setHostForm((current) => ({ ...current, authType: 'password' }))}>密码库</button>
-                <button type="button" onClick={() => setHostForm((current) => ({ ...current, authType: 'privateKey' }))}>SSH Key</button>
-              </div>
             </div>
           ) : (
             <div className="left-content">
@@ -547,7 +486,7 @@ export function App() {
                 </button>
               ))
             )}
-            <button className="session-new" type="button" onClick={() => void createSession('saved')}>
+            <button className="session-new" type="button" onClick={() => void createSession()}>
               +
             </button>
           </div>
@@ -559,7 +498,7 @@ export function App() {
                 <span>
                   {currentHost
                     ? `${currentHost.username}@${currentHost.address}:${currentHost.port}`
-                    : '可以使用 Local Demo 或右侧临时连接'}
+                    : '可以使用 Local Demo 或左侧新增 SSH 连接'}
                 </span>
               </div>
               <span className={`session-pill session-${activeSession?.status ?? 'idle'}`}>
@@ -588,169 +527,6 @@ export function App() {
                 <dd>{currentHost?.authType ?? '-'}</dd>
               </div>
             </dl>
-          </section>
-
-          <section className="host-editor">
-            <div>
-              <p className="section-label">服务器管理</p>
-              <h3>{editingHostId ? '编辑主机' : '新增主机'}</h3>
-            </div>
-            <label>
-              <span>名称</span>
-              <input
-                value={hostForm.name}
-                onChange={(event) => setHostForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder="服务器名称"
-              />
-            </label>
-            <div className="form-row">
-              <label>
-                <span>分组</span>
-                <input
-                  value={hostForm.group ?? ''}
-                  onChange={(event) => setHostForm((current) => ({ ...current, group: event.target.value }))}
-                  placeholder="默认"
-                />
-              </label>
-              <label>
-                <span>认证</span>
-                <select
-                  value={hostForm.authType}
-                  onChange={(event) =>
-                    setHostForm((current) => ({ ...current, authType: event.target.value as HostAuthType }))
-                  }
-                >
-                  <option value="password">密码</option>
-                  <option value="privateKey">SSH Key</option>
-                  <option value="agent">Agent</option>
-                </select>
-              </label>
-            </div>
-            <label>
-              <span>地址</span>
-              <input
-                value={hostForm.address}
-                onChange={(event) => setHostForm((current) => ({ ...current, address: event.target.value }))}
-                placeholder="192.168.1.10"
-              />
-            </label>
-            <div className="form-row">
-              <label>
-                <span>端口</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="65535"
-                  value={hostForm.port}
-                  onChange={(event) =>
-                    setHostForm((current) => ({ ...current, port: Number(event.target.value) || 22 }))
-                  }
-                />
-              </label>
-              <label>
-                <span>用户</span>
-                <input
-                  value={hostForm.username}
-                  onChange={(event) => setHostForm((current) => ({ ...current, username: event.target.value }))}
-                  placeholder="root"
-                />
-              </label>
-            </div>
-            {hostForm.authType === 'password' ? (
-              <label>
-                <span>
-                  密码
-                  {editingHost?.hasPassword ? <em className="credential-state">已保存</em> : null}
-                </span>
-                <input
-                  type="password"
-                  value={hostForm.password ?? ''}
-                  onChange={(event) => setHostForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="留空则保留系统安全存储中的密码"
-                />
-              </label>
-            ) : null}
-            {hostForm.authType === 'privateKey' ? (
-              <label>
-                <span>
-                  SSH Key
-                  {editingHost?.hasPrivateKey ? <em className="credential-state">已保存</em> : null}
-                </span>
-                <textarea
-                  value={hostForm.privateKey ?? ''}
-                  onChange={(event) => setHostForm((current) => ({ ...current, privateKey: event.target.value }))}
-                  placeholder="粘贴私钥，保存到系统安全存储"
-                />
-              </label>
-            ) : null}
-            <div className="button-row">
-              <button className="primary-button" type="button" onClick={() => void saveHost()}>保存</button>
-              <button type="button" onClick={resetHostForm}>清空</button>
-              <button type="button" onClick={() => void deleteHost()} disabled={!editingHostId || editingHostId === 'local-demo'}>删除</button>
-            </div>
-          </section>
-
-          <section className="connect-panel compact">
-            <div>
-              <p className="section-label">临时连接</p>
-              <h3>真实 SSH</h3>
-            </div>
-            <label>
-              <span>地址</span>
-              <input
-                value={transientHost.address}
-                onChange={(event) =>
-                  setTransientHost((current) => ({ ...current, address: event.target.value }))
-                }
-                placeholder="192.168.1.10"
-              />
-            </label>
-            <div className="form-row">
-              <label>
-                <span>端口</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="65535"
-                  value={transientHost.port}
-                  onChange={(event) =>
-                    setTransientHost((current) => ({
-                      ...current,
-                      port: Number(event.target.value) || 22,
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                <span>用户</span>
-                <input
-                  value={transientHost.username}
-                  onChange={(event) =>
-                    setTransientHost((current) => ({ ...current, username: event.target.value }))
-                  }
-                  placeholder="root"
-                />
-              </label>
-            </div>
-            <label>
-              <span>密码</span>
-              <input
-                type="password"
-                value={transientHost.password ?? ''}
-                onChange={(event) =>
-                  setTransientHost((current) => ({ ...current, password: event.target.value }))
-                }
-                placeholder="仅本次连接使用"
-              />
-            </label>
-            <button
-              className="primary-button full-width"
-              type="button"
-              onClick={() => void createSession('transient')}
-              disabled={sessionState === 'loading'}
-            >
-              连接临时主机
-            </button>
           </section>
 
           <section className="tool-panel">
@@ -810,6 +586,141 @@ export function App() {
           {health ? <p className="core-line">{health.service} · {health.version}</p> : null}
         </aside>
       </div>
+
+      {isHostDialogOpen ? (
+        <div className="modal-backdrop">
+          <form
+            className="host-modal"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveHost()
+            }}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="section-label">SSH 连接</p>
+                <h3>新增服务器</h3>
+              </div>
+              <button type="button" onClick={closeAddHostDialog}>×</button>
+            </div>
+
+            <label>
+              <span>名称</span>
+              <input
+                value={hostForm.name}
+                onChange={(event) => setHostForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="服务器名称"
+              />
+            </label>
+            <div className="form-row">
+              <label>
+                <span>分组</span>
+                <input
+                  value={hostForm.group ?? ''}
+                  onChange={(event) => setHostForm((current) => ({ ...current, group: event.target.value }))}
+                  placeholder="默认"
+                />
+              </label>
+              <label>
+                <span>认证</span>
+                <select
+                  value={hostForm.authType}
+                  onChange={(event) => {
+                    const authType = event.target.value as HostAuthType
+                    setHostForm((current) => ({ ...current, authType, password: '', privateKey: '' }))
+                    setSavePassword(false)
+                    setSavePrivateKey(false)
+                  }}
+                >
+                  <option value="password">密码</option>
+                  <option value="privateKey">SSH Key</option>
+                  <option value="agent">Agent</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              <span>地址</span>
+              <input
+                value={hostForm.address}
+                onChange={(event) => setHostForm((current) => ({ ...current, address: event.target.value }))}
+                placeholder="192.168.1.10"
+              />
+            </label>
+            <div className="form-row">
+              <label>
+                <span>端口</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value={hostForm.port}
+                  onChange={(event) =>
+                    setHostForm((current) => ({ ...current, port: Number(event.target.value) || 22 }))
+                  }
+                />
+              </label>
+              <label>
+                <span>用户</span>
+                <input
+                  value={hostForm.username}
+                  onChange={(event) => setHostForm((current) => ({ ...current, username: event.target.value }))}
+                  placeholder="root"
+                />
+              </label>
+            </div>
+
+            {hostForm.authType === 'password' ? (
+              <div className="secret-area">
+                <label className="checkbox-row">
+                  <input
+                    checked={savePassword}
+                    onChange={(event) => setSavePassword(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>保存密码</span>
+                </label>
+                <label>
+                  <span>密码</span>
+                  <input
+                    disabled={!savePassword}
+                    type="password"
+                    value={hostForm.password ?? ''}
+                    onChange={(event) => setHostForm((current) => ({ ...current, password: event.target.value }))}
+                    placeholder="保存后连接时自动使用"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {hostForm.authType === 'privateKey' ? (
+              <div className="secret-area">
+                <label className="checkbox-row">
+                  <input
+                    checked={savePrivateKey}
+                    onChange={(event) => setSavePrivateKey(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>保存 SSH Key</span>
+                </label>
+                <label>
+                  <span>SSH Key</span>
+                  <textarea
+                    disabled={!savePrivateKey}
+                    value={hostForm.privateKey ?? ''}
+                    onChange={(event) => setHostForm((current) => ({ ...current, privateKey: event.target.value }))}
+                    placeholder="保存后连接时自动使用"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <div className="modal-actions">
+              <button type="button" onClick={closeAddHostDialog}>取消</button>
+              <button className="primary-button" type="submit">保存</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   )
 }
