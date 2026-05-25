@@ -562,9 +562,9 @@ button {
 
 .terminal-header {
   min-height: 58px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 14px;
   padding: 0 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -667,6 +667,26 @@ button {
   color: #fca5a5;
 }
 
+.session-closed {
+  background: rgba(100, 116, 139, 0.2);
+  color: #cbd5e1;
+}
+
+.terminal-reconnect {
+  min-width: 58px;
+  height: 30px;
+  border: 1px solid rgba(79, 140, 255, 0.38);
+  border-radius: 7px;
+  background: rgba(79, 140, 255, 0.12);
+  color: #bfdbfe;
+  cursor: pointer;
+}
+
+.terminal-reconnect:hover {
+  border-color: rgba(79, 140, 255, 0.72);
+  background: rgba(79, 140, 255, 0.2);
+}
+
 .info-panel,
 .tool-panel {
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -712,8 +732,10 @@ button {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.metric-card > div:first-child {
+.metric-card > div:first-child,
+.metric-chart-top {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
@@ -728,17 +750,58 @@ button {
   font-size: 14px;
 }
 
-.metric-card svg {
-  width: 100%;
-  height: 36px;
+.metric-chart {
+  display: grid;
+  gap: 8px;
 }
 
-.metric-card polyline {
+.metric-chart-top button {
+  min-width: 42px;
+  height: 24px;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 6px;
+  background: rgba(103, 232, 249, 0.08);
+  color: #67e8f9;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.metric-chart svg {
+  width: 100%;
+  height: 88px;
+  overflow: visible;
+}
+
+.metric-chart.expanded svg {
+  height: min(52vh, 360px);
+}
+
+.metric-line {
   fill: none;
-  stroke: #67e8f9;
+  stroke: #22d3ee;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.52));
+}
+
+.axis-line {
+  stroke: rgba(203, 213, 225, 0.44);
+  stroke-width: 1;
+}
+
+.grid-line {
+  stroke: rgba(148, 163, 184, 0.14);
+  stroke-width: 1;
+}
+
+.metric-chart text {
+  fill: #8ca0b8;
+  font-size: 10px;
+}
+
+.empty-chart-text {
+  fill: #64748b;
 }
 
 .disk-list {
@@ -778,7 +841,8 @@ button {
 .host-modal,
 .group-modal,
 .log-modal,
-.settings-modal {
+.settings-modal,
+.metric-modal {
   display: grid;
   gap: 10px;
 }
@@ -977,7 +1041,8 @@ code {
 .host-modal,
 .group-modal,
 .log-modal,
-.settings-modal {
+.settings-modal,
+.metric-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
@@ -1024,6 +1089,10 @@ code {
 
 .log-modal {
   width: min(860px, 100%);
+}
+
+.metric-modal {
+  width: min(920px, 100%);
 }
 
 .modal-header,

@@ -255,32 +255,63 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 
-		session, exists := manager.getSession(sessionID)
-		if !exists {
-			http.Error(w, "session not found", http.StatusNotFound)
-			return
-		}
-
 		switch action {
 		case "events":
+			session, exists := manager.getSession(sessionID)
+			if !exists {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
 			if r.Method != http.MethodGet {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
 			streamSessionEvents(w, r, session)
 		case "input":
+			session, exists := manager.getSession(sessionID)
+			if !exists {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
 			if r.Method != http.MethodPost {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
 			writeSessionInput(w, r, session)
 		case "cwd":
+			session, exists := manager.getSession(sessionID)
+			if !exists {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
 			if r.Method != http.MethodGet {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
 			writeJSON(w, map[string]string{"path": session.currentCWD()})
+		case "reconnect":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			newSession, oldSession, ok, err := manager.reconnectSession(sessionID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
+			writeJSON(w, sessionReconnectResponse{
+				PreviousSessionID: oldSession.record.ID,
+				Session:           newSession.snapshot(),
+			})
 		case "close":
+			if _, exists := manager.getSession(sessionID); !exists {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
 			if r.Method != http.MethodPost {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return

@@ -35,6 +35,7 @@ export interface LogSettings {
 export interface AppSettings {
   metricsRefreshIntervalSeconds: number
   metricsHistoryWindowMinutes: number
+  terminalRetainedLines: number
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string

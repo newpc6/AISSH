@@ -616,6 +616,48 @@ func TestSessionCWDEndpoint(t *testing.T) {
 	}
 }
 
+func TestReconnectSessionEndpoint(t *testing.T) {
+	srv := newTestServer(t)
+	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))
+	openReq.Header.Set("Content-Type", "application/json")
+	openRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(openRecorder, openReq)
+
+	if openRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", openRecorder.Code)
+	}
+
+	var openResponse map[string]map[string]any
+	if err := json.Unmarshal(openRecorder.Body.Bytes(), &openResponse); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+
+	sessionID := openResponse["session"]["id"].(string)
+	reconnectReq := httptest.NewRequest(http.MethodPost, "/api/sessions/"+sessionID+"/reconnect", nil)
+	reconnectRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(reconnectRecorder, reconnectReq)
+
+	if reconnectRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", reconnectRecorder.Code)
+	}
+
+	var reconnectResponse sessionReconnectResponse
+	if err := json.Unmarshal(reconnectRecorder.Body.Bytes(), &reconnectResponse); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+	if reconnectResponse.PreviousSessionID != sessionID {
+		t.Fatalf("expected previous session %q, got %q", sessionID, reconnectResponse.PreviousSessionID)
+	}
+	if reconnectResponse.Session.ID == "" || reconnectResponse.Session.ID == sessionID {
+		t.Fatalf("expected new session id, got %q", reconnectResponse.Session.ID)
+	}
+	if reconnectResponse.Session.HostID != "local-demo" {
+		t.Fatalf("expected local-demo host, got %q", reconnectResponse.Session.HostID)
+	}
+}
+
 func TestParsePercent(t *testing.T) {
 	if parsePercent("88") != 88 {
 		t.Fatal("expected percent 88")

@@ -106,6 +106,11 @@ type sessionInputRequest struct {
 	Data string `json:"data"`
 }
 
+type sessionReconnectResponse struct {
+	PreviousSessionID string        `json:"previousSessionId"`
+	Session           sessionRecord `json:"session"`
+}
+
 type terminalEvent struct {
 	Type string `json:"type"`
 	Data string `json:"data,omitempty"`
@@ -803,6 +808,36 @@ func (m *sessionManager) closeSession(sessionID string) bool {
 	return ok
 }
 
+func (m *sessionManager) reconnectSession(sessionID string) (*terminalSession, *terminalSession, bool, error) {
+	m.mu.Lock()
+	oldSession, ok := m.sessions[sessionID]
+	if ok {
+		delete(m.sessions, sessionID)
+	}
+	m.mu.Unlock()
+
+	if !ok {
+		return nil, nil, false, nil
+	}
+
+	newSession, _, err := m.openSession(sessionOpenRequest{HostID: oldSession.record.HostID})
+	if err != nil {
+		m.mu.Lock()
+		m.sessions[sessionID] = oldSession
+		m.mu.Unlock()
+		return nil, oldSession, true, err
+	}
+
+	oldSession.record.Status = "closed"
+	oldSession.close()
+	m.logger.info("sessions", "session reconnect requested", map[string]any{
+		"oldSessionID": sessionID,
+		"newSessionID": newSession.record.ID,
+		"hostID":       oldSession.record.HostID,
+	})
+	return newSession, oldSession, true, nil
+}
+
 func (s *terminalSession) snapshot() sessionRecord {
 	return s.record
 }
@@ -823,6 +858,9 @@ func (s *terminalSession) setCWD(cwd string) {
 }
 
 func (s *terminalSession) send(event terminalEvent) {
+	defer func() {
+		_ = recover()
+	}()
 	select {
 	case s.output <- event:
 	case <-s.done:
@@ -945,6 +983,11 @@ func (s *terminalSession) runSSH(host hostRecord) {
 	go copyOutput(s, stdout)
 	go copyOutput(s, stderr)
 
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- sshSession.Wait()
+	}()
+
 	for {
 		select {
 		case data := <-s.input:
@@ -954,6 +997,16 @@ func (s *terminalSession) runSSH(host hostRecord) {
 				s.send(terminalEvent{Type: "error", Data: err.Error()})
 				return
 			}
+		case err := <-waitDone:
+			if err != nil {
+				s.record.Status = "error"
+				s.record.LastError = err.Error()
+				s.send(terminalEvent{Type: "error", Data: err.Error()})
+				return
+			}
+			s.record.Status = "closed"
+			s.send(terminalEvent{Type: "status", Data: "closed"})
+			return
 		case <-s.done:
 			return
 		}
@@ -978,6 +1031,8 @@ func copyOutput(session *terminalSession, reader io.Reader) {
 		}
 		if err != nil {
 			if err != io.EOF {
+				session.record.Status = "error"
+				session.record.LastError = err.Error()
 				session.send(terminalEvent{Type: "error", Data: err.Error()})
 			}
 			return

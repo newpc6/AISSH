@@ -40,6 +40,19 @@ type MetricSample = ServerMetrics & {
   networkTxRateBytes: number
 }
 
+type SessionReconnectResponse = {
+  previousSessionId: string
+  session: SessionRecord
+}
+
+type TerminalCache = {
+  chunks: string[]
+  lineCount: number
+  commandDraft: string
+}
+
+type MetricChartKey = 'cpuPercent' | 'memoryPercent'
+
 type HostGroupView = HostGroup & {
   hosts: HostRecord[]
 }
@@ -76,6 +89,7 @@ const emptyHostForm: HostUpsertRequest = {
 const defaultSettings: AppSettings = {
   metricsRefreshIntervalSeconds: 2,
   metricsHistoryWindowMinutes: 5,
+  terminalRetainedLines: 1000,
   aiBaseUrl: '',
   aiApiKey: '',
   aiModel: '',
@@ -120,6 +134,10 @@ function formatRate(size: number) {
   return `${formatBytes(Math.max(0, size))}/s`
 }
 
+function formatMetricTime(value: string) {
+  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
 function parentPath(path: string) {
   if (!path || path === '.' || path === '/') return '.'
   const parts = path.split('/').filter(Boolean)
@@ -143,6 +161,89 @@ function stripTerminalControlSequences(data: string) {
     .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
     .replace(/\x1b[()][A-Za-z0-9]/g, '')
     .replace(/\x1b[@-Z\\-_]/g, '')
+}
+
+function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
+  return {
+    ...defaultSettings,
+    ...value,
+    metricsRefreshIntervalSeconds: Math.max(
+      1,
+      Number(value.metricsRefreshIntervalSeconds ?? defaultSettings.metricsRefreshIntervalSeconds) || 2,
+    ),
+    metricsHistoryWindowMinutes: Math.max(
+      1,
+      Number(value.metricsHistoryWindowMinutes ?? defaultSettings.metricsHistoryWindowMinutes) || 5,
+    ),
+    terminalRetainedLines: Math.max(
+      100,
+      Number(value.terminalRetainedLines ?? defaultSettings.terminalRetainedLines) || 1000,
+    ),
+  }
+}
+
+function emptyTerminalCache(): TerminalCache {
+  return {
+    chunks: [],
+    lineCount: 0,
+    commandDraft: '',
+  }
+}
+
+function countTerminalLines(data: string) {
+  return (data.match(/\r\n|\r|\n/g) ?? []).length
+}
+
+function appendTerminalCache(cache: TerminalCache | undefined, data: string, maxLines: number): TerminalCache {
+  if (!data) {
+    return cache ?? emptyTerminalCache()
+  }
+
+  const limit = Math.max(100, Math.floor(maxLines || 1000))
+  const chunks = [...(cache?.chunks ?? []), data]
+  let lineCount = (cache?.lineCount ?? 0) + countTerminalLines(data)
+
+  while (chunks.length > 1 && lineCount > limit) {
+    const removed = chunks.shift() ?? ''
+    lineCount -= countTerminalLines(removed)
+  }
+
+  return {
+    chunks,
+    lineCount: Math.max(0, lineCount),
+    commandDraft: cache?.commandDraft ?? '',
+  }
+}
+
+function updateTerminalDraft(cache: TerminalCache | undefined, draft: string): TerminalCache {
+  return {
+    ...(cache ?? emptyTerminalCache()),
+    commandDraft: draft,
+  }
+}
+
+function buildMetricPath(samples: MetricSample[], key: MetricChartKey, width: number, height: number) {
+  if (samples.length === 0) return ''
+  if (samples.length === 1) {
+    const y = height - (Math.max(0, Math.min(100, samples[0][key])) / 100) * height
+    return `M 0 ${y.toFixed(1)} L ${width} ${y.toFixed(1)}`
+  }
+  return samples
+    .map((sample, index) => {
+      const x = (index / (samples.length - 1)) * width
+      const y = height - (Math.max(0, Math.min(100, sample[key])) / 100) * height
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
+    })
+    .join(' ')
+}
+
+function metricXAxisLabels(samples: MetricSample[]) {
+  if (samples.length === 0) {
+    return ['-', '-']
+  }
+  const first = samples[0]
+  const last = samples[samples.length - 1]
+  return [formatMetricTime(first.collectedAt), formatMetricTime(last.collectedAt)]
 }
 
 function normalizeHostGroups(groups: HostGroup[], hosts: HostRecord[] = []) {
@@ -175,21 +276,6 @@ function sessionStatusLabel(status: SessionRecord['status']) {
   if (status === 'error') return '已断开'
   if (status === 'closed') return '已关闭'
   return '空闲'
-}
-
-function metricPoints(samples: MetricSample[], key: 'cpuPercent' | 'memoryPercent') {
-  if (samples.length === 0) return ''
-  if (samples.length === 1) {
-    const value = 34 - samples[0][key] * 0.32
-    return `0,${value.toFixed(1)} 120,${value.toFixed(1)}`
-  }
-  return samples
-    .map((sample, index) => {
-      const x = (index / (samples.length - 1)) * 120
-      const y = 34 - sample[key] * 0.32
-      return `${x.toFixed(1)},${Math.max(2, Math.min(34, y)).toFixed(1)}`
-    })
-    .join(' ')
 }
 
 export function App() {
@@ -226,6 +312,8 @@ export function App() {
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [aiPrediction, setAiPrediction] = useState('')
+  const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
+  const [expandedMetric, setExpandedMetric] = useState<MetricChartKey | ''>('')
   const [settingsSavedMessage, setSettingsSavedMessage] = useState('')
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
@@ -242,8 +330,11 @@ export function App() {
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const eventSourceRef = useRef<EventSource | null>(null)
+  const eventSourcesRef = useRef<Record<string, EventSource>>({})
   const commandBufferRef = useRef('')
+  const activeSessionIdRef = useRef('')
+  const sessionSettingsRef = useRef(defaultSettings)
+  const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
@@ -258,6 +349,69 @@ export function App() {
       fields,
     }
     setLogs((current) => [...current.slice(-199), entry])
+  }
+
+  const setActiveSession = (sessionId: string) => {
+    activeSessionIdRef.current = sessionId
+    setActiveSessionId(sessionId)
+  }
+
+  const replaceTerminalWithCache = (sessionId: string) => {
+    const terminal = xtermRef.current
+    if (!terminal) {
+      return
+    }
+
+    terminal.clear()
+    const cache = terminalCachesRef.current[sessionId]
+    if (cache?.chunks.length) {
+      terminal.write(cache.chunks.join(''))
+    }
+    commandBufferRef.current = cache?.commandDraft ?? ''
+  }
+
+  const appendSessionTerminalOutput = (sessionId: string, data: string) => {
+    const maxLines = sessionSettingsRef.current.terminalRetainedLines
+    setTerminalCaches((current) => {
+      const next = {
+        ...current,
+        [sessionId]: appendTerminalCache(current[sessionId], data, maxLines),
+      }
+      terminalCachesRef.current = next
+      return next
+    })
+
+    if (activeSessionIdRef.current === sessionId) {
+      xtermRef.current?.write(data)
+    }
+  }
+
+  const setSessionCommandDraft = (sessionId: string, draft: string) => {
+    setTerminalCaches((current) => {
+      const next = {
+        ...current,
+        [sessionId]: updateTerminalDraft(current[sessionId], draft),
+      }
+      terminalCachesRef.current = next
+      return next
+    })
+  }
+
+  const removeTerminalCache = (sessionId: string) => {
+    setTerminalCaches((current) => {
+      const next = { ...current }
+      delete next[sessionId]
+      terminalCachesRef.current = next
+      return next
+    })
+  }
+
+  const closeSessionStream = (sessionId: string) => {
+    const source = eventSourcesRef.current[sessionId]
+    if (source) {
+      source.close()
+      delete eventSourcesRef.current[sessionId]
+    }
   }
 
   const apiFetch = async (path: string, init?: RequestInit) => {
@@ -286,6 +440,19 @@ export function App() {
   }
 
   useEffect(() => {
+    const rawSettings = window.localStorage.getItem('ai-ssh-settings')
+    if (rawSettings) {
+      try {
+        const normalized = normalizeAppSettings(JSON.parse(rawSettings) as Partial<AppSettings>)
+        setSettings(normalized)
+        sessionSettingsRef.current = normalized
+      } catch (error) {
+        appendLog('warn', 'ui.settings', 'settings load failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: 'Consolas, "Cascadia Code", monospace',
@@ -328,7 +495,8 @@ export function App() {
 
     return () => {
       window.removeEventListener('resize', onResize)
-      eventSourceRef.current?.close()
+      Object.values(eventSourcesRef.current).forEach((source) => source.close())
+      eventSourcesRef.current = {}
       terminal.dispose()
       xtermRef.current = null
       fitAddonRef.current = null
@@ -382,6 +550,19 @@ export function App() {
     setFilePathDraft(filePath)
   }, [filePath])
 
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
+
+  useEffect(() => {
+    const normalized = normalizeAppSettings(settings)
+    sessionSettingsRef.current = normalized
+  }, [settings])
+
+  useEffect(() => {
+    terminalCachesRef.current = terminalCaches
+  }, [terminalCaches])
+
   const currentHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
@@ -392,8 +573,6 @@ export function App() {
     [hosts, activeSession, currentHost],
   )
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
-  const cpuSparklinePoints = useMemo(() => metricPoints(metricHistory, 'cpuPercent'), [metricHistory])
-  const memorySparklinePoints = useMemo(() => metricPoints(metricHistory, 'memoryPercent'), [metricHistory])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
   const groupedHosts = useMemo<HostGroupView[]>(() => {
@@ -621,7 +800,9 @@ export function App() {
     }
     try {
       const parsed = JSON.parse(text) as { settings?: Partial<AppSettings>; leftRailWidth?: number }
-      setSettings((current) => ({ ...current, ...parsed.settings }))
+      if (parsed.settings) {
+        setSettings((current) => normalizeAppSettings({ ...current, ...parsed.settings }))
+      }
       if (typeof parsed.leftRailWidth === 'number') {
         setLeftRailWidth(Math.min(620, Math.max(320, parsed.leftRailWidth)))
       }
@@ -653,8 +834,9 @@ export function App() {
       setSelectedHostId(nextHosts[0]?.id ?? '')
     }
     setSessions((current) => current.filter((session) => session.hostId !== host.id))
+    sessions.filter((session) => session.hostId === host.id).forEach((session) => closeSessionStream(session.id))
     if (activeSession?.hostId === host.id) {
-      setActiveSessionId('')
+      setActiveSession('')
     }
   }
 
@@ -749,17 +931,27 @@ export function App() {
   }
 
   const saveSettings = () => {
-    setSettings((current) => ({
-      ...current,
-      metricsRefreshIntervalSeconds: Math.max(1, Number(current.metricsRefreshIntervalSeconds) || 2),
-      metricsHistoryWindowMinutes: Math.max(1, Number(current.metricsHistoryWindowMinutes) || 5),
-    }))
+    const normalized = normalizeAppSettings(settings)
+    setSettings(normalized)
+    sessionSettingsRef.current = normalized
+    window.localStorage.setItem('ai-ssh-settings', JSON.stringify(normalized))
+    setTerminalCaches((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).map(([sessionId, cache]) => {
+          const trimmed = appendTerminalCache(emptyTerminalCache(), cache.chunks.join(''), normalized.terminalRetainedLines)
+          return [sessionId, { ...trimmed, commandDraft: cache.commandDraft }]
+        }),
+      )
+      terminalCachesRef.current = next
+      return next
+    })
     setSettingsSavedMessage('偏好设置已保存')
     setErrorMessage('')
     appendLog('info', 'ui.settings', 'settings saved', {
-      metricsRefreshIntervalSeconds: settings.metricsRefreshIntervalSeconds,
-      metricsHistoryWindowMinutes: settings.metricsHistoryWindowMinutes,
-      aiPredictionEnabled: settings.aiPredictionEnabled,
+      metricsRefreshIntervalSeconds: normalized.metricsRefreshIntervalSeconds,
+      metricsHistoryWindowMinutes: normalized.metricsHistoryWindowMinutes,
+      terminalRetainedLines: normalized.terminalRetainedLines,
+      aiPredictionEnabled: normalized.aiPredictionEnabled,
     })
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
   }
@@ -969,11 +1161,11 @@ export function App() {
     }
   }
 
-  const observeTypedInput = (data: string) => {
+  const observeTypedInput = (sessionId: string, data: string) => {
     if (/^\x1b\[[0-9;?]*[ -/]*[@-~]$/.test(data) || /^\x1b\][\s\S]*(?:\x07|\x1b\\|\\)$/.test(data)) {
       return
     }
-    const visibleInput = stripTerminalControlSequences(data)
+    const visibleInput = data
     let next = commandBufferRef.current
 
     for (const char of visibleInput) {
@@ -987,15 +1179,18 @@ export function App() {
       } else if (char === '\u0015') {
         next = ''
       } else if (char === '\t') {
-        next += ' '
+        continue
+      } else if (char === '\u001b') {
+        continue
       } else if (char < ' ') {
         continue
-      } else if (char >= ' ' && char !== '\u001b') {
+      } else {
         next += char
       }
     }
 
     commandBufferRef.current = next
+    setSessionCommandDraft(sessionId, next)
   }
 
   useEffect(() => {
@@ -1011,7 +1206,7 @@ export function App() {
       if (data !== '\t') {
         setAiPrediction('')
       }
-      observeTypedInput(data)
+      observeTypedInput(activeSession.id, data)
       void apiFetch(`/sessions/${activeSession.id}/input`, {
         method: 'POST',
         headers: {
@@ -1043,33 +1238,40 @@ export function App() {
     return () => window.clearInterval(interval)
   }, [activeSession?.hostId, settings.metricsRefreshIntervalSeconds, settings.metricsHistoryWindowMinutes])
 
-  const openSessionStream = (session: SessionRecord) => {
-    eventSourceRef.current?.close()
+  const openSessionStream = (session: SessionRecord, markConnecting = false) => {
+    if (eventSourcesRef.current[session.id]) {
+      return
+    }
+    if (markConnecting) {
+      setSessions((current) =>
+        current.map((item) => (item.id === session.id ? { ...item, status: 'connecting' } : item)),
+      )
+    }
 
     const streamUrl = resolveApiStreamUrl(`/sessions/${session.id}/events`)
     appendLog('debug', 'ui.sse', 'session stream connecting', { sessionID: session.id, url: streamUrl })
     const source = new EventSource(streamUrl)
-    eventSourceRef.current = source
+    eventSourcesRef.current[session.id] = source
 
     source.onopen = () => {
       appendLog('debug', 'ui.sse', 'session stream opened', { sessionID: session.id })
     }
 
     source.onerror = () => {
-      if (eventSourceRef.current !== source) {
+      if (eventSourcesRef.current[session.id] !== source) {
         return
       }
       const messageText = '会话输出流连接失败，请查看运行日志或 Go core 控制台'
       appendLog('error', 'ui.sse', messageText, { sessionID: session.id, url: streamUrl })
       source.close()
+      delete eventSourcesRef.current[session.id]
       setErrorMessage(messageText)
       setSessions((current) =>
         current.map((item) =>
           item.id === session.id ? { ...item, status: 'error', lastError: messageText } : item,
         ),
       )
-      xtermRef.current?.writeln('')
-      xtermRef.current?.writeln(`ERROR: ${messageText}`)
+      appendSessionTerminalOutput(session.id, `\r\nERROR: ${messageText}\r\n`)
     }
 
     source.addEventListener('terminal', (event) => {
@@ -1077,14 +1279,22 @@ export function App() {
       const payload = JSON.parse(message.data) as TerminalEvent
 
       if (payload.type === 'output') {
-        xtermRef.current?.write(payload.data ?? '')
+        appendSessionTerminalOutput(session.id, payload.data ?? '')
       }
 
       if (payload.type === 'status') {
         setSessions((current) =>
           current.map((item) =>
             item.id === session.id
-              ? { ...item, status: payload.data === 'connected' ? 'connected' : item.status }
+              ? {
+                  ...item,
+                  status:
+                    payload.data === 'connected'
+                      ? 'connected'
+                      : payload.data === 'closed'
+                        ? 'closed'
+                        : item.status,
+                }
               : item,
           ),
         )
@@ -1105,13 +1315,15 @@ export function App() {
             item.id === session.id ? { ...item, status: 'error', lastError: messageText } : item,
           ),
         )
-        xtermRef.current?.writeln('')
-        xtermRef.current?.writeln(`ERROR: ${messageText}`)
+        appendSessionTerminalOutput(session.id, `\r\nERROR: ${messageText}\r\n`)
       }
     })
 
     source.addEventListener('close', () => {
       source.close()
+      if (eventSourcesRef.current[session.id] === source) {
+        delete eventSourcesRef.current[session.id]
+      }
       appendLog('debug', 'ui.sse', 'session stream closed', { sessionID: session.id })
     })
   }
@@ -1121,12 +1333,12 @@ export function App() {
       return
     }
 
-    commandBufferRef.current = ''
     setAiPrediction('')
-    setActiveSessionId(session.id)
-    xtermRef.current?.clear()
-    xtermRef.current?.writeln(`已切换到 ${session.hostName}`)
-    openSessionStream(session)
+    setActiveSession(session.id)
+    replaceTerminalWithCache(session.id)
+    if (session.status === 'connected' || session.status === 'connecting') {
+      openSessionStream(session)
+    }
     fitAddonRef.current?.fit()
   }
 
@@ -1139,7 +1351,6 @@ export function App() {
     setAiPrediction('')
     setSelectedHostId(hostId)
     xtermRef.current?.clear()
-    xtermRef.current?.writeln(`正在为主机 ${hostId} 创建会话...`)
 
     const payload: SessionOpenRequest = { hostId }
 
@@ -1157,14 +1368,20 @@ export function App() {
       }
 
       const data = (await response.json()) as SessionOpenResponse
+      const initialOutput = `正在为主机 ${hostId} 创建会话...\r\n\r\nSession: ${data.session.id}\r\nHost: ${data.session.hostName}\r\n正在连接会话输出流...\r\n`
+      setTerminalCaches((current) => {
+        const next = {
+          ...current,
+          [data.session.id]: appendTerminalCache(emptyTerminalCache(), initialOutput, sessionSettingsRef.current.terminalRetainedLines),
+        }
+        terminalCachesRef.current = next
+        return next
+      })
       setSessions((current) => [data.session, ...current])
-      setActiveSessionId(data.session.id)
-
-      xtermRef.current?.writeln('')
-      xtermRef.current?.writeln(`Session: ${data.session.id}`)
-      xtermRef.current?.writeln(`Host: ${data.session.hostName}`)
-      xtermRef.current?.writeln('正在连接会话输出流...')
-      openSessionStream(data.session)
+      setActiveSession(data.session.id)
+      xtermRef.current?.clear()
+      xtermRef.current?.write(initialOutput)
+      openSessionStream(data.session, true)
       fitAddonRef.current?.fit()
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建会话失败'
@@ -1180,19 +1397,19 @@ export function App() {
       return
     }
 
-    if (activeSessionId === session.id) {
-      eventSourceRef.current?.close()
-    }
+    closeSessionStream(session.id)
     await apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
     const remainingSessions = sessions.filter((item) => item.id !== session.id)
     setSessions(remainingSessions)
+    removeTerminalCache(session.id)
     if (activeSessionId === session.id) {
       const next = remainingSessions[0]
-      setActiveSessionId(next?.id ?? '')
+      setActiveSession(next?.id ?? '')
       if (next) {
-        xtermRef.current?.clear()
-        xtermRef.current?.writeln(`已切换到 ${next.hostName}`)
+        replaceTerminalWithCache(next.id)
+        if (next.status === 'connected' || next.status === 'connecting') {
         openSessionStream(next)
+        }
       } else {
         commandBufferRef.current = ''
         setAiPrediction('')
@@ -1205,11 +1422,45 @@ export function App() {
     }
   }
 
+  const reconnectSession = async (session: SessionRecord) => {
+    const response = await apiFetch(`/sessions/${session.id}/reconnect`, {
+      method: 'POST',
+    })
+    if (!response.ok) {
+      const detail = await response.text()
+      const message = detail.trim() || `重连失败：${response.status}`
+      setErrorMessage(message)
+      appendSessionTerminalOutput(session.id, `\r\nERROR: ${message}\r\n`)
+      setSessions((current) =>
+        current.map((item) => (item.id === session.id ? { ...item, status: 'error', lastError: message } : item)),
+      )
+      return
+    }
+
+    const data = (await response.json()) as SessionReconnectResponse
+    closeSessionStream(session.id)
+    const reconnectOutput = `\r\n正在重新连接 ${session.hostName}...\r\nSession: ${data.session.id}\r\n`
+    const previousCache = terminalCachesRef.current[session.id] ?? emptyTerminalCache()
+    const nextCache = appendTerminalCache(previousCache, reconnectOutput, sessionSettingsRef.current.terminalRetainedLines)
+    setTerminalCaches((current) => {
+      const next = { ...current }
+      delete next[session.id]
+      next[data.session.id] = nextCache
+      terminalCachesRef.current = next
+      return next
+    })
+    setSessions((current) => current.map((item) => (item.id === session.id ? data.session : item)))
+    setActiveSession(data.session.id)
+    commandBufferRef.current = nextCache.commandDraft
+    replaceTerminalWithCache(data.session.id)
+    openSessionStream(data.session, true)
+    fitAddonRef.current?.fit()
+  }
+
   const writeCommand = (command: string) => {
     xtermRef.current?.focus()
-    xtermRef.current?.write(command)
-    observeTypedInput(command)
     if (activeSession) {
+      observeTypedInput(activeSession.id, command)
       void apiFetch(`/sessions/${activeSession.id}/input`, {
         method: 'POST',
         headers: {
@@ -1245,6 +1496,61 @@ export function App() {
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
   }
+
+  const renderMetricChart = (key: MetricChartKey, label: string, compact = true) => {
+    const width = compact ? 220 : 760
+    const height = compact ? 74 : 260
+    const chartWidth = width - 48
+    const chartHeight = height - 28
+    const path = buildMetricPath(metricHistory, key, chartWidth, chartHeight)
+    const [startLabel, endLabel] = metricXAxisLabels(metricHistory)
+    const latestValue = metricHistory[metricHistory.length - 1]?.[key] ?? serverMetrics?.[key] ?? 0
+
+    return (
+      <div className={`metric-chart ${compact ? 'compact' : 'expanded'}`}>
+        <div className="metric-chart-top">
+          <span>{label}</span>
+          <strong>{serverMetrics ? `${latestValue}%` : '-'}</strong>
+          {compact ? (
+            <button type="button" onClick={() => setExpandedMetric(key)}>
+              放大
+            </button>
+          ) : null}
+        </div>
+        <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+          <g transform="translate(36 8)">
+            <line className="axis-line" x1="0" x2="0" y1="0" y2={chartHeight} />
+            <line className="axis-line" x1="0" x2={chartWidth} y1={chartHeight} y2={chartHeight} />
+            {[0, 50, 100].map((value) => {
+              const y = chartHeight - (value / 100) * chartHeight
+              return (
+                <g key={value}>
+                  <line className="grid-line" x1="0" x2={chartWidth} y1={y} y2={y} />
+                  <text x="-8" y={y + 3} textAnchor="end">
+                    {value}%
+                  </text>
+                </g>
+              )
+            })}
+            {path ? <path className="metric-line" d={path} /> : null}
+            {metricHistory.length === 0 ? (
+              <text className="empty-chart-text" x={chartWidth / 2} y={chartHeight / 2} textAnchor="middle">
+                等待采样
+              </text>
+            ) : null}
+          </g>
+          <text x="36" y={height - 4}>
+            {startLabel}
+          </text>
+          <text x={width - 2} y={height - 4} textAnchor="end">
+            {endLabel}
+          </text>
+        </svg>
+      </div>
+    )
+  }
+
+  const expandedMetricLabel = expandedMetric === 'cpuPercent' ? 'CPU 使用率' : '内存使用率'
 
   return (
     <div className="workbench-shell">
@@ -1287,6 +1593,13 @@ export function App() {
                   {key === 'session' ? (
                     <>
                       <button type="button" onClick={() => void createSession()}>新建会话</button>
+                      <button
+                        disabled={!activeSession || (activeSession.status !== 'error' && activeSession.status !== 'closed')}
+                        type="button"
+                        onClick={() => activeSession && void reconnectSession(activeSession)}
+                      >
+                        重连当前
+                      </button>
                       <button type="button" onClick={openGroupDialog}>管理分组</button>
                       <button disabled={!activeSession} type="button" onClick={() => activeSession && void closeSession(activeSession)}>
                         关闭当前
@@ -1576,6 +1889,11 @@ export function App() {
                 <span className={`session-pill session-${activeSession.status}`}>
                   {sessionStatusLabel(activeSession.status)}
                 </span>
+                {activeSession.status === 'error' || activeSession.status === 'closed' ? (
+                  <button className="terminal-reconnect" type="button" onClick={() => void reconnectSession(activeSession)}>
+                    重连
+                  </button>
+                ) : null}
               </div>
             ) : null}
             <div ref={terminalRef} className="terminal-surface" />
@@ -1625,24 +1943,8 @@ export function App() {
               </div>
             </dl>
             <div className="metric-stack">
-              <div className="metric-card">
-                <div>
-                  <span>CPU</span>
-                  <strong>{serverMetrics ? `${serverMetrics.cpuPercent}%` : '-'}</strong>
-                </div>
-                <svg viewBox="0 0 120 36" preserveAspectRatio="none">
-                  <polyline points={cpuSparklinePoints} />
-                </svg>
-              </div>
-              <div className="metric-card">
-                <div>
-                  <span>内存</span>
-                  <strong>{serverMetrics ? `${serverMetrics.memoryPercent}%` : '-'}</strong>
-                </div>
-                <svg viewBox="0 0 120 36" preserveAspectRatio="none">
-                  <polyline points={memorySparklinePoints} />
-                </svg>
-              </div>
+              <div className="metric-card">{renderMetricChart('cpuPercent', 'CPU')}</div>
+              <div className="metric-card">{renderMetricChart('memoryPercent', '内存')}</div>
               <div className="metric-card">
                 <div>
                   <span>硬盘</span>
@@ -2064,6 +2366,20 @@ export function App() {
                 }
               />
             </label>
+            <label>
+              <span>每个 SSH 标签保留终端行数</span>
+              <input
+                min="100"
+                type="number"
+                value={settings.terminalRetainedLines}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    terminalRetainedLines: Number(event.target.value) || 1000,
+                  }))
+                }
+              />
+            </label>
             <label className="checkbox-row">
               <input
                 checked={settings.aiPredictionEnabled}
@@ -2104,6 +2420,21 @@ export function App() {
               <button type="button" onClick={() => setIsSettingsDialogOpen(false)}>关闭</button>
               <button className="primary-button" type="button" onClick={saveSettings}>保存</button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {expandedMetric ? (
+        <div className="modal-backdrop">
+          <section className="metric-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">当前服务器</p>
+                <h3>{expandedMetricLabel}</h3>
+              </div>
+              <button type="button" onClick={() => setExpandedMetric('')}>×</button>
+            </div>
+            {renderMetricChart(expandedMetric, expandedMetricLabel, false)}
           </section>
         </div>
       ) : null}
