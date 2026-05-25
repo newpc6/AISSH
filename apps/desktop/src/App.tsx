@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import {
+  type AIPredictionRequest,
+  type AIPredictionResponse,
   CORE_API_BASE,
   CORE_DEFAULT_PORT,
   type HealthResponse,
@@ -35,6 +37,7 @@ type LeftMode = 'servers' | 'files'
 type RightTool = 'ai' | 'history'
 type HostDialogMode = 'create' | 'edit'
 type TopMenu = 'file' | 'edit' | 'session' | 'transfer' | 'tools' | 'settings' | ''
+type SettingsSection = 'general' | 'metrics' | 'ai'
 
 type MetricSample = ServerMetrics & {
   networkRxRateBytes: number
@@ -97,13 +100,14 @@ const emptyHostForm: HostUpsertRequest = {
 const defaultSettings: AppSettings = {
   metricsRefreshIntervalSeconds: 2,
   metricsHistoryWindowMinutes: 5,
-  metricsCompactPointLimit: 6,
-  metricsExpandedPointLimit: 24,
+  metricsCompactPointLimit: 5,
+  metricsExpandedPointLimit: 20,
   terminalRetainedLines: 1000,
   aiBaseUrl: '',
   aiApiKey: '',
   aiModel: '',
   aiPredictionEnabled: true,
+  aiPredictionCount: 3,
 }
 
 function statusToLabel(state: LoadState) {
@@ -191,6 +195,10 @@ function stripTerminalControlSequences(data: string) {
     .replace(/\x1b[@-Z\\-_]/g, '')
 }
 
+function terminalContextTail(cache: TerminalCache | undefined) {
+  return stripTerminalControlSequences(cache?.chunks.join('') ?? '').slice(-5000)
+}
+
 function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
   return {
     ...defaultSettings,
@@ -205,15 +213,19 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
     ),
     metricsCompactPointLimit: Math.max(
       2,
-      Math.min(30, Number(value.metricsCompactPointLimit ?? defaultSettings.metricsCompactPointLimit) || 6),
+      Math.min(30, Number(value.metricsCompactPointLimit ?? defaultSettings.metricsCompactPointLimit) || 5),
     ),
     metricsExpandedPointLimit: Math.max(
       2,
-      Math.min(120, Number(value.metricsExpandedPointLimit ?? defaultSettings.metricsExpandedPointLimit) || 24),
+      Math.min(120, Number(value.metricsExpandedPointLimit ?? defaultSettings.metricsExpandedPointLimit) || 20),
     ),
     terminalRetainedLines: Math.max(
       100,
       Number(value.terminalRetainedLines ?? defaultSettings.terminalRetainedLines) || 1000,
+    ),
+    aiPredictionCount: Math.max(
+      1,
+      Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3),
     ),
   }
 }
@@ -349,9 +361,11 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string>('')
   const [leftMode, setLeftMode] = useState<LeftMode>('servers')
   const [rightTool, setRightTool] = useState<RightTool>('ai')
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [openTopMenu, setOpenTopMenu] = useState<TopMenu>('')
   const [aiEnabled, setAiEnabled] = useState(true)
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
+  const [isServerInfoCollapsed, setIsServerInfoCollapsed] = useState(false)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
   const [isHostDialogOpen, setIsHostDialogOpen] = useState(false)
   const [hostDialogMode, setHostDialogMode] = useState<HostDialogMode>('create')
@@ -366,7 +380,9 @@ export function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
-  const [aiPrediction, setAiPrediction] = useState('')
+  const [aiPredictions, setAiPredictions] = useState<string[]>([])
+  const [aiPredictionState, setAiPredictionState] = useState<LoadState>('idle')
+  const [aiPredictionError, setAiPredictionError] = useState('')
   const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
   const [expandedMetric, setExpandedMetric] = useState<MetricChartKey | ''>('')
   const [metricHover, setMetricHover] = useState<MetricHover>(null)
@@ -390,9 +406,16 @@ export function App() {
   const commandBufferRef = useRef('')
   const activeSessionIdRef = useRef('')
   const sessionSettingsRef = useRef(defaultSettings)
+  const hostsRef = useRef<HostRecord[]>([])
+  const sessionsRef = useRef<SessionRecord[]>([])
+  const aiEnabledRef = useRef(true)
+  const commandHistoryRef = useRef<string[]>([])
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
   const inputQueuesRef = useRef<Record<string, Promise<void>>>({})
   const pendingResizeRef = useRef<Record<string, number>>({})
+  const pendingAIPredictionTimerRef = useRef<number | undefined>(undefined)
+  const pendingAIPredictionCommandRef = useRef('')
+  const aiPredictionRequestRef = useRef(0)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
@@ -413,6 +436,18 @@ export function App() {
   const setActiveSession = (sessionId: string) => {
     activeSessionIdRef.current = sessionId
     setActiveSessionId(sessionId)
+  }
+
+  const clearAIPrediction = (options: { cancelPending?: boolean } = {}) => {
+    if (options.cancelPending !== false) {
+      window.clearTimeout(pendingAIPredictionTimerRef.current)
+      pendingAIPredictionTimerRef.current = undefined
+      pendingAIPredictionCommandRef.current = ''
+      aiPredictionRequestRef.current += 1
+    }
+    setAiPredictions([])
+    setAiPredictionState('idle')
+    setAiPredictionError('')
   }
 
   const queueSessionInput = (sessionId: string, data: string) => {
@@ -486,6 +521,14 @@ export function App() {
 
     if (activeSessionIdRef.current === sessionId) {
       xtermRef.current?.write(data)
+      if (
+        pendingAIPredictionCommandRef.current &&
+        sessionSettingsRef.current.aiPredictionEnabled &&
+        aiEnabledRef.current &&
+        !alternateScreenSessionsRef.current.has(sessionId)
+      ) {
+        scheduleAIPrediction(commandHistoryRef.current, 700)
+      }
     }
   }
 
@@ -666,9 +709,25 @@ export function App() {
   }, [activeSessionId])
 
   useEffect(() => {
+    hostsRef.current = hosts
+  }, [hosts])
+
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
+
+  useEffect(() => {
+    aiEnabledRef.current = aiEnabled
+  }, [aiEnabled])
+
+  useEffect(() => {
     const normalized = normalizeAppSettings(settings)
     sessionSettingsRef.current = normalized
   }, [settings])
+
+  useEffect(() => {
+    commandHistoryRef.current = commandHistory
+  }, [commandHistory])
 
   useEffect(() => {
     terminalCachesRef.current = terminalCaches
@@ -686,6 +745,7 @@ export function App() {
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
+  const primaryPrediction = aiPredictions[0] ?? ''
   const groupedHosts = useMemo<HostGroupView[]>(() => {
     const groups = normalizeHostGroups(hostGroups, hosts)
     return groups.map((group) => ({
@@ -1045,6 +1105,9 @@ export function App() {
     const normalized = normalizeAppSettings(settings)
     setSettings(normalized)
     sessionSettingsRef.current = normalized
+    if (!normalized.aiPredictionEnabled) {
+      clearAIPrediction()
+    }
     window.localStorage.setItem('ai-ssh-settings', JSON.stringify(normalized))
     setTerminalCaches((current) => {
       const next = Object.fromEntries(
@@ -1065,6 +1128,7 @@ export function App() {
       metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
       terminalRetainedLines: normalized.terminalRetainedLines,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
+      aiPredictionCount: normalized.aiPredictionCount,
     })
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
   }
@@ -1268,10 +1332,95 @@ export function App() {
       return
     }
 
-    setCommandHistory((history) => [normalized, ...history.filter((item) => item !== normalized)].slice(0, 200))
-    if (settings.aiPredictionEnabled && aiEnabled) {
-      setAiPrediction(normalized.startsWith('cd ') ? 'ls -lah' : 'pwd')
+    const nextHistory = [normalized, ...commandHistoryRef.current.filter((item) => item !== normalized)].slice(0, 200)
+    commandHistoryRef.current = nextHistory
+    setCommandHistory(nextHistory)
+    if (sessionSettingsRef.current.aiPredictionEnabled && aiEnabledRef.current) {
+      pendingAIPredictionCommandRef.current = normalized
+      setAiPredictionState('loading')
+      setAiPredictionError('')
+      scheduleAIPrediction(nextHistory)
     }
+  }
+
+  const scheduleAIPrediction = (history = commandHistoryRef.current, delayMs = 900) => {
+    window.clearTimeout(pendingAIPredictionTimerRef.current)
+    pendingAIPredictionTimerRef.current = window.setTimeout(() => {
+      pendingAIPredictionTimerRef.current = undefined
+      void requestAIPredictions(history)
+    }, delayMs)
+  }
+
+  useEffect(() => () => window.clearTimeout(pendingAIPredictionTimerRef.current), [])
+
+  const requestAIPredictions = async (history = commandHistoryRef.current) => {
+    const normalized = normalizeAppSettings(sessionSettingsRef.current)
+    const session = sessionsRef.current.find((item) => item.id === activeSessionIdRef.current)
+    const host = hostsRef.current.find((item) => item.id === session?.hostId)
+    if (!aiEnabledRef.current || !normalized.aiPredictionEnabled || !session || !host) {
+      clearAIPrediction()
+      return
+    }
+    if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
+      setAiPredictions([])
+      setAiPredictionState('error')
+      setAiPredictionError('请先在设置中填写大模型地址和模型')
+      return
+    }
+
+    const requestID = aiPredictionRequestRef.current + 1
+    aiPredictionRequestRef.current = requestID
+    setAiPredictionState('loading')
+    setAiPredictionError('')
+
+    const payload: AIPredictionRequest = {
+      baseUrl: normalized.aiBaseUrl,
+      apiKey: normalized.aiApiKey,
+      model: normalized.aiModel,
+      predictionCount: normalized.aiPredictionCount,
+      terminalContext: terminalContextTail(terminalCachesRef.current[session.id]),
+      commandHistory: history.slice(0, 20),
+      currentCommand: commandBufferRef.current,
+      hostName: session.hostName,
+      hostAddress: host.address,
+      username: host.username,
+    }
+
+    try {
+      const response = await apiFetch('/ai/predict', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        throw new Error((await response.text()).trim() || `AI 预测失败：${response.status}`)
+      }
+      const data = (await response.json()) as AIPredictionResponse
+      if (aiPredictionRequestRef.current !== requestID) {
+        return
+      }
+      setAiPredictions(data.commands.slice(0, normalized.aiPredictionCount))
+      setAiPredictionState('success')
+      setAiPredictionError('')
+      pendingAIPredictionCommandRef.current = ''
+    } catch (error) {
+      if (aiPredictionRequestRef.current !== requestID) {
+        return
+      }
+      setAiPredictions([])
+      setAiPredictionState('error')
+      setAiPredictionError(error instanceof Error ? error.message : 'AI 预测失败')
+      pendingAIPredictionCommandRef.current = ''
+      appendLog('warn', 'ui.ai', 'prediction failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  const selectPrediction = (command: string) => {
+    setAiPredictions((current) => [command, ...current.filter((item) => item !== command)])
   }
 
   const updateAlternateScreenMode = (sessionId: string, data: string) => {
@@ -1323,12 +1472,12 @@ export function App() {
     }
 
     const disposable = xtermRef.current.onData((data) => {
-      if (data === '\t' && aiPrediction) {
+      if (data === '\t' && primaryPrediction) {
         applyPrediction()
         return
       }
       if (data !== '\t') {
-        setAiPrediction('')
+        clearAIPrediction()
       }
       queueSessionInput(activeSession.id, data)
     })
@@ -1343,7 +1492,7 @@ export function App() {
       disposable.dispose()
       xtermRef.current?.attachCustomKeyEventHandler(() => true)
     }
-  }, [activeSession, aiPrediction, settings.aiPredictionEnabled, aiEnabled])
+  }, [activeSession, primaryPrediction, settings.aiPredictionEnabled, aiEnabled])
 
   useEffect(() => {
     if (leftMode === 'files') {
@@ -1460,7 +1609,7 @@ export function App() {
       return
     }
 
-    setAiPrediction('')
+    clearAIPrediction()
     setActiveSession(session.id)
     replaceTerminalWithCache(session.id)
     if (session.status === 'connected' || session.status === 'connecting') {
@@ -1476,7 +1625,7 @@ export function App() {
     }
 
     commandBufferRef.current = ''
-    setAiPrediction('')
+    clearAIPrediction()
     setSelectedHostId(hostId)
     xtermRef.current?.clear()
 
@@ -1543,7 +1692,7 @@ export function App() {
         syncTerminalSize(next.id)
       } else {
         commandBufferRef.current = ''
-        setAiPrediction('')
+        clearAIPrediction()
         setServerMetrics(null)
         setMetricHistory([])
         previousMetricsRef.current = null
@@ -1600,11 +1749,11 @@ export function App() {
   }
 
   const applyPrediction = () => {
-    if (!aiPrediction) {
+    if (!primaryPrediction) {
       return
     }
-    writeCommand(aiPrediction)
-    setAiPrediction('')
+    writeCommand(primaryPrediction)
+    clearAIPrediction()
   }
 
   const startLeftRailResize = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -2111,7 +2260,15 @@ export function App() {
                 ) : null}
               </div>
             ) : null}
-            <div ref={terminalRef} className="terminal-surface" />
+            <div className="terminal-wrap">
+              <div ref={terminalRef} className="terminal-surface" />
+              {activeSession && primaryPrediction ? (
+                <button className="terminal-ghost-prediction" type="button" title="应用 AI 预测命令" onClick={applyPrediction}>
+                  {primaryPrediction}
+                  <span>Tab</span>
+                </button>
+              ) : null}
+            </div>
             {!activeSession ? (
               <div className="terminal-empty">
                 <div>
@@ -2140,57 +2297,73 @@ export function App() {
         </main>
 
         <aside className="right-rail">
-          <section className="info-panel">
-            <p className="section-label">当前服务器</p>
-            <h3>{activeSession?.hostName ?? activeHost?.name ?? '未连接'}</h3>
-            <dl>
+          <section className={`info-panel ${isServerInfoCollapsed ? 'collapsed' : ''}`}>
+            <div className="info-panel-header">
               <div>
-                <dt>地址</dt>
-                <dd>{activeHost ? `${activeHost.address}:${activeHost.port}` : '-'}</dd>
+                <p className="section-label">当前服务器</p>
+                <h3>{activeSession?.hostName ?? activeHost?.name ?? '未连接'}</h3>
               </div>
-              <div>
-                <dt>用户</dt>
-                <dd>{activeHost?.username ?? '-'}</dd>
-              </div>
-              <div>
-                <dt>认证</dt>
-                <dd>{activeHost?.authType ?? '-'}</dd>
-              </div>
-            </dl>
-            <div className="metric-stack">
-              <div className="metric-card">{renderMetricChart('cpuPercent', 'CPU')}</div>
-              <div className="metric-card">{renderMetricChart('memoryPercent', '内存')}</div>
-              <div className="metric-card">
-                <div>
-                  <span>硬盘</span>
-                  <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
-                </div>
-                <div className="disk-list">
-                  {(serverMetrics?.disks?.length ? serverMetrics.disks : []).slice(0, 4).map((disk) => (
-                    <div key={`${disk.filesystem}-${disk.mount}`}>
-                      <span>{disk.mount}</span>
-                      <progress max="100" value={disk.usedPercent} />
-                      <strong>{disk.usedPercent}%</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="metric-card">
-                <div>
-                  <span>网络</span>
-                  <strong>
-                    {latestMetricSample
-                      ? `↓ ${formatRate(latestMetricSample.networkRxRateBytes)} / ↑ ${formatRate(latestMetricSample.networkTxRateBytes)}`
-                      : '-'}
-                  </strong>
-                </div>
-                <small>
-                  {serverMetrics
-                    ? `累计 ↓ ${formatBytes(serverMetrics.networkRxBytes)} / ↑ ${formatBytes(serverMetrics.networkTxBytes)}`
-                    : '等待采样'}
-                </small>
-              </div>
+              <button
+                className="panel-icon-button"
+                type="button"
+                title={isServerInfoCollapsed ? '展开当前服务器信息' : '折叠当前服务器信息'}
+                onClick={() => setIsServerInfoCollapsed((current) => !current)}
+              >
+                {isServerInfoCollapsed ? '▾' : '▴'}
+              </button>
             </div>
+            {!isServerInfoCollapsed ? (
+              <>
+                <dl>
+                  <div>
+                    <dt>地址</dt>
+                    <dd>{activeHost ? `${activeHost.address}:${activeHost.port}` : '-'}</dd>
+                  </div>
+                  <div>
+                    <dt>用户</dt>
+                    <dd>{activeHost?.username ?? '-'}</dd>
+                  </div>
+                  <div>
+                    <dt>认证</dt>
+                    <dd>{activeHost?.authType ?? '-'}</dd>
+                  </div>
+                </dl>
+                <div className="metric-stack">
+                  <div className="metric-card">{renderMetricChart('cpuPercent', 'CPU')}</div>
+                  <div className="metric-card">{renderMetricChart('memoryPercent', '内存')}</div>
+                  <div className="metric-card">
+                    <div>
+                      <span>硬盘</span>
+                      <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
+                    </div>
+                    <div className="disk-list">
+                      {(serverMetrics?.disks?.length ? serverMetrics.disks : []).slice(0, 4).map((disk) => (
+                        <div key={`${disk.filesystem}-${disk.mount}`}>
+                          <span>{disk.mount}</span>
+                          <progress max="100" value={disk.usedPercent} />
+                          <strong>{disk.usedPercent}%</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="metric-card">
+                    <div>
+                      <span>网络</span>
+                      <strong>
+                        {latestMetricSample
+                          ? `↓ ${formatRate(latestMetricSample.networkRxRateBytes)} / ↑ ${formatRate(latestMetricSample.networkTxRateBytes)}`
+                          : '-'}
+                      </strong>
+                    </div>
+                    <small>
+                      {serverMetrics
+                        ? `累计 ↓ ${formatBytes(serverMetrics.networkRxBytes)} / ↑ ${formatBytes(serverMetrics.networkTxBytes)}`
+                        : '等待采样'}
+                    </small>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </section>
 
           <section className="tool-panel">
@@ -2218,11 +2391,18 @@ export function App() {
                 <label className="toggle-row">
                   <input
                     checked={aiEnabled}
-                    onChange={(event) => setAiEnabled(event.target.checked)}
+                    onChange={(event) => {
+                      setAiEnabled(event.target.checked)
+                      if (!event.target.checked) {
+                        clearAIPrediction()
+                      }
+                    }}
                     type="checkbox"
                   />
                   <span>预测下一步命令</span>
                 </label>
+                {aiPredictionState === 'loading' ? <p className="hint-text">正在调用大模型预测...</p> : null}
+                {aiPredictionError ? <p className="error-text">{aiPredictionError}</p> : null}
                 {aiSuggestions.map((suggestion) => (
                   <button
                     key={suggestion.command}
@@ -2236,14 +2416,26 @@ export function App() {
                     <code>{suggestion.command}</code>
                   </button>
                 ))}
-                {aiPrediction ? (
-                  <button className="prediction-row" type="button" title="应用 AI 预测命令" onClick={applyPrediction}>
-                    <strong>预测</strong>
-                    <code>{aiPrediction}</code>
-                    <small>Tab 应用</small>
+                {aiPredictions.map((command, index) => (
+                  <button
+                    className={`prediction-row ${index === 0 ? 'primary' : ''}`}
+                    key={command}
+                    type="button"
+                    title={index === 0 ? '应用首选 AI 预测命令' : '设为首选预测命令'}
+                    onClick={() => {
+                      if (index === 0) {
+                        applyPrediction()
+                      } else {
+                        selectPrediction(command)
+                      }
+                    }}
+                  >
+                    <strong>{index === 0 ? 'Tab 默认' : `预测 ${index + 1}`}</strong>
+                    <code>{command}</code>
+                    <small>{index === 0 ? 'Tab 应用' : '点击设为默认'}</small>
                   </button>
-                ) : null}
-                <p className="hint-text">后续会读取终端上下文，支持 Tab 应用建议。</p>
+                ))}
+                <p className="hint-text">预测会读取终端上下文和最近命令，通过 Go Core 调用 OpenAI 兼容接口。</p>
               </div>
             ) : (
               <div className="history-list">
@@ -2559,116 +2751,167 @@ export function App() {
               </div>
               <button type="button" title="关闭偏好设置窗口" onClick={() => setIsSettingsDialogOpen(false)}>×</button>
             </div>
-            <label>
-              <span>服务器信息刷新频率（秒）</span>
-              <input
-                min="1"
-                type="number"
-                value={settings.metricsRefreshIntervalSeconds}
-                onChange={(event) =>
-                  setSettings((current) => ({
-                    ...current,
-                    metricsRefreshIntervalSeconds: Number(event.target.value) || 2,
-                  }))
-                }
-              />
-            </label>
-            <label>
-              <span>指标折线时间范围（分钟）</span>
-              <input
-                min="1"
-                type="number"
-                value={settings.metricsHistoryWindowMinutes}
-                onChange={(event) =>
-                  setSettings((current) => ({
-                    ...current,
-                    metricsHistoryWindowMinutes: Number(event.target.value) || 5,
-                  }))
-                }
-              />
-            </label>
-            <div className="form-row settings-pair">
-              <label>
-                <span>小图圆点数量</span>
-                <input
-                  min="2"
-                  max="30"
-                  type="number"
-                  value={settings.metricsCompactPointLimit}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      metricsCompactPointLimit: Number(event.target.value) || 6,
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                <span>放大图圆点数量</span>
-                <input
-                  min="2"
-                  max="120"
-                  type="number"
-                  value={settings.metricsExpandedPointLimit}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      metricsExpandedPointLimit: Number(event.target.value) || 24,
-                    }))
-                  }
-                />
-              </label>
+
+            <div className="settings-layout">
+              <nav className="settings-nav">
+                {[
+                  ['general', '通用'],
+                  ['metrics', '服务器指标'],
+                  ['ai', 'AI 预测'],
+                ].map(([key, label]) => (
+                  <button
+                    className={settingsSection === key ? 'active' : ''}
+                    key={key}
+                    type="button"
+                    title={`切换到${label}设置`}
+                    onClick={() => setSettingsSection(key as SettingsSection)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+
+              <div className="settings-content">
+                {settingsSection === 'general' ? (
+                  <label>
+                    <span>每个 SSH 标签保留终端行数</span>
+                    <input
+                      min="100"
+                      type="number"
+                      value={settings.terminalRetainedLines}
+                      onChange={(event) =>
+                        setSettings((current) => ({
+                          ...current,
+                          terminalRetainedLines: Number(event.target.value) || 1000,
+                        }))
+                      }
+                    />
+                  </label>
+                ) : null}
+
+                {settingsSection === 'metrics' ? (
+                  <>
+                    <label>
+                      <span>服务器信息刷新频率（秒）</span>
+                      <input
+                        min="1"
+                        type="number"
+                        value={settings.metricsRefreshIntervalSeconds}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            metricsRefreshIntervalSeconds: Number(event.target.value) || 2,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>指标折线时间范围（分钟）</span>
+                      <input
+                        min="1"
+                        type="number"
+                        value={settings.metricsHistoryWindowMinutes}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            metricsHistoryWindowMinutes: Number(event.target.value) || 5,
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="form-row settings-pair">
+                      <label>
+                        <span>小图圆点数量</span>
+                        <input
+                          min="2"
+                          max="30"
+                          type="number"
+                          value={settings.metricsCompactPointLimit}
+                          onChange={(event) =>
+                            setSettings((current) => ({
+                              ...current,
+                              metricsCompactPointLimit: Number(event.target.value) || 5,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>放大图圆点数量</span>
+                        <input
+                          min="2"
+                          max="120"
+                          type="number"
+                          value={settings.metricsExpandedPointLimit}
+                          onChange={(event) =>
+                            setSettings((current) => ({
+                              ...current,
+                              metricsExpandedPointLimit: Number(event.target.value) || 20,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </>
+                ) : null}
+
+                {settingsSection === 'ai' ? (
+                  <>
+                    <label className="checkbox-row">
+                      <input
+                        checked={settings.aiPredictionEnabled}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
+                        }
+                      />
+                      <span>开启 AI 命令预测</span>
+                    </label>
+                    <label>
+                      <span>预测命令数量</span>
+                      <input
+                        min="1"
+                        max="8"
+                        type="number"
+                        value={settings.aiPredictionCount}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            aiPredictionCount: Number(event.target.value) || 3,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>大模型地址</span>
+                      <input
+                        value={settings.aiBaseUrl}
+                        onChange={(event) => setSettings((current) => ({ ...current, aiBaseUrl: event.target.value }))}
+                        placeholder="https://api.openai.com/v1"
+                      />
+                    </label>
+                    <label>
+                      <span>API Key</span>
+                      <input
+                        type="password"
+                        value={settings.aiApiKey}
+                        onChange={(event) => setSettings((current) => ({ ...current, aiApiKey: event.target.value }))}
+                        placeholder="sk-..."
+                      />
+                    </label>
+                    <label>
+                      <span>模型</span>
+                      <input
+                        value={settings.aiModel}
+                        onChange={(event) => setSettings((current) => ({ ...current, aiModel: event.target.value }))}
+                        placeholder="gpt-4.1-mini"
+                      />
+                    </label>
+                  </>
+                ) : null}
+              </div>
             </div>
-            <label>
-              <span>每个 SSH 标签保留终端行数</span>
-              <input
-                min="100"
-                type="number"
-                value={settings.terminalRetainedLines}
-                onChange={(event) =>
-                  setSettings((current) => ({
-                    ...current,
-                    terminalRetainedLines: Number(event.target.value) || 1000,
-                  }))
-                }
-              />
-            </label>
-            <label className="checkbox-row">
-              <input
-                checked={settings.aiPredictionEnabled}
-                type="checkbox"
-                onChange={(event) =>
-                  setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
-                }
-              />
-              <span>开启 AI 命令预测</span>
-            </label>
+
             {settingsSavedMessage ? <p className="success-text">{settingsSavedMessage}</p> : null}
-            <label>
-              <span>大模型地址</span>
-              <input
-                value={settings.aiBaseUrl}
-                onChange={(event) => setSettings((current) => ({ ...current, aiBaseUrl: event.target.value }))}
-                placeholder="https://api.openai.com/v1"
-              />
-            </label>
-            <label>
-              <span>API Key</span>
-              <input
-                type="password"
-                value={settings.aiApiKey}
-                onChange={(event) => setSettings((current) => ({ ...current, aiApiKey: event.target.value }))}
-                placeholder="sk-..."
-              />
-            </label>
-            <label>
-              <span>模型</span>
-              <input
-                value={settings.aiModel}
-                onChange={(event) => setSettings((current) => ({ ...current, aiModel: event.target.value }))}
-                placeholder="gpt-4.1-mini"
-              />
-            </label>
             <div className="modal-actions">
               <button type="button" title="关闭偏好设置窗口" onClick={() => setIsSettingsDialogOpen(false)}>关闭</button>
               <button className="primary-button" type="button" title="保存偏好设置" onClick={saveSettings}>保存</button>

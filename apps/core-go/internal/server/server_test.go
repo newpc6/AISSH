@@ -72,6 +72,58 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestAIPredictEndpointUsesOpenAICompatibleProvider(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("expected chat completions path, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Fatalf("expected bearer token, got %q", r.Header.Get("Authorization"))
+		}
+		writeJSON(w, map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]string{
+						"role":    "assistant",
+						"content": `{"commands":["ls -lah","pwd","git status"]}`,
+					},
+				},
+			},
+		})
+	}))
+	defer provider.Close()
+
+	srv := newTestServer(t)
+	body, err := json.Marshal(aiPredictionRequest{
+		BaseURL:         provider.URL + "/v1",
+		APIKey:          "test-key",
+		Model:           "test-model",
+		PredictionCount: 2,
+		TerminalContext: "$ cd /egova_apps",
+		CommandHistory:  []string{"cd /egova_apps"},
+	})
+	if err != nil {
+		t.Fatalf("expected request json, got error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/predict", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%q", recorder.Code, recorder.Body.String())
+	}
+
+	var response aiPredictionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+	if len(response.Commands) != 2 || response.Commands[0] != "ls -lah" || response.Commands[1] != "pwd" {
+		t.Fatalf("expected two predicted commands, got %#v", response.Commands)
+	}
+}
+
 func TestHostsEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)

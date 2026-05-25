@@ -60,6 +60,27 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
+	mux.HandleFunc("/api/ai/predict", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var request aiPredictionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		response, err := predictCommands(r.Context(), request)
+		if err != nil {
+			logger.warn("ai", "prediction failed", map[string]any{"error": err.Error()})
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		logger.info("ai", "prediction completed", map[string]any{"count": len(response.Commands), "model": request.Model})
+		writeJSON(w, response)
+	})
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

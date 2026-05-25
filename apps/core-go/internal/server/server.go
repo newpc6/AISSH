@@ -111,6 +111,23 @@ type sessionResizeRequest struct {
 	Rows int `json:"rows"`
 }
 
+type aiPredictionRequest struct {
+	BaseURL         string   `json:"baseUrl"`
+	APIKey          string   `json:"apiKey,omitempty"`
+	Model           string   `json:"model"`
+	PredictionCount int      `json:"predictionCount"`
+	TerminalContext string   `json:"terminalContext"`
+	CommandHistory  []string `json:"commandHistory"`
+	CurrentCommand  string   `json:"currentCommand,omitempty"`
+	HostName        string   `json:"hostName,omitempty"`
+	HostAddress     string   `json:"hostAddress,omitempty"`
+	Username        string   `json:"username,omitempty"`
+}
+
+type aiPredictionResponse struct {
+	Commands []string `json:"commands"`
+}
+
 type sessionReconnectResponse struct {
 	PreviousSessionID string        `json:"previousSessionId"`
 	Session           sessionRecord `json:"session"`

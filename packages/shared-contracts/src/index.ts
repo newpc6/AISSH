@@ -42,6 +42,7 @@ export interface AppSettings {
   aiApiKey: string
   aiModel: string
   aiPredictionEnabled: boolean
+  aiPredictionCount: number
 }
 
 export interface HostRecord {
@@ -176,6 +177,23 @@ export interface SessionInputRequest {
 export interface SessionResizeRequest {
   cols: number
   rows: number
+}
+
+export interface AIPredictionRequest {
+  baseUrl: string
+  apiKey?: string
+  model: string
+  predictionCount: number
+  terminalContext: string
+  commandHistory: string[]
+  currentCommand?: string
+  hostName?: string
+  hostAddress?: string
+  username?: string
+}
+
+export interface AIPredictionResponse {
+  commands: string[]
 }
 
 export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd'
