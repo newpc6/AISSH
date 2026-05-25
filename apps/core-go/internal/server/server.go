@@ -171,14 +171,16 @@ type diskMetric struct {
 }
 
 type terminalSession struct {
-	record sessionRecord
-	input  chan string
-	resize chan sessionResizeRequest
-	output chan terminalEvent
-	done   chan struct{}
-	once   sync.Once
-	mu     sync.RWMutex
-	cwd    string
+	record            sessionRecord
+	input             chan string
+	resize            chan sessionResizeRequest
+	output            chan terminalEvent
+	done              chan struct{}
+	once              sync.Once
+	mu                sync.RWMutex
+	cwd               string
+	commandMu         sync.Mutex
+	commandLineBuffer string
 }
 
 type sessionManager struct {
@@ -913,6 +915,9 @@ func (s *terminalSession) runDemo() {
 			for _, r := range data {
 				switch r {
 				case '\r', '\n':
+					if strings.TrimSpace(line) != "" {
+						s.send(terminalEvent{Type: "command", Data: line})
+					}
 					s.send(terminalEvent{Type: "output", Data: "\r\n"})
 					if line == "clear" {
 						s.send(terminalEvent{Type: "output", Data: "\x1b[2J\x1b[H$ "})
@@ -1058,6 +1063,7 @@ func copyOutput(session *terminalSession, reader io.Reader) {
 		if n > 0 {
 			data := string(buffer[:n])
 			session.send(terminalEvent{Type: "output", Data: data})
+			session.observeCommandEcho(data)
 			combined := tail + data
 			cwd := extractPromptCWD(combined)
 			if cwd != "" {
@@ -1077,6 +1083,25 @@ func copyOutput(session *terminalSession, reader io.Reader) {
 	}
 }
 
+func (s *terminalSession) observeCommandEcho(data string) {
+	clean := cleanTerminalOutputForParsing(data)
+	s.commandMu.Lock()
+	combined := s.commandLineBuffer + clean
+	lines, remainder := splitCompleteTerminalLines(combined)
+	if len(remainder) > 4096 {
+		remainder = remainder[len(remainder)-4096:]
+	}
+	s.commandLineBuffer = remainder
+	s.commandMu.Unlock()
+
+	for _, line := range lines {
+		command := extractPromptCommandFromLine(line)
+		if isRecordableEchoCommand(command) {
+			s.send(terminalEvent{Type: "command", Data: command})
+		}
+	}
+}
+
 func outputTail(data string) string {
 	const maxTailLength = 512
 	if len(data) <= maxTailLength {
@@ -1086,12 +1111,98 @@ func outputTail(data string) string {
 }
 
 var (
-	ansiSequencePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
-	promptCWDPattern    = regexp.MustCompile(`(?m)(?:^|\r|\n)[^\r\n@]*@[^:\r\n]+:([~/][^\r\n$#]*)[$#]\s*$`)
+	ansiSequencePattern         = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+	oscSequencePattern          = regexp.MustCompile(`\x1b\][^\x07]*(?:\x07|\x1b\\)`)
+	charsetSequencePattern      = regexp.MustCompile(`\x1b[()][A-Za-z0-9]`)
+	singleEscapeSequencePattern = regexp.MustCompile(`\x1b[@-Z\\-_]`)
+	promptCWDPattern            = regexp.MustCompile(`(?m)(?:^|\r|\n)[^\r\n@]*@[^:\r\n]+:([~/][^\r\n$#]*)[$#]\s*$`)
+	promptCommandPattern        = regexp.MustCompile(`^(?:.*)(?:\([^)]+\)[[:space:]]*)?[[:alnum:]_.%+-]+@[^:[:space:]]+:[^$#\r\n]*[$#][[:space:]]*(.+)[[:space:]]*$`)
+	simplePromptCommandPattern  = regexp.MustCompile(`^[[:space:]]*[$#][[:space:]]+(.+)[[:space:]]*$`)
 )
 
+func cleanTerminalOutputForParsing(data string) string {
+	clean := oscSequencePattern.ReplaceAllString(data, "")
+	clean = ansiSequencePattern.ReplaceAllString(clean, "")
+	clean = charsetSequencePattern.ReplaceAllString(clean, "")
+	clean = singleEscapeSequencePattern.ReplaceAllString(clean, "")
+	return applyTerminalBackspaces(clean)
+}
+
+func applyTerminalBackspaces(data string) string {
+	runes := make([]rune, 0, len(data))
+	for _, r := range data {
+		if r == '\b' || r == '\u007f' {
+			if len(runes) > 0 {
+				runes = runes[:len(runes)-1]
+			}
+			continue
+		}
+		runes = append(runes, r)
+	}
+	return string(runes)
+}
+
+func splitCompleteTerminalLines(data string) ([]string, string) {
+	lines := []string{}
+	start := 0
+	for i := 0; i < len(data); i++ {
+		if data[i] != '\n' {
+			continue
+		}
+		line := strings.TrimSuffix(data[start:i], "\r")
+		lines = append(lines, normalizeCarriageReturnLine(line))
+		start = i + 1
+	}
+	return lines, data[start:]
+}
+
+func normalizeCarriageReturnLine(line string) string {
+	parts := strings.Split(line, "\r")
+	return parts[len(parts)-1]
+}
+
+func extractPromptCommands(data string) []string {
+	lines, _ := splitCompleteTerminalLines(cleanTerminalOutputForParsing(data))
+	commands := make([]string, 0, len(lines))
+	for _, line := range lines {
+		command := extractPromptCommandFromLine(line)
+		if isRecordableEchoCommand(command) {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+func extractPromptCommandFromLine(line string) string {
+	line = strings.TrimSpace(normalizeCarriageReturnLine(line))
+	if line == "" {
+		return ""
+	}
+	if matches := promptCommandPattern.FindStringSubmatch(line); len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	if matches := simplePromptCommandPattern.FindStringSubmatch(line); len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	return ""
+}
+
+func isRecordableEchoCommand(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	if strings.Contains(command, "__AI_SSH_CWD__") {
+		return false
+	}
+	if strings.HasPrefix(command, "printf ") && strings.Contains(command, "$PWD") {
+		return false
+	}
+	return true
+}
+
 func extractPromptCWD(data string) string {
-	clean := ansiSequencePattern.ReplaceAllString(data, "")
+	clean := cleanTerminalOutputForParsing(data)
 	matches := promptCWDPattern.FindAllStringSubmatch(clean, -1)
 	if len(matches) == 0 {
 		return ""

@@ -666,6 +666,64 @@ func TestExtractPromptCWDForHomeRoot(t *testing.T) {
 	}
 }
 
+func TestExtractPromptCommandsFromShellEcho(t *testing.T) {
+	output := `(base) hwits@root123-Super-Server:~$ cd /egova_apps/
+(base) hwits@root123-Super-Server:/egova_apps$ cd CityEvent/bin
+(base) hwits@root123-Super-Server:/egova_apps/CityEvent/bin$ ls -la
+total 20
+drwxr-xr-x 2 hwits hwits 4096 May 25 22:30 .
+(base) hwits@root123-Super-Server:/egova_apps/CityEvent/bin$ cat ztva.json
+{"enabled":true}
+(base) hwits@root123-Super-Server:/egova_apps/CityEvent/bin$ ls -la
+total 20
+(base) hwits@root123-Super-Server:/egova_apps/CityEvent/bin$ history
+ 1990  cd /egova_apps/
+ 1991  cd CityEvent/bin
+ 1992  ls -la
+ 1993  cat ztva.json
+ 1994  ls -la
+ 1995  history
+`
+
+	commands := extractPromptCommands(output)
+	expected := []string{
+		"cd /egova_apps/",
+		"cd CityEvent/bin",
+		"ls -la",
+		"cat ztva.json",
+		"ls -la",
+		"history",
+	}
+
+	if strings.Join(commands, "\n") != strings.Join(expected, "\n") {
+		t.Fatalf("expected commands %q, got %q", expected, commands)
+	}
+}
+
+func TestObserveCommandEchoBuffersSplitPromptLine(t *testing.T) {
+	session := &terminalSession{
+		output: make(chan terminalEvent, 1),
+		done:   make(chan struct{}),
+	}
+
+	session.observeCommandEcho("(base) hwits@root123-Super-Server:~$ cd /ego")
+	select {
+	case event := <-session.output:
+		t.Fatalf("expected no command before line break, got %#v", event)
+	default:
+	}
+
+	session.observeCommandEcho("va_apps/\r\n")
+	select {
+	case event := <-session.output:
+		if event.Type != "command" || event.Data != "cd /egova_apps/" {
+			t.Fatalf("expected command event for cd /egova_apps/, got %#v", event)
+		}
+	default:
+		t.Fatal("expected command event after complete echoed line")
+	}
+}
+
 func TestNormalizeRemotePathForRequest(t *testing.T) {
 	cases := map[string]string{
 		"":              ".",

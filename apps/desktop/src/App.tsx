@@ -1678,7 +1678,7 @@ export function App() {
       }
     }
 
-    const nextHistory = [normalized, ...commandHistoryRef.current.filter((item) => item !== normalized)].slice(0, 200)
+    const nextHistory = [normalized, ...commandHistoryRef.current].slice(0, 200)
     commandHistoryRef.current = nextHistory
     setCommandHistory(nextHistory)
     if (sessionSettingsRef.current.aiPredictionEnabled && aiEnabledRef.current) {
@@ -1799,7 +1799,6 @@ export function App() {
       const char = data[index]
       const code = char.charCodeAt(0)
       if (char === '\r' || char === '\n') {
-        recordCommand(next)
         next = ''
         continue
       }
@@ -1858,7 +1857,6 @@ export function App() {
       if (isEnter && primaryPrediction && !commandBufferRef.current.trim()) {
         const command = primaryPrediction
         writeCommand(command)
-        recordCommand(command)
         setCommandDraft(activeSession.id, '')
         setAiPredictions([])
         setAiPredictionIndex(0)
@@ -1967,6 +1965,10 @@ export function App() {
         } else {
           setTrackedFilePath(payload.data)
         }
+      }
+
+      if (payload.type === 'command' && payload.data) {
+        recordCommand(payload.data)
       }
 
       if (payload.type === 'error') {
@@ -2962,8 +2964,8 @@ export function App() {
                 {commandHistory.length === 0 ? (
                   <p className="hint-text">暂无历史命令</p>
                 ) : (
-                  commandHistory.map((command) => (
-                    <button key={command} type="button" title={`输入历史命令：${command}`} onClick={() => writeCommand(command)}>
+                  commandHistory.map((command, index) => (
+                    <button key={`${index}-${command}`} type="button" title={`输入历史命令：${command}`} onClick={() => writeCommand(command)}>
                       {command}
                     </button>
                   ))

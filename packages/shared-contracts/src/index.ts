@@ -196,7 +196,7 @@ export interface AIPredictionResponse {
   commands: string[]
 }
 
-export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd'
+export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd' | 'command'
 
 export interface TerminalEvent {
   type: TerminalEventType
