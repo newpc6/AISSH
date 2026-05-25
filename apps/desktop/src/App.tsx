@@ -262,6 +262,25 @@ function buildMetricPath(samples: MetricSample[], key: MetricChartKey, width: nu
     .join(' ')
 }
 
+function metricPointIndexes(sampleCount: number, maxPoints: number) {
+  const indexes = new Set<number>()
+  if (sampleCount <= 0) {
+    return indexes
+  }
+  if (sampleCount <= maxPoints) {
+    for (let index = 0; index < sampleCount; index += 1) {
+      indexes.add(index)
+    }
+    return indexes
+  }
+
+  const lastIndex = sampleCount - 1
+  for (let point = 0; point < maxPoints; point += 1) {
+    indexes.add(Math.round((point / (maxPoints - 1)) * lastIndex))
+  }
+  return indexes
+}
+
 function metricXAxisLabels(samples: MetricSample[]) {
   if (samples.length === 0) {
     return ['-', '-']
@@ -1531,6 +1550,7 @@ export function App() {
     const path = buildMetricPath(metricHistory, key, chartWidth, chartHeight)
     const [startLabel, endLabel] = metricXAxisLabels(metricHistory)
     const latestValue = metricHistory[metricHistory.length - 1]?.[key] ?? serverMetrics?.[key] ?? 0
+    const visiblePointIndexes = metricPointIndexes(metricHistory.length, compact ? 6 : metricHistory.length)
     const hoveredSample =
       metricHover?.key === key && metricHistory[metricHover.index] ? metricHistory[metricHover.index] : null
     const chartTitle = key === 'memoryPercent' ? formatMemorySummary(serverMetrics) : serverMetrics ? `${latestValue}%` : '-'
@@ -1595,6 +1615,9 @@ export function App() {
                 const x = metricHistory.length === 1 ? chartWidth : (index / (metricHistory.length - 1)) * chartWidth
                 const y = chartHeight - (Math.max(0, Math.min(100, sample[key])) / 100) * chartHeight
                 const isHovered = metricHover?.key === key && metricHover.index === index
+                if (!visiblePointIndexes.has(index) && !isHovered) {
+                  return null
+                }
                 return (
                   <circle
                     aria-label={`${label} ${formatMetricDateTime(sample.collectedAt)} ${sample[key]}%`}
