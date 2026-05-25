@@ -26,6 +26,7 @@ import {
   type SessionOpenRequest,
   type SessionOpenResponse,
   type SessionRecord,
+  type SessionResizeRequest,
   type TerminalEvent,
 } from '@ai-ssh/shared-contracts'
 
@@ -390,6 +391,9 @@ export function App() {
   const activeSessionIdRef = useRef('')
   const sessionSettingsRef = useRef(defaultSettings)
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
+  const inputQueuesRef = useRef<Record<string, Promise<void>>>({})
+  const pendingResizeRef = useRef<Record<string, number>>({})
+  const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
@@ -409,6 +413,50 @@ export function App() {
   const setActiveSession = (sessionId: string) => {
     activeSessionIdRef.current = sessionId
     setActiveSessionId(sessionId)
+  }
+
+  const queueSessionInput = (sessionId: string, data: string) => {
+    const previous = inputQueuesRef.current[sessionId] ?? Promise.resolve()
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        await apiFetch(`/sessions/${sessionId}/input`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ data }),
+        })
+      })
+    inputQueuesRef.current[sessionId] = next.then(
+      () => undefined,
+      () => undefined,
+    )
+  }
+
+  const syncTerminalSize = (sessionId = activeSessionIdRef.current) => {
+    const terminal = xtermRef.current
+    if (!sessionId || !terminal) {
+      return
+    }
+
+    window.clearTimeout(pendingResizeRef.current[sessionId])
+    pendingResizeRef.current[sessionId] = window.setTimeout(() => {
+      if (!eventSourcesRef.current[sessionId]) {
+        return
+      }
+      const payload: SessionResizeRequest = {
+        cols: terminal.cols,
+        rows: terminal.rows,
+      }
+      void apiFetch(`/sessions/${sessionId}/resize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+    }, 80)
   }
 
   const replaceTerminalWithCache = (sessionId: string) => {
@@ -467,6 +515,9 @@ export function App() {
       source.close()
       delete eventSourcesRef.current[sessionId]
     }
+    delete inputQueuesRef.current[sessionId]
+    window.clearTimeout(pendingResizeRef.current[sessionId])
+    delete pendingResizeRef.current[sessionId]
   }
 
   const apiFetch = async (path: string, init?: RequestInit) => {
@@ -545,11 +596,16 @@ export function App() {
       terminal.writeln('选择左侧服务器并创建会话，或点击左侧 + 添加 SSH 连接。')
     }
 
-    const onResize = () => fitAddon.fit()
+    const onResize = () => {
+      fitAddon.fit()
+      syncTerminalSize()
+    }
     window.addEventListener('resize', onResize)
+    const resizeDisposable = terminal.onResize(() => syncTerminalSize())
 
     return () => {
       window.removeEventListener('resize', onResize)
+      resizeDisposable.dispose()
       Object.values(eventSourcesRef.current).forEach((source) => source.close())
       eventSourcesRef.current = {}
       terminal.dispose()
@@ -1218,32 +1274,43 @@ export function App() {
     }
   }
 
-  const observeTypedInput = (sessionId: string, data: string) => {
-    if (/^\x1b\[[0-9;?]*[ -/]*[@-~]$/.test(data) || /^\x1b\][\s\S]*(?:\x07|\x1b\\|\\)$/.test(data)) {
+  const updateAlternateScreenMode = (sessionId: string, data: string) => {
+    const pattern = /\x1b\[\?(?:47|1047|1049)([hl])/g
+    let match: RegExpExecArray | null
+    while ((match = pattern.exec(data)) !== null) {
+      if (match[1] === 'h') {
+        alternateScreenSessionsRef.current.add(sessionId)
+        if (activeSessionIdRef.current === sessionId) {
+          commandBufferRef.current = ''
+        }
+        setSessionCommandDraft(sessionId, '')
+      } else {
+        alternateScreenSessionsRef.current.delete(sessionId)
+      }
+    }
+  }
+
+  const observeCommandKey = (sessionId: string, event: KeyboardEvent) => {
+    if (alternateScreenSessionsRef.current.has(sessionId) || event.isComposing) {
       return
     }
-    const visibleInput = data
-    let next = commandBufferRef.current
 
-    for (const char of visibleInput) {
-      if (char === '\r' || char === '\n') {
-        recordCommand(next)
-        next = ''
-      } else if (char === '\u0003') {
-        next = ''
-      } else if (char === '\u007f' || char === '\b') {
-        next = next.slice(0, -1)
-      } else if (char === '\u0015') {
-        next = ''
-      } else if (char === '\t') {
-        continue
-      } else if (char === '\u001b') {
-        continue
-      } else if (char < ' ') {
-        continue
-      } else {
-        next += char
-      }
+    let next = commandBufferRef.current
+    if (event.key === 'Enter') {
+      recordCommand(next)
+      next = ''
+    } else if (event.key === 'Backspace') {
+      next = next.slice(0, -1)
+    } else if (event.key === 'c' && event.ctrlKey) {
+      next = ''
+    } else if (event.key === 'u' && event.ctrlKey) {
+      next = ''
+    } else if (event.key === 'w' && event.ctrlKey) {
+      next = next.replace(/\s*\S+\s*$/, '')
+    } else if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) {
+      next += event.key
+    } else {
+      return
     }
 
     commandBufferRef.current = next
@@ -1263,17 +1330,19 @@ export function App() {
       if (data !== '\t') {
         setAiPrediction('')
       }
-      observeTypedInput(activeSession.id, data)
-      void apiFetch(`/sessions/${activeSession.id}/input`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ data }),
-      })
+      queueSessionInput(activeSession.id, data)
+    })
+    xtermRef.current.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown') {
+        observeCommandKey(activeSession.id, event)
+      }
+      return true
     })
 
-    return () => disposable.dispose()
+    return () => {
+      disposable.dispose()
+      xtermRef.current?.attachCustomKeyEventHandler(() => true)
+    }
   }, [activeSession, aiPrediction, settings.aiPredictionEnabled, aiEnabled])
 
   useEffect(() => {
@@ -1336,6 +1405,7 @@ export function App() {
       const payload = JSON.parse(message.data) as TerminalEvent
 
       if (payload.type === 'output') {
+        updateAlternateScreenMode(session.id, payload.data ?? '')
         appendSessionTerminalOutput(session.id, payload.data ?? '')
       }
 
@@ -1397,6 +1467,7 @@ export function App() {
       openSessionStream(session)
     }
     fitAddonRef.current?.fit()
+    syncTerminalSize(session.id)
   }
 
   const createSession = async (hostId = selectedHostId) => {
@@ -1440,6 +1511,7 @@ export function App() {
       xtermRef.current?.write(initialOutput)
       openSessionStream(data.session, true)
       fitAddonRef.current?.fit()
+      syncTerminalSize(data.session.id)
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建会话失败'
       setErrorMessage(message)
@@ -1465,8 +1537,10 @@ export function App() {
       if (next) {
         replaceTerminalWithCache(next.id)
         if (next.status === 'connected' || next.status === 'connecting') {
-        openSessionStream(next)
+          openSessionStream(next)
         }
+        fitAddonRef.current?.fit()
+        syncTerminalSize(next.id)
       } else {
         commandBufferRef.current = ''
         setAiPrediction('')
@@ -1512,19 +1586,16 @@ export function App() {
     replaceTerminalWithCache(data.session.id)
     openSessionStream(data.session, true)
     fitAddonRef.current?.fit()
+    syncTerminalSize(data.session.id)
   }
 
   const writeCommand = (command: string) => {
     xtermRef.current?.focus()
     if (activeSession) {
-      observeTypedInput(activeSession.id, command)
-      void apiFetch(`/sessions/${activeSession.id}/input`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ data: command }),
-      })
+      const next = commandBufferRef.current + command
+      commandBufferRef.current = next
+      setSessionCommandDraft(activeSession.id, next)
+      queueSessionInput(activeSession.id, command)
     }
   }
 

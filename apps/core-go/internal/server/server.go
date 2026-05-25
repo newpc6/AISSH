@@ -106,6 +106,11 @@ type sessionInputRequest struct {
 	Data string `json:"data"`
 }
 
+type sessionResizeRequest struct {
+	Cols int `json:"cols"`
+	Rows int `json:"rows"`
+}
+
 type sessionReconnectResponse struct {
 	PreviousSessionID string        `json:"previousSessionId"`
 	Session           sessionRecord `json:"session"`
@@ -151,6 +156,7 @@ type diskMetric struct {
 type terminalSession struct {
 	record sessionRecord
 	input  chan string
+	resize chan sessionResizeRequest
 	output chan terminalEvent
 	done   chan struct{}
 	once   sync.Once
@@ -763,7 +769,8 @@ func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSessi
 			Status:    "connecting",
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		},
-		input:  make(chan string, 64),
+		input:  make(chan string, 256),
+		resize: make(chan sessionResizeRequest, 16),
 		output: make(chan terminalEvent, 256),
 		done:   make(chan struct{}),
 	}
@@ -906,6 +913,7 @@ func (s *terminalSession) runDemo() {
 					s.send(terminalEvent{Type: "output", Data: string(r)})
 				}
 			}
+		case <-s.resize:
 		case <-s.done:
 			return
 		}
@@ -961,7 +969,7 @@ func (s *terminalSession) runSSH(host hostRecord) {
 		return
 	}
 
-	if err := sshSession.RequestPty("xterm-256color", 40, 120, ssh.TerminalModes{
+	if err := sshSession.RequestPty("xterm-256color", 24, 80, ssh.TerminalModes{
 		ssh.ECHO:          1,
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
@@ -994,6 +1002,16 @@ func (s *terminalSession) runSSH(host hostRecord) {
 		select {
 		case data := <-s.input:
 			if _, err := io.WriteString(stdin, data); err != nil {
+				s.record.Status = "error"
+				s.record.LastError = err.Error()
+				s.send(terminalEvent{Type: "error", Data: err.Error()})
+				return
+			}
+		case size := <-s.resize:
+			if size.Rows <= 0 || size.Cols <= 0 {
+				continue
+			}
+			if err := sshSession.WindowChange(size.Rows, size.Cols); err != nil {
 				s.record.Status = "error"
 				s.record.LastError = err.Error()
 				s.send(terminalEvent{Type: "error", Data: err.Error()})

@@ -173,6 +173,11 @@ export interface SessionInputRequest {
   data: string
 }
 
+export interface SessionResizeRequest {
+  cols: number
+  rows: number
+}
+
 export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd'
 
 export interface TerminalEvent {

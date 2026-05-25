@@ -278,6 +278,17 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				return
 			}
 			writeSessionInput(w, r, session)
+		case "resize":
+			session, exists := manager.getSession(sessionID)
+			if !exists {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			resizeSession(w, r, session)
 		case "cwd":
 			session, exists := manager.getSession(sessionID)
 			if !exists {
@@ -398,6 +409,25 @@ func writeSessionInput(w http.ResponseWriter, r *http.Request, session *terminal
 
 	select {
 	case session.input <- request.Data:
+		writeJSON(w, map[string]string{"status": "ok"})
+	case <-session.done:
+		http.Error(w, "session closed", http.StatusGone)
+	}
+}
+
+func resizeSession(w http.ResponseWriter, r *http.Request, session *terminalSession) {
+	var request sessionResizeRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if request.Cols <= 0 || request.Rows <= 0 {
+		http.Error(w, "invalid terminal size", http.StatusBadRequest)
+		return
+	}
+
+	select {
+	case session.resize <- request:
 		writeJSON(w, map[string]string{"status": "ok"})
 	case <-session.done:
 		http.Error(w, "session closed", http.StatusGone)

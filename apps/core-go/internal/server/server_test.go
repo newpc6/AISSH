@@ -598,6 +598,7 @@ func TestSessionCWDEndpoint(t *testing.T) {
 	session := &terminalSession{
 		record: sessionRecord{ID: sessionID, HostID: "local-demo", HostName: "Local Demo", Status: "connected"},
 		input:  make(chan string, 1),
+		resize: make(chan sessionResizeRequest, 1),
 		output: make(chan terminalEvent, 1),
 		done:   make(chan struct{}),
 	}
@@ -784,5 +785,38 @@ func TestWriteSessionInputEndpoint(t *testing.T) {
 
 	if inputRecorder.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", inputRecorder.Code)
+	}
+}
+
+func TestResizeSessionEndpoint(t *testing.T) {
+	srv := newTestServer(t)
+	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))
+	openReq.Header.Set("Content-Type", "application/json")
+	openRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(openRecorder, openReq)
+
+	if openRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", openRecorder.Code)
+	}
+
+	var openResponse map[string]map[string]any
+	if err := json.Unmarshal(openRecorder.Body.Bytes(), &openResponse); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+
+	sessionID := openResponse["session"]["id"].(string)
+	resizeReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/sessions/"+sessionID+"/resize",
+		bytes.NewBufferString(`{"cols":132,"rows":42}`),
+	)
+	resizeReq.Header.Set("Content-Type", "application/json")
+	resizeRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(resizeRecorder, resizeReq)
+
+	if resizeRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resizeRecorder.Code)
 	}
 }
