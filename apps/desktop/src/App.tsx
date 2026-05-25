@@ -64,6 +64,25 @@ type TerminalCache = {
   commandDraft: string
 }
 
+type FilePreviewKind = 'text' | 'image' | 'video' | 'binary'
+type FilePreviewStatus = 'loading' | 'ready' | 'error'
+
+type FilePreviewTab = {
+  id: string
+  sessionId: string
+  hostId: string
+  hostName: string
+  name: string
+  path: string
+  size: number
+  modifiedAt: string
+  kind: FilePreviewKind
+  status: FilePreviewStatus
+  content?: string
+  objectUrl?: string
+  error?: string
+}
+
 type MetricChartKey = 'cpuPercent' | 'memoryPercent'
 
 type HostGroupView = HostGroup & {
@@ -82,6 +101,42 @@ type WindowWithSaveFilePicker = Window & {
 }
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
+const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
+
+const textFileExtensions = new Set([
+  'bash',
+  'c',
+  'conf',
+  'cpp',
+  'cs',
+  'css',
+  'csv',
+  'env',
+  'go',
+  'h',
+  'html',
+  'ini',
+  'java',
+  'js',
+  'json',
+  'jsx',
+  'log',
+  'md',
+  'properties',
+  'py',
+  'rs',
+  'sh',
+  'sql',
+  'toml',
+  'ts',
+  'tsx',
+  'txt',
+  'xml',
+  'yaml',
+  'yml',
+])
+const imageFileExtensions = new Set(['bmp', 'gif', 'ico', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
+const videoFileExtensions = new Set(['m4v', 'mov', 'mp4', 'mpeg', 'ogv', 'webm'])
 
 const emptyHostForm: HostUpsertRequest = {
   name: '',
@@ -144,6 +199,50 @@ function formatBytes(size: number) {
 
 function formatRate(size: number) {
   return `${formatBytes(Math.max(0, size))}/s`
+}
+
+function fileExtension(name: string) {
+  const index = name.lastIndexOf('.')
+  return index >= 0 ? name.slice(index + 1).toLowerCase() : ''
+}
+
+function detectPreviewKind(entry: FileEntry): FilePreviewKind {
+  const extension = fileExtension(entry.name)
+  if (imageFileExtensions.has(extension)) return 'image'
+  if (videoFileExtensions.has(extension)) return 'video'
+  if (textFileExtensions.has(extension)) return 'text'
+  if (entry.size <= 512 * 1024 && !extension) return 'text'
+  return 'binary'
+}
+
+function previewKindLabel(kind: FilePreviewKind) {
+  if (kind === 'text') return '文本'
+  if (kind === 'image') return '图片'
+  if (kind === 'video') return '视频'
+  return '文件'
+}
+
+function previewMimeType(entry: Pick<FileEntry, 'name'>, kind: FilePreviewKind) {
+  const extension = fileExtension(entry.name)
+  if (kind === 'text') {
+    if (extension === 'md') return 'text/markdown;charset=utf-8'
+    if (extension === 'json') return 'application/json;charset=utf-8'
+    if (extension === 'html') return 'text/html;charset=utf-8'
+    if (extension === 'css') return 'text/css;charset=utf-8'
+    if (extension === 'js' || extension === 'jsx') return 'text/javascript;charset=utf-8'
+    return 'text/plain;charset=utf-8'
+  }
+  if (kind === 'image') {
+    if (extension === 'svg') return 'image/svg+xml'
+    if (extension === 'jpg') return 'image/jpeg'
+    return `image/${extension || 'png'}`
+  }
+  if (kind === 'video') {
+    if (extension === 'mov') return 'video/quicktime'
+    if (extension === 'm4v') return 'video/mp4'
+    return `video/${extension || 'mp4'}`
+  }
+  return 'application/octet-stream'
 }
 
 function formatMetricTime(value: string) {
@@ -460,6 +559,8 @@ export function App() {
   const [aiPredictionState, setAiPredictionState] = useState<LoadState>('idle')
   const [aiPredictionError, setAiPredictionError] = useState('')
   const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
+  const [filePreviewTabs, setFilePreviewTabs] = useState<FilePreviewTab[]>([])
+  const [activeViewId, setActiveViewId] = useState('')
   const [expandedMetric, setExpandedMetric] = useState<MetricChartKey | ''>('')
   const [metricHover, setMetricHover] = useState<MetricHover>(null)
   const [settingsSavedMessage, setSettingsSavedMessage] = useState('')
@@ -484,6 +585,7 @@ export function App() {
   const sessionSettingsRef = useRef(defaultSettings)
   const hostsRef = useRef<HostRecord[]>([])
   const sessionsRef = useRef<SessionRecord[]>([])
+  const filePreviewTabsRef = useRef<FilePreviewTab[]>([])
   const aiEnabledRef = useRef(true)
   const commandHistoryRef = useRef<string[]>([])
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
@@ -517,6 +619,9 @@ export function App() {
   const setActiveSession = (sessionId: string) => {
     activeSessionIdRef.current = sessionId
     setActiveSessionId(sessionId)
+    if (sessionId) {
+      setActiveViewId(`session:${sessionId}`)
+    }
   }
 
   const setTrackedFilePath = (path: string) => {
@@ -816,6 +921,31 @@ export function App() {
   }, [sessions])
 
   useEffect(() => {
+    const isKnownSessionView =
+      activeViewId.startsWith('session:') && sessions.some((session) => `session:${session.id}` === activeViewId)
+    const isKnownFileView =
+      activeViewId.startsWith('file:') && filePreviewTabs.some((tab) => `file:${tab.id}` === activeViewId)
+    if (activeViewId && (isKnownSessionView || isKnownFileView)) {
+      return
+    }
+    if (activeSessionId) {
+      setActiveViewId(`session:${activeSessionId}`)
+    } else if (filePreviewTabs.length > 0) {
+      setActiveViewId(`file:${filePreviewTabs[0].id}`)
+    }
+  }, [activeViewId, activeSessionId, filePreviewTabs, sessions])
+
+  useEffect(() => {
+    return () => {
+      filePreviewTabsRef.current.forEach((tab) => {
+        if (tab.objectUrl) {
+          URL.revokeObjectURL(tab.objectUrl)
+        }
+      })
+    }
+  }, [])
+
+  useEffect(() => {
     aiEnabledRef.current = aiEnabled
   }, [aiEnabled])
 
@@ -833,6 +963,10 @@ export function App() {
   }, [terminalCaches])
 
   useEffect(() => {
+    filePreviewTabsRef.current = filePreviewTabs
+  }, [filePreviewTabs])
+
+  useEffect(() => {
     leftModeRef.current = leftMode
   }, [leftMode])
 
@@ -845,6 +979,8 @@ export function App() {
     [hosts, selectedHostId],
   )
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
+  const activeFilePreview = filePreviewTabs.find((tab) => `file:${tab.id}` === activeViewId) ?? null
+  const isFilePreviewActive = Boolean(activeFilePreview)
   const activeHost = useMemo(
     () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
     [hosts, activeSession, currentHost],
@@ -1341,6 +1477,102 @@ export function App() {
       setTransferTasks((current) =>
         current.map((task) => (task.id === taskID ? { ...task, status: 'error' } : task)),
       )
+    }
+  }
+
+  const openFilePreview = async (entry: FileEntry) => {
+    const session = activeSession
+    const hostId = session?.hostId ?? selectedHostId
+    if (!hostId || entry.type !== 'file') {
+      return
+    }
+
+    const kind = detectPreviewKind(entry)
+    if (entry.size > FILE_PREVIEW_CONFIRM_BYTES) {
+      const confirmed = window.confirm(`文件 ${entry.name} 大小为 ${formatBytes(entry.size)}，确定要打开预览吗？`)
+      if (!confirmed) {
+        return
+      }
+    }
+
+    const tabID = `${hostId}:${entry.path}`
+    const existing = filePreviewTabsRef.current.find((tab) => tab.id === tabID)
+    if (existing) {
+      setActiveViewId(`file:${tabID}`)
+      return
+    }
+
+    const baseTab: FilePreviewTab = {
+      id: tabID,
+      sessionId: session?.id ?? '',
+      hostId,
+      hostName: session?.hostName ?? activeHost?.name ?? hostId,
+      name: entry.name,
+      path: entry.path,
+      size: entry.size,
+      modifiedAt: entry.modifiedAt,
+      kind,
+      status: kind === 'binary' ? 'ready' : 'loading',
+    }
+    setFilePreviewTabs((current) => [baseTab, ...current])
+    setActiveViewId(`file:${tabID}`)
+
+    if (kind === 'binary') {
+      return
+    }
+
+    try {
+      const response = await apiFetch(`/files/${hostId}?download=1&path=${encodeURIComponent(entry.path)}`)
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail.trim() || `文件预览失败：${response.status}`)
+      }
+      const blob = await response.blob()
+      if (kind === 'text') {
+        const content = await blob.text()
+        setFilePreviewTabs((current) =>
+          current.map((tab) => (tab.id === tabID ? { ...tab, status: 'ready', content } : tab)),
+        )
+        return
+      }
+
+      const objectUrl = URL.createObjectURL(new Blob([blob], { type: previewMimeType(entry, kind) }))
+      setFilePreviewTabs((current) =>
+        current.map((tab) => {
+          if (tab.id !== tabID) return tab
+          if (tab.objectUrl) {
+            URL.revokeObjectURL(tab.objectUrl)
+          }
+          return { ...tab, status: 'ready', objectUrl }
+        }),
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '文件预览失败'
+      setFilePreviewTabs((current) =>
+        current.map((tab) => (tab.id === tabID ? { ...tab, status: 'error', error: message } : tab)),
+      )
+      setErrorMessage(message)
+    }
+  }
+
+  const closeFilePreview = (tabID: string) => {
+    const currentTabs = filePreviewTabsRef.current
+    const closedIndex = currentTabs.findIndex((tab) => tab.id === tabID)
+    const closed = currentTabs[closedIndex]
+    if (closed?.objectUrl) {
+      URL.revokeObjectURL(closed.objectUrl)
+    }
+    const nextTabs = currentTabs.filter((tab) => tab.id !== tabID)
+    setFilePreviewTabs(nextTabs)
+    if (activeViewId === `file:${tabID}`) {
+      const nextFileTab = nextTabs[Math.max(0, closedIndex - 1)] ?? nextTabs[0]
+      if (nextFileTab) {
+        setActiveViewId(`file:${nextFileTab.id}`)
+      } else if (activeSessionId) {
+        setActiveViewId(`session:${activeSessionId}`)
+      } else {
+        setActiveViewId('')
+      }
     }
   }
 
@@ -1910,6 +2142,72 @@ export function App() {
     clearAIPrediction()
   }
 
+  const renderFilePreview = (tab: FilePreviewTab) => {
+    const meta = `${tab.hostName} · ${tab.path} · ${formatBytes(tab.size)}`
+    if (tab.status === 'loading') {
+      return (
+        <div className="file-preview-empty">
+          <span className="file-loading-spinner" />
+          <strong>正在加载 {tab.name}</strong>
+          <small>{meta}</small>
+        </div>
+      )
+    }
+    if (tab.status === 'error') {
+      return (
+        <div className="file-preview-empty">
+          <strong>预览失败</strong>
+          <small>{tab.error ?? '无法读取远程文件'}</small>
+          <button type="button" title={`下载 ${tab.name}`} onClick={() => void downloadFile({
+            name: tab.name,
+            path: tab.path,
+            type: 'file',
+            size: tab.size,
+            modifiedAt: tab.modifiedAt,
+          })}>
+            下载文件
+          </button>
+        </div>
+      )
+    }
+    if (tab.kind === 'text') {
+      return (
+        <div className="file-text-preview">
+          <pre>{tab.content ?? ''}</pre>
+        </div>
+      )
+    }
+    if (tab.kind === 'image' && tab.objectUrl) {
+      return (
+        <div className="file-media-preview">
+          <img alt={tab.name} src={tab.objectUrl} />
+        </div>
+      )
+    }
+    if (tab.kind === 'video' && tab.objectUrl) {
+      return (
+        <div className="file-media-preview">
+          <video controls src={tab.objectUrl} />
+        </div>
+      )
+    }
+    return (
+      <div className="file-preview-empty">
+        <strong>暂不支持直接预览这种文件</strong>
+        <small>{meta}</small>
+        <button type="button" title={`下载 ${tab.name}`} onClick={() => void downloadFile({
+          name: tab.name,
+          path: tab.path,
+          type: 'file',
+          size: tab.size,
+          modifiedAt: tab.modifiedAt,
+        })}>
+          下载文件
+        </button>
+      </div>
+    )
+  }
+
   const startLeftRailResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const startX = event.clientX
@@ -2312,7 +2610,12 @@ export function App() {
                       key={entry.path}
                       draggable={entry.type === 'file'}
                       type="button"
-                      title={entry.type === 'directory' ? '双击进入目录' : '双击或右键下载文件'}
+                      title={entry.type === 'directory' ? '双击进入目录' : '单击打开预览，右键下载文件'}
+                      onClick={() => {
+                        if (entry.type === 'file') {
+                          void openFilePreview(entry)
+                        }
+                      }}
                       onDragStart={(event) => {
                         if (entry.type === 'file') {
                           event.dataTransfer.setData(
@@ -2326,7 +2629,7 @@ export function App() {
                         if (entry.type === 'directory') {
                           void loadFiles(entry.path)
                         } else {
-                          void downloadFile(entry)
+                          void openFilePreview(entry)
                         }
                       }}
                       onContextMenu={(event) => {
@@ -2349,6 +2652,14 @@ export function App() {
                   <div className="transfer-list">
                     {transferTasks.slice(0, 4).map((task) => (
                       <div key={task.id}>
+                        <button
+                          className="transfer-close"
+                          type="button"
+                          title={`移除 ${task.name} 传输记录`}
+                          onClick={() => setTransferTasks((current) => current.filter((item) => item.id !== task.id))}
+                        >
+                          ×
+                        </button>
                         <span>{task.direction === 'upload' ? '上传' : '下载'} · {task.name}</span>
                         <progress max="100" value={task.progress} />
                         <small>{task.status}</small>
@@ -2373,7 +2684,7 @@ export function App() {
             {sessions.map((session) => (
                 <div
                   key={session.id}
-                  className={`session-tab ${activeSession?.id === session.id ? 'active' : ''}`}
+                  className={`session-tab ${activeViewId === `session:${session.id}` ? 'active' : ''}`}
                   onClick={() => activateSession(session)}
                   role="button"
                   tabIndex={0}
@@ -2399,13 +2710,64 @@ export function App() {
                   </button>
                 </div>
               ))}
+            {filePreviewTabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`session-tab file-preview-tab ${activeViewId === `file:${tab.id}` ? 'active' : ''}`}
+                onClick={() => setActiveViewId(`file:${tab.id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    setActiveViewId(`file:${tab.id}`)
+                  }
+                }}
+              >
+                <span className={`tab-status tab-status-${tab.status === 'error' ? 'error' : tab.status === 'loading' ? 'connecting' : 'connected'}`} title={previewKindLabel(tab.kind)} />
+                <span className="tab-title">{tab.name}</span>
+                <button
+                  className="tab-close"
+                  type="button"
+                  aria-label={`关闭 ${tab.name}`}
+                  title={`关闭 ${tab.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    closeFilePreview(tab.id)
+                  }}
+                >
+                  x
+                </button>
+              </div>
+            ))}
             <button className="session-new" type="button" title="新建 SSH 会话" onClick={() => void createSession()}>
               +
             </button>
           </div>
 
-          <section className="terminal-stage">
-            {activeSession ? (
+          <section className={`terminal-stage ${isFilePreviewActive ? 'show-file-preview' : ''}`}>
+            {activeFilePreview ? (
+              <div className="file-preview-header">
+                <div>
+                  <strong>{activeFilePreview.name}</strong>
+                  <span>{activeFilePreview.path}</span>
+                </div>
+                <small>{previewKindLabel(activeFilePreview.kind)} · {formatBytes(activeFilePreview.size)} · {new Date(activeFilePreview.modifiedAt).toLocaleString()}</small>
+                <button
+                  className="terminal-reconnect"
+                  type="button"
+                  title={`下载 ${activeFilePreview.name}`}
+                  onClick={() => void downloadFile({
+                    name: activeFilePreview.name,
+                    path: activeFilePreview.path,
+                    type: 'file',
+                    size: activeFilePreview.size,
+                    modifiedAt: activeFilePreview.modifiedAt,
+                  })}
+                >
+                  下载
+                </button>
+              </div>
+            ) : activeSession ? (
               <div className="terminal-header">
                 <div>
                   <strong>{activeSession.hostName}</strong>
@@ -2425,7 +2787,7 @@ export function App() {
                 ) : null}
               </div>
             ) : null}
-            <div className="terminal-wrap">
+            <div className={`terminal-wrap ${isFilePreviewActive ? 'terminal-hidden' : ''}`}>
               <div ref={terminalRef} className="terminal-surface" />
               {activeSession && primaryPrediction ? (
                 <button className="terminal-ghost-prediction" type="button" title="应用 AI 预测命令" onClick={applyPrediction}>
@@ -2433,7 +2795,12 @@ export function App() {
                 </button>
               ) : null}
             </div>
-            {!activeSession ? (
+            {activeFilePreview ? (
+              <div className="file-preview-surface">
+                {renderFilePreview(activeFilePreview)}
+              </div>
+            ) : null}
+            {!activeSession && !activeFilePreview ? (
               <div className="terminal-empty">
                 <div>
                   <p className="section-label">快速连接</p>

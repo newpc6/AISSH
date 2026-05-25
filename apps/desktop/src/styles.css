@@ -499,6 +499,7 @@ button {
 }
 
 .transfer-list div {
+  position: relative;
   display: grid;
   gap: 4px;
   padding: 8px;
@@ -506,10 +507,34 @@ button {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.transfer-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #8ca0b8;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.transfer-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fca5a5;
+}
+
 .transfer-list span,
 .transfer-list small {
   color: #8ca0b8;
   font-size: 12px;
+}
+
+.transfer-list span {
+  padding-right: 22px;
 }
 
 .center-workspace {
@@ -549,6 +574,10 @@ button {
 .session-tab.active {
   background: #0d1520;
   border-color: rgba(79, 140, 255, 0.32);
+}
+
+.file-preview-tab {
+  border-color: rgba(34, 211, 238, 0.2);
 }
 
 .tab-title {
@@ -660,6 +689,109 @@ button {
 
 .terminal-header + .terminal-wrap .terminal-surface {
   border-radius: 0 0 8px 8px;
+}
+
+.terminal-hidden {
+  display: none;
+}
+
+.file-preview-header {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: #0d1520;
+}
+
+.file-preview-header div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.file-preview-header strong,
+.file-preview-header span,
+.file-preview-header small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-header span,
+.file-preview-header small {
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.file-preview-surface {
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+  background: #0d1520;
+}
+
+.file-text-preview {
+  height: 100%;
+  overflow: auto;
+  background: #0b111a;
+}
+
+.file-text-preview pre {
+  min-height: 100%;
+  margin: 0;
+  padding: 16px;
+  color: #d9e2ec;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.file-media-preview,
+.file-preview-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  padding: 20px;
+}
+
+.file-media-preview img,
+.file-media-preview video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.file-preview-empty {
+  align-content: center;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.file-preview-empty small {
+  max-width: min(680px, 100%);
+  color: #8ca0b8;
+  overflow-wrap: anywhere;
+}
+
+.file-preview-empty button {
+  height: 32px;
+  border: 1px solid rgba(79, 140, 255, 0.38);
+  border-radius: 7px;
+  background: rgba(79, 140, 255, 0.12);
+  color: #dbeafe;
+  cursor: pointer;
+  padding: 0 12px;
 }
 
 .terminal-ghost-prediction {
