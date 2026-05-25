@@ -8,7 +8,9 @@
   ],
   "scripts": {
     "dev:desktop": "npm run dev -w apps/desktop",
+    "dev:tauri": "npm run tauri:dev -w apps/desktop",
     "build:desktop": "npm run build -w apps/desktop",
+    "build:tauri": "npm run tauri:build -w apps/desktop",
     "typecheck:desktop": "npm run typecheck -w apps/desktop",
     "dev:core": "go run ./apps/core-go/cmd/server",
     "test:core": "go test ./apps/core-go/..."
