@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 )
 
+func newTestServer(t *testing.T) *http.Server {
+	t.Helper()
+	t.Setenv("AI_SSH_HOSTS_PATH", filepath.Join(t.TempDir(), "hosts.json"))
+	return New("18555")
+}
+
 func TestHealthEndpoint(t *testing.T) {
-	srv := New("18555")
+	srv := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	recorder := httptest.NewRecorder()
 
@@ -30,7 +37,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestHostsEndpoint(t *testing.T) {
-	srv := New("18555")
+	srv := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
 	recorder := httptest.NewRecorder()
 
@@ -51,7 +58,7 @@ func TestHostsEndpoint(t *testing.T) {
 }
 
 func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
-	srv := New("18555")
+	srv := newTestServer(t)
 	createBody := []byte(`{
 		"name":"Test Host",
 		"address":"192.168.1.20",
@@ -109,8 +116,63 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 	}
 }
 
-func TestCreateSessionEndpoint(t *testing.T) {
+func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "hosts.json")
+	t.Setenv("AI_SSH_HOSTS_PATH", storePath)
+
 	srv := New("18555")
+	createBody := []byte(`{
+		"name":"Persisted Host",
+		"address":"192.168.1.30",
+		"port":22,
+		"username":"deploy",
+		"authType":"password",
+		"group":"测试",
+		"password":"secret"
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewBuffer(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(createRecorder, createReq)
+
+	if createRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", createRecorder.Code)
+	}
+
+	restarted := New("18555")
+	listReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	listRecorder := httptest.NewRecorder()
+
+	restarted.Handler.ServeHTTP(listRecorder, listReq)
+
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", listRecorder.Code)
+	}
+
+	var hosts []map[string]any
+	if err := json.Unmarshal(listRecorder.Body.Bytes(), &hosts); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+
+	for _, host := range hosts {
+		if host["name"] != "Persisted Host" {
+			continue
+		}
+		if _, ok := host["password"]; ok {
+			t.Fatal("expected password to be omitted from persisted host response")
+		}
+		if host["hasPassword"] == true {
+			t.Fatal("expected password flag to be false after persistence reload")
+		}
+		return
+	}
+
+	t.Fatal("expected persisted host after server restart")
+}
+
+func TestCreateSessionEndpoint(t *testing.T) {
+	srv := newTestServer(t)
 	body := []byte(`{"hostId":"local-demo"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -134,7 +196,7 @@ func TestCreateSessionEndpoint(t *testing.T) {
 }
 
 func TestCreateTransientSessionEndpoint(t *testing.T) {
-	srv := New("18555")
+	srv := newTestServer(t)
 	body := []byte(`{
 		"hostId":"transient",
 		"transientHost":{
@@ -167,7 +229,7 @@ func TestCreateTransientSessionEndpoint(t *testing.T) {
 }
 
 func TestWriteSessionInputEndpoint(t *testing.T) {
-	srv := New("18555")
+	srv := newTestServer(t)
 	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))
 	openReq.Header.Set("Content-Type", "application/json")
 	openRecorder := httptest.NewRecorder()

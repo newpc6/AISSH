@@ -323,6 +323,7 @@
 
 推荐本地持久化方式：
 
+- MVP 阶段先使用 JSON 保存服务器基础配置，不写入密码和 SSH Key
 - SQLite：存业务元数据
 - OS Keychain / Credential Manager：存敏感凭据
 - 本地结构化日志：存调试和审计信息

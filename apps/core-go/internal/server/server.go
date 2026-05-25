@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -92,44 +94,113 @@ type sessionManager struct {
 	mu       sync.RWMutex
 	hosts    []hostRecord
 	sessions map[string]*terminalSession
+	store    *hostStore
+}
+
+type hostStore struct {
+	path string
+}
+
+type hostStoreFile struct {
+	Hosts []hostRecord `json:"hosts"`
 }
 
 func newSessionManager() *sessionManager {
-	return &sessionManager{
-		hosts: []hostRecord{
-			{
-				ID:          "local-demo",
-				Name:        "Local Demo",
-				Address:     "demo.local",
-				Port:        0,
-				Username:    "demo",
-				AuthType:    "agent",
-				Group:       "演示",
-				Description: "本地演示会话，用于验证终端输入输出链路",
-			},
-			{
-				ID:          "gpu-dev-01",
-				Name:        "GPU Dev 01",
-				Address:     "10.10.1.25",
-				Port:        22,
-				Username:    "ubuntu",
-				AuthType:    "privateKey",
-				Group:       "开发环境",
-				Description: "AI 训练与实验环境",
-			},
-			{
-				ID:          "prod-api-01",
-				Name:        "Prod API 01",
-				Address:     "10.10.8.12",
-				Port:        22,
-				Username:    "deploy",
-				AuthType:    "agent",
-				Group:       "生产环境",
-				Description: "线上 API 节点",
-			},
-		},
+	manager := &sessionManager{
+		hosts:    defaultHosts(),
 		sessions: make(map[string]*terminalSession),
+		store:    newHostStore(),
 	}
+
+	if hosts, err := manager.store.load(); err == nil && len(hosts) > 0 {
+		manager.hosts = hosts
+	}
+
+	return manager
+}
+
+func defaultHosts() []hostRecord {
+	return []hostRecord{
+		{
+			ID:          "local-demo",
+			Name:        "Local Demo",
+			Address:     "demo.local",
+			Port:        0,
+			Username:    "demo",
+			AuthType:    "agent",
+			Group:       "演示",
+			Description: "本地演示会话，用于验证终端输入输出链路",
+		},
+		{
+			ID:          "gpu-dev-01",
+			Name:        "GPU Dev 01",
+			Address:     "10.10.1.25",
+			Port:        22,
+			Username:    "ubuntu",
+			AuthType:    "privateKey",
+			Group:       "开发环境",
+			Description: "AI 训练与实验环境",
+		},
+		{
+			ID:          "prod-api-01",
+			Name:        "Prod API 01",
+			Address:     "10.10.8.12",
+			Port:        22,
+			Username:    "deploy",
+			AuthType:    "agent",
+			Group:       "生产环境",
+			Description: "线上 API 节点",
+		},
+	}
+}
+
+func newHostStore() *hostStore {
+	if path := os.Getenv("AI_SSH_HOSTS_PATH"); path != "" {
+		return &hostStore{path: path}
+	}
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = "."
+	}
+
+	return &hostStore{path: filepath.Join(configDir, "ai-ssh", "hosts.json")}
+}
+
+func (s *hostStore) load() ([]hostRecord, error) {
+	file, err := os.Open(s.path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var data hostStoreFile
+	if err := json.NewDecoder(file).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	return data.Hosts, nil
+}
+
+func (s *hostStore) save(hosts []hostRecord) error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return err
+	}
+
+	file, err := os.Create(s.path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	persistedHosts := make([]hostRecord, len(hosts))
+	for i, host := range hosts {
+		persistedHosts[i] = host.withoutSecrets()
+	}
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(hostStoreFile{Hosts: persistedHosts})
 }
 
 func (m *sessionManager) listHosts() []hostRecord {
@@ -150,6 +221,7 @@ func (m *sessionManager) createHost(request hostUpsertRequest) hostRecord {
 	host := hostFromRequest(request)
 	host.ID = "host-" + uuid.NewString()
 	m.hosts = append(m.hosts, host)
+	_ = m.store.save(m.hosts)
 	return host.sanitized()
 }
 
@@ -168,6 +240,7 @@ func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (h
 				next.PrivateKey = m.hosts[i].PrivateKey
 			}
 			m.hosts[i] = next
+			_ = m.store.save(m.hosts)
 			return next.sanitized(), true
 		}
 	}
@@ -182,6 +255,7 @@ func (m *sessionManager) deleteHost(hostID string) bool {
 	for i := range m.hosts {
 		if m.hosts[i].ID == hostID {
 			m.hosts = append(m.hosts[:i], m.hosts[i+1:]...)
+			_ = m.store.save(m.hosts)
 			return true
 		}
 	}
@@ -200,6 +274,7 @@ func (m *sessionManager) importHosts(requests []hostUpsertRequest) []hostRecord 
 		m.hosts = append(m.hosts, host)
 		created = append(created, host.sanitized())
 	}
+	_ = m.store.save(m.hosts)
 	return created
 }
 
@@ -230,6 +305,14 @@ func (h hostRecord) sanitized() hostRecord {
 	h.HasPrivateKey = h.PrivateKey != ""
 	h.Password = ""
 	h.PrivateKey = ""
+	return h
+}
+
+func (h hostRecord) withoutSecrets() hostRecord {
+	h.Password = ""
+	h.PrivateKey = ""
+	h.HasPassword = false
+	h.HasPrivateKey = false
 	return h
 }
 
