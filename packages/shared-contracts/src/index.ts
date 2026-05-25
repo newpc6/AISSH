@@ -39,3 +39,14 @@ export interface SessionOpenRequest {
 export interface SessionOpenResponse {
   session: SessionRecord
 }
+
+export interface SessionInputRequest {
+  data: string
+}
+
+export type TerminalEventType = 'output' | 'status' | 'error'
+
+export interface TerminalEvent {
+  type: TerminalEventType
+  data?: string
+}

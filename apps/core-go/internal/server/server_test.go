@@ -52,7 +52,7 @@ func TestHostsEndpoint(t *testing.T) {
 
 func TestCreateSessionEndpoint(t *testing.T) {
 	srv := New("18555")
-	body := []byte(`{"hostId":"gpu-dev-01"}`)
+	body := []byte(`{"hostId":"local-demo"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
@@ -69,7 +69,40 @@ func TestCreateSessionEndpoint(t *testing.T) {
 	}
 
 	session := response["session"]
-	if session["hostId"] != "gpu-dev-01" {
-		t.Fatalf("expected hostId gpu-dev-01, got %v", session["hostId"])
+	if session["hostId"] != "local-demo" {
+		t.Fatalf("expected hostId local-demo, got %v", session["hostId"])
+	}
+}
+
+func TestWriteSessionInputEndpoint(t *testing.T) {
+	srv := New("18555")
+	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))
+	openReq.Header.Set("Content-Type", "application/json")
+	openRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(openRecorder, openReq)
+
+	if openRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", openRecorder.Code)
+	}
+
+	var openResponse map[string]map[string]any
+	if err := json.Unmarshal(openRecorder.Body.Bytes(), &openResponse); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+
+	sessionID := openResponse["session"]["id"].(string)
+	inputReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/sessions/"+sessionID+"/input",
+		bytes.NewBufferString(`{"data":"hello\r"}`),
+	)
+	inputReq.Header.Set("Content-Type", "application/json")
+	inputRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(inputRecorder, inputReq)
+
+	if inputRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", inputRecorder.Code)
 	}
 }

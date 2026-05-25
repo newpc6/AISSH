@@ -8,6 +8,7 @@ import {
   type HostRecord,
   type SessionOpenResponse,
   type SessionRecord,
+  type TerminalEvent,
 } from '@ai-ssh/shared-contracts'
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
@@ -48,6 +49,7 @@ export function App() {
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
     const terminal = new Terminal({
@@ -92,6 +94,7 @@ export function App() {
 
     return () => {
       window.removeEventListener('resize', onResize)
+      eventSourceRef.current?.close()
       terminal.dispose()
       xtermRef.current = null
       fitAddonRef.current = null
@@ -142,6 +145,64 @@ export function App() {
 
   const activeSession = sessions[0] ?? null
 
+  useEffect(() => {
+    if (!activeSession || !xtermRef.current) {
+      return
+    }
+
+    const disposable = xtermRef.current.onData((data) => {
+      void fetch(`${CORE_API_BASE}/sessions/${activeSession.id}/input`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ data }),
+      })
+    })
+
+    return () => disposable.dispose()
+  }, [activeSession])
+
+  const openSessionStream = (session: SessionRecord) => {
+    eventSourceRef.current?.close()
+
+    const source = new EventSource(`${CORE_API_BASE}/sessions/${session.id}/events`)
+    eventSourceRef.current = source
+
+    source.addEventListener('terminal', (event) => {
+      const message = event as MessageEvent<string>
+      const payload = JSON.parse(message.data) as TerminalEvent
+
+      if (payload.type === 'output') {
+        xtermRef.current?.write(payload.data ?? '')
+      }
+
+      if (payload.type === 'status') {
+        setSessions((current) =>
+          current.map((item) =>
+            item.id === session.id ? { ...item, status: payload.data === 'connected' ? 'connected' : item.status } : item,
+          ),
+        )
+      }
+
+      if (payload.type === 'error') {
+        const messageText = payload.data ?? '会话发生错误'
+        setErrorMessage(messageText)
+        setSessions((current) =>
+          current.map((item) =>
+            item.id === session.id ? { ...item, status: 'error', lastError: messageText } : item,
+          ),
+        )
+        xtermRef.current?.writeln('')
+        xtermRef.current?.writeln(`ERROR: ${messageText}`)
+      }
+    })
+
+    source.addEventListener('close', () => {
+      source.close()
+    })
+  }
+
   const createSession = async () => {
     if (!selectedHostId) {
       return
@@ -173,7 +234,8 @@ export function App() {
       xtermRef.current?.writeln('')
       xtermRef.current?.writeln(`Session: ${data.session.id}`)
       xtermRef.current?.writeln(`Host: ${data.session.hostName}`)
-      xtermRef.current?.writeln('已完成会话初始化骨架，下一步接入真实 SSH 流。')
+      xtermRef.current?.writeln('正在连接会话输出流...')
+      openSessionStream(data.session)
       fitAddonRef.current?.fit()
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建会话失败'
