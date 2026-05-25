@@ -80,6 +80,7 @@ export function App() {
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     const terminal = new Terminal({
@@ -193,6 +194,21 @@ export function App() {
   const closeAddHostDialog = () => {
     setIsHostDialogOpen(false)
     resetHostForm()
+  }
+
+  const selectPrivateKeyFile = async (file: File | null) => {
+    if (!file) {
+      return
+    }
+
+    try {
+      const privateKey = await file.text()
+      setHostForm((current) => ({ ...current, privateKey }))
+      setSavePrivateKey(true)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '读取 SSH Key 文件失败'
+      setErrorMessage(message)
+    }
   }
 
   const saveHost = async () => {
@@ -704,6 +720,26 @@ export function App() {
                 </label>
                 <label>
                   <span>SSH Key</span>
+                  <div className="file-picker-row">
+                    <button
+                      disabled={!savePrivateKey}
+                      type="button"
+                      onClick={() => privateKeyFileRef.current?.click()}
+                    >
+                      选择文件
+                    </button>
+                    <small>{hostForm.privateKey ? '已读取私钥内容' : '支持选择本地私钥文件'}</small>
+                  </div>
+                  <input
+                    accept=".pem,.key,.pub,.txt"
+                    ref={privateKeyFileRef}
+                    type="file"
+                    hidden
+                    onChange={(event) => {
+                      void selectPrivateKeyFile(event.target.files?.[0] ?? null)
+                      event.target.value = ''
+                    }}
+                  />
                   <textarea
                     disabled={!savePrivateKey}
                     value={hostForm.privateKey ?? ''}

@@ -514,6 +514,33 @@ code {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.file-picker-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.file-picker-row button {
+  min-height: 32px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.file-picker-row button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.file-picker-row small {
+  min-width: 0;
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
 .checkbox-row {
   display: flex !important;
   align-items: center;
