@@ -193,6 +193,15 @@ func (r *statusRecorder) Write(data []byte) (int, error) {
 	return r.ResponseWriter.Write(data)
 }
 
+func (r *statusRecorder) Flush() {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")

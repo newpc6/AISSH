@@ -22,6 +22,7 @@ import {
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
 type LeftMode = 'servers' | 'files'
 type RightTool = 'ai' | 'history'
+type HostDialogMode = 'create' | 'edit'
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 
@@ -72,6 +73,14 @@ function isLikelyStatic405(response: Response) {
   return response.status === 405 && response.url.startsWith(window.location.origin)
 }
 
+function resolveApiStreamUrl(path: string) {
+  const requestPath = path.startsWith('/') ? path : `/${path}`
+  if (window.location.origin.startsWith('http://127.0.0.1:1420')) {
+    return `${CORE_API_BASE}${requestPath}`
+  }
+  return `${CORE_API_FALLBACK_BASE}${requestPath}`
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -84,11 +93,14 @@ export function App() {
   const [rightTool, setRightTool] = useState<RightTool>('ai')
   const [aiEnabled, setAiEnabled] = useState(true)
   const [isHostDialogOpen, setIsHostDialogOpen] = useState(false)
+  const [hostDialogMode, setHostDialogMode] = useState<HostDialogMode>('create')
+  const [editingHostId, setEditingHostId] = useState('')
   const [hostForm, setHostForm] = useState<HostUpsertRequest>(emptyHostForm)
   const [savePassword, setSavePassword] = useState(false)
   const [savePrivateKey, setSavePrivateKey] = useState(false)
   const [hostDialogError, setHostDialogError] = useState('')
   const [isSavingHost, setIsSavingHost] = useState(false)
+  const [openHostMenuId, setOpenHostMenuId] = useState('')
   const [isLogDialogOpen, setIsLogDialogOpen] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
@@ -207,6 +219,16 @@ export function App() {
     void loadHosts()
   }, [])
 
+  useEffect(() => {
+    if (!openHostMenuId) {
+      return
+    }
+
+    const closeMenu = () => setOpenHostMenuId('')
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [openHostMenuId])
+
   const currentHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
@@ -241,10 +263,33 @@ export function App() {
     setSavePassword(false)
     setSavePrivateKey(false)
     setHostDialogError('')
+    setHostDialogMode('create')
+    setEditingHostId('')
   }
 
   const openAddHostDialog = () => {
     resetHostForm()
+    setIsHostDialogOpen(true)
+  }
+
+  const openEditHostDialog = (host: HostRecord) => {
+    setHostDialogMode('edit')
+    setEditingHostId(host.id)
+    setHostForm({
+      name: host.name,
+      address: host.address,
+      port: host.port,
+      username: host.username,
+      authType: host.authType,
+      group: host.group ?? '默认',
+      description: host.description ?? '',
+      password: '',
+      privateKey: '',
+    })
+    setSavePassword(Boolean(host.hasPassword))
+    setSavePrivateKey(Boolean(host.hasPrivateKey))
+    setHostDialogError('')
+    setOpenHostMenuId('')
     setIsHostDialogOpen(true)
   }
 
@@ -276,19 +321,24 @@ export function App() {
       setHostDialogError('请填写主机名称、地址和用户名')
       return
     }
-    if (hostForm.authType === 'password' && (!savePassword || !hostForm.password)) {
+    if (hostForm.authType === 'password' && hostDialogMode === 'create' && (!savePassword || !hostForm.password)) {
       setHostDialogError('密码认证需要勾选并填写保存密码')
       return
     }
-    if (hostForm.authType === 'privateKey' && (!savePrivateKey || !hostForm.privateKey)) {
+    if (
+      hostForm.authType === 'privateKey' &&
+      hostDialogMode === 'create' &&
+      (!savePrivateKey || !hostForm.privateKey)
+    ) {
       setHostDialogError('SSH Key 认证需要勾选保存，并粘贴或选择私钥文件')
       return
     }
 
     setIsSavingHost(true)
     try {
-      const response = await apiFetch('/hosts', {
-        method: 'POST',
+      const requestPath = hostDialogMode === 'edit' ? `/hosts/${editingHostId}` : '/hosts'
+      const response = await apiFetch(requestPath, {
+        method: hostDialogMode === 'edit' ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -303,15 +353,15 @@ export function App() {
       if (!response.ok) {
         const detail = await response.text()
         const message = detail.trim() || `HTTP ${response.status}`
-        throw new Error(`保存主机失败：${message}`)
+        throw new Error(`${hostDialogMode === 'edit' ? '编辑' : '保存'}主机失败：${message}`)
       }
 
-      const created = (await response.json()) as HostRecord
-      await loadHosts(created.id)
+      const saved = (await response.json()) as HostRecord
+      await loadHosts(saved.id)
       setErrorMessage('')
       closeAddHostDialog()
     } catch (error) {
-      const message = error instanceof Error ? error.message : '保存主机失败'
+      const message = error instanceof Error ? error.message : `${hostDialogMode === 'edit' ? '编辑' : '保存'}主机失败`
       setHostDialogError(message)
       setErrorMessage(message)
     } finally {
@@ -356,6 +406,51 @@ export function App() {
     }
 
     await loadHosts()
+  }
+
+  const deleteHost = async (host: HostRecord) => {
+    setOpenHostMenuId('')
+    const confirmed = window.confirm(`确定删除服务器「${host.name}」吗？`)
+    if (!confirmed) {
+      return
+    }
+
+    const response = await apiFetch(`/hosts/${host.id}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const detail = await response.text()
+      setErrorMessage(detail.trim() || `删除失败：${response.status}`)
+      return
+    }
+
+    const nextHosts = await loadHosts()
+    if (selectedHostId === host.id) {
+      setSelectedHostId(nextHosts[0]?.id ?? '')
+    }
+    setSessions((current) => current.filter((session) => session.hostId !== host.id))
+    if (activeSession?.hostId === host.id) {
+      setActiveSessionId('')
+    }
+  }
+
+  const duplicateHost = async (host: HostRecord) => {
+    setOpenHostMenuId('')
+    setHostDialogMode('create')
+    setEditingHostId('')
+    setHostForm({
+      name: `${host.name} 副本`,
+      address: host.address,
+      port: host.port,
+      username: host.username,
+      authType: host.authType,
+      group: host.group ?? '默认',
+      description: host.description ?? '',
+      password: '',
+      privateKey: '',
+    })
+    setSavePassword(false)
+    setSavePrivateKey(false)
+    setHostDialogError('')
+    setIsHostDialogOpen(true)
   }
 
   const loadLogs = async () => {
@@ -415,8 +510,31 @@ export function App() {
   const openSessionStream = (session: SessionRecord) => {
     eventSourceRef.current?.close()
 
-    const source = new EventSource(`${CORE_API_BASE}/sessions/${session.id}/events`)
+    const streamUrl = resolveApiStreamUrl(`/sessions/${session.id}/events`)
+    appendLog('debug', 'ui.sse', 'session stream connecting', { sessionID: session.id, url: streamUrl })
+    const source = new EventSource(streamUrl)
     eventSourceRef.current = source
+
+    source.onopen = () => {
+      appendLog('debug', 'ui.sse', 'session stream opened', { sessionID: session.id })
+    }
+
+    source.onerror = () => {
+      if (eventSourceRef.current !== source) {
+        return
+      }
+      const messageText = '会话输出流连接失败，请查看运行日志或 Go core 控制台'
+      appendLog('error', 'ui.sse', messageText, { sessionID: session.id, url: streamUrl })
+      source.close()
+      setErrorMessage(messageText)
+      setSessions((current) =>
+        current.map((item) =>
+          item.id === session.id ? { ...item, status: 'error', lastError: messageText } : item,
+        ),
+      )
+      xtermRef.current?.writeln('')
+      xtermRef.current?.writeln(`ERROR: ${messageText}`)
+    }
 
     source.addEventListener('terminal', (event) => {
       const message = event as MessageEvent<string>
@@ -451,6 +569,7 @@ export function App() {
 
     source.addEventListener('close', () => {
       source.close()
+      appendLog('debug', 'ui.sse', 'session stream closed', { sessionID: session.id })
     })
   }
 
@@ -565,18 +684,50 @@ export function App() {
                 <section className="server-group" key={group.name}>
                   <p>{group.name}</p>
                   {group.hosts.map((host) => (
-                    <button
+                    <div
                       key={host.id}
                       className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
-                      onClick={() => setSelectedHostId(host.id)}
+                      onClick={() => {
+                        setSelectedHostId(host.id)
+                        setOpenHostMenuId('')
+                      }}
                       onDoubleClick={() => void createSession(host.id)}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          void createSession(host.id)
+                        }
+                      }}
                     >
-                      <span>{host.name}</span>
-                      <small>
-                        {host.username}@{host.address}:{host.port}
-                      </small>
-                    </button>
+                      <div className="server-row-main">
+                        <span>{host.name}</span>
+                        <small>
+                          {host.username}@{host.address}:{host.port}
+                        </small>
+                      </div>
+                      <button
+                        aria-label={`${host.name} 菜单`}
+                        className="host-menu-trigger"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setOpenHostMenuId((current) => (current === host.id ? '' : host.id))
+                        }}
+                      >
+                        ⋯
+                      </button>
+                      {openHostMenuId === host.id ? (
+                        <div className="host-menu" onClick={(event) => event.stopPropagation()}>
+                          <button type="button" onClick={() => openEditHostDialog(host)}>编辑</button>
+                          <button type="button" onClick={() => void createSession(host.id)}>连接</button>
+                          <button type="button" onClick={() => void duplicateHost(host)}>复制配置</button>
+                          <button className="danger-item" type="button" onClick={() => void deleteHost(host)}>
+                            删除
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   ))}
                 </section>
               ))}
@@ -732,7 +883,7 @@ export function App() {
             <div className="modal-header">
               <div>
                 <p className="section-label">SSH 连接</p>
-                <h3>新增服务器</h3>
+                <h3>{hostDialogMode === 'edit' ? '编辑服务器' : '新增服务器'}</h3>
               </div>
               <button type="button" onClick={closeAddHostDialog}>×</button>
             </div>
@@ -812,7 +963,7 @@ export function App() {
                     onChange={(event) => setSavePassword(event.target.checked)}
                     type="checkbox"
                   />
-                  <span>保存密码</span>
+                  <span>{hostDialogMode === 'edit' && savePassword ? '保留或更新密码' : '保存密码'}</span>
                 </label>
                 <label>
                   <span>密码</span>
@@ -835,7 +986,7 @@ export function App() {
                     onChange={(event) => setSavePrivateKey(event.target.checked)}
                     type="checkbox"
                   />
-                  <span>保存 SSH Key</span>
+                  <span>{hostDialogMode === 'edit' && savePrivateKey ? '保留或更新 SSH Key' : '保存 SSH Key'}</span>
                 </label>
                 <label>
                   <span>SSH Key</span>
@@ -872,7 +1023,7 @@ export function App() {
             <div className="modal-actions">
               <button disabled={isSavingHost} type="button" onClick={closeAddHostDialog}>取消</button>
               <button className="primary-button" disabled={isSavingHost} type="submit">
-                {isSavingHost ? '保存中' : '保存'}
+                {isSavingHost ? '保存中' : hostDialogMode === 'edit' ? '保存修改' : '保存'}
               </button>
             </div>
           </form>

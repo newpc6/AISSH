@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestServer(t *testing.T) *http.Server {
@@ -331,6 +333,56 @@ func TestCreateSessionEndpoint(t *testing.T) {
 	session := response["session"]
 	if session["hostId"] != "local-demo" {
 		t.Fatalf("expected hostId local-demo, got %v", session["hostId"])
+	}
+}
+
+func TestSessionEventsEndpointStreamsThroughLoggingMiddleware(t *testing.T) {
+	srv := newTestServer(t)
+	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))
+	openReq.Header.Set("Content-Type", "application/json")
+	openRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(openRecorder, openReq)
+
+	if openRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", openRecorder.Code)
+	}
+
+	var openResponse map[string]map[string]any
+	if err := json.Unmarshal(openRecorder.Body.Bytes(), &openResponse); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+
+	sessionID := openResponse["session"]["id"].(string)
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/sessions/"+sessionID+"/events", nil)
+	recorder := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		srv.Handler.ServeHTTP(recorder, req)
+		close(done)
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if strings.Contains(recorder.Body.String(), "event: terminal") {
+			cancel()
+			<-done
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d", recorder.Code)
+			}
+			return
+		}
+
+		select {
+		case <-deadline:
+			cancel()
+			<-done
+			t.Fatalf("expected terminal event stream, got body %q and status %d", recorder.Body.String(), recorder.Code)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 }
 
