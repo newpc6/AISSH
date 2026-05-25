@@ -44,11 +44,25 @@ type hostRecord struct {
 	HasPrivateKey bool   `json:"hasPrivateKey,omitempty"`
 }
 
+type hostGroup struct {
+	Name         string `json:"name"`
+	PreviousName string `json:"previousName,omitempty"`
+}
+
+type hostGroupsResponse struct {
+	Groups []hostGroup `json:"groups"`
+}
+
+type hostGroupsUpdateRequest struct {
+	Groups []hostGroup `json:"groups"`
+}
+
 type hostsExportResponse struct {
 	Version   int          `json:"version"`
 	Encrypted bool         `json:"encrypted"`
 	ExportKey string       `json:"exportKey,omitempty"`
 	Hosts     []hostRecord `json:"hosts"`
+	Groups    []hostGroup  `json:"groups,omitempty"`
 }
 
 type hostUpsertRequest struct {
@@ -67,6 +81,7 @@ type hostsImportRequest struct {
 	Hosts     []hostUpsertRequest `json:"hosts"`
 	ExportKey string              `json:"exportKey,omitempty"`
 	Encrypted bool                `json:"encrypted,omitempty"`
+	Groups    []hostGroup         `json:"groups,omitempty"`
 }
 
 type sessionRecord struct {
@@ -139,6 +154,7 @@ type terminalSession struct {
 type sessionManager struct {
 	mu          sync.RWMutex
 	hosts       []hostRecord
+	groups      []hostGroup
 	sessions    map[string]*terminalSession
 	store       *hostStore
 	credentials credentialStore
@@ -150,7 +166,8 @@ type hostStore struct {
 }
 
 type hostStoreFile struct {
-	Hosts []hostRecord `json:"hosts"`
+	Hosts  []hostRecord `json:"hosts"`
+	Groups []hostGroup  `json:"groups,omitempty"`
 }
 
 func newSessionManager() *sessionManager {
@@ -166,11 +183,15 @@ func newSessionManagerWithStores(store *hostStore, credentials credentialStore, 
 		logger:      logger,
 	}
 
-	if hosts, err := manager.store.load(); err == nil && len(hosts) > 0 {
+	if hosts, groups, err := manager.store.load(); err == nil && (len(hosts) > 0 || len(groups) > 0) {
 		manager.hosts = hosts
+		manager.groups = mergeHostGroups(groups, hosts)
 		manager.logger.info("hosts", "loaded hosts from local store", map[string]any{"count": len(hosts)})
 	} else if err != nil {
 		manager.logger.debug("hosts", "using default hosts", map[string]any{"reason": err.Error()})
+	}
+	if len(manager.groups) == 0 {
+		manager.groups = mergeHostGroups(nil, manager.hosts)
 	}
 
 	return manager
@@ -228,22 +249,22 @@ func newHostStore() *hostStore {
 	return &hostStore{path: filepath.Join(baseDir, "data", "hosts.json")}
 }
 
-func (s *hostStore) load() ([]hostRecord, error) {
+func (s *hostStore) load() ([]hostRecord, []hostGroup, error) {
 	file, err := os.Open(s.path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer file.Close()
 
 	var data hostStoreFile
 	if err := json.NewDecoder(file).Decode(&data); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return data.Hosts, nil
+	return data.Hosts, normalizeHostGroups(data.Groups), nil
 }
 
-func (s *hostStore) save(hosts []hostRecord) error {
+func (s *hostStore) save(hosts []hostRecord, groups []hostGroup) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
@@ -261,7 +282,44 @@ func (s *hostStore) save(hosts []hostRecord) error {
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(hostStoreFile{Hosts: persistedHosts})
+	return encoder.Encode(hostStoreFile{
+		Hosts:  persistedHosts,
+		Groups: mergeHostGroups(groups, hosts),
+	})
+}
+
+func normalizeHostGroups(groups []hostGroup) []hostGroup {
+	normalized := make([]hostGroup, 0, len(groups))
+	seen := map[string]bool{}
+	for _, group := range groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		normalized = append(normalized, hostGroup{Name: name})
+	}
+	return normalized
+}
+
+func mergeHostGroups(groups []hostGroup, hosts []hostRecord) []hostGroup {
+	merged := normalizeHostGroups(groups)
+	seen := map[string]bool{}
+	for _, group := range merged {
+		seen[group.Name] = true
+	}
+	for _, host := range hosts {
+		name := strings.TrimSpace(host.Group)
+		if name == "" {
+			name = "默认"
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		merged = append(merged, hostGroup{Name: name})
+	}
+	return merged
 }
 
 func (m *sessionManager) listHosts() []hostRecord {
@@ -275,16 +333,51 @@ func (m *sessionManager) listHosts() []hostRecord {
 	return hosts
 }
 
+func (m *sessionManager) listHostGroups() []hostGroup {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return mergeHostGroups(m.groups, m.hosts)
+}
+
+func (m *sessionManager) updateHostGroups(request hostGroupsUpdateRequest) []hostGroup {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, group := range request.Groups {
+		previousName := strings.TrimSpace(group.PreviousName)
+		nextName := strings.TrimSpace(group.Name)
+		if previousName == "" || nextName == "" || previousName == nextName {
+			continue
+		}
+		for i := range m.hosts {
+			if strings.TrimSpace(m.hosts[i].Group) == previousName {
+				m.hosts[i].Group = nextName
+			}
+		}
+	}
+	m.groups = mergeHostGroups(request.Groups, m.hosts)
+	for i := range m.hosts {
+		if strings.TrimSpace(m.hosts[i].Group) == "" {
+			m.hosts[i].Group = "默认"
+		}
+	}
+	_ = m.store.save(m.hosts, m.groups)
+	m.logger.info("hosts", "host groups updated", map[string]any{"count": len(m.groups)})
+	return m.groups
+}
+
 func (m *sessionManager) exportHosts(includeCredentials bool) (hostsExportResponse, error) {
 	m.mu.RLock()
 	hosts := make([]hostRecord, len(m.hosts))
 	copy(hosts, m.hosts)
+	groups := mergeHostGroups(m.groups, m.hosts)
 	m.mu.RUnlock()
 
 	response := hostsExportResponse{
 		Version:   1,
 		Encrypted: includeCredentials,
 		Hosts:     make([]hostRecord, 0, len(hosts)),
+		Groups:    groups,
 	}
 
 	exportKey := ""
@@ -339,8 +432,10 @@ func (m *sessionManager) createHost(request hostUpsertRequest) (hostRecord, erro
 		return hostRecord{}, err
 	}
 	m.hosts = append(m.hosts, host)
-	if err := m.store.save(m.hosts); err != nil {
+	m.groups = mergeHostGroups(m.groups, m.hosts)
+	if err := m.store.save(m.hosts, m.groups); err != nil {
 		m.hosts = m.hosts[:len(m.hosts)-1]
+		m.groups = mergeHostGroups(m.groups, m.hosts)
 		_ = m.credentials.Delete(host.ID, passwordCredential)
 		_ = m.credentials.Delete(host.ID, privateKeyCredential)
 		m.logger.error("hosts", "save host file failed", map[string]any{"hostID": host.ID, "error": err.Error()})
@@ -376,7 +471,8 @@ func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (h
 				return hostRecord{}, true, err
 			}
 			m.hosts[i] = next
-			_ = m.store.save(m.hosts)
+			m.groups = mergeHostGroups(m.groups, m.hosts)
+			_ = m.store.save(m.hosts, m.groups)
 			m.logger.info("hosts", "host updated", map[string]any{"hostID": hostID, "name": next.Name})
 			return next.sanitized(), true, nil
 		}
@@ -394,7 +490,8 @@ func (m *sessionManager) deleteHost(hostID string) bool {
 			m.hosts = append(m.hosts[:i], m.hosts[i+1:]...)
 			_ = m.credentials.Delete(hostID, passwordCredential)
 			_ = m.credentials.Delete(hostID, privateKeyCredential)
-			_ = m.store.save(m.hosts)
+			m.groups = mergeHostGroups(m.groups, m.hosts)
+			_ = m.store.save(m.hosts, m.groups)
 			m.logger.info("hosts", "host deleted", map[string]any{"hostID": hostID})
 			return true
 		}
@@ -407,6 +504,7 @@ func (m *sessionManager) importHosts(request hostsImportRequest) []hostRecord {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.groups = mergeHostGroups(append(m.groups, request.Groups...), m.hosts)
 	created := make([]hostRecord, 0, len(request.Hosts))
 	for _, hostRequest := range request.Hosts {
 		if request.Encrypted {
@@ -431,7 +529,8 @@ func (m *sessionManager) importHosts(request hostsImportRequest) []hostRecord {
 		m.hosts = append(m.hosts, host)
 		created = append(created, host.sanitized())
 	}
-	_ = m.store.save(m.hosts)
+	m.groups = mergeHostGroups(m.groups, m.hosts)
+	_ = m.store.save(m.hosts, m.groups)
 	return created
 }
 

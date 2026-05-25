@@ -7,6 +7,9 @@ import {
   CORE_DEFAULT_PORT,
   type HealthResponse,
   type HostAuthType,
+  type HostGroup,
+  type HostGroupsResponse,
+  type HostGroupsUpdateRequest,
   type HostRecord,
   type AppSettings,
   type FileEntry,
@@ -35,6 +38,10 @@ type TopMenu = 'file' | 'edit' | 'session' | 'transfer' | 'tools' | 'settings' |
 type MetricSample = ServerMetrics & {
   networkRxRateBytes: number
   networkTxRateBytes: number
+}
+
+type HostGroupView = HostGroup & {
+  hosts: HostRecord[]
 }
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
@@ -138,6 +145,30 @@ function stripTerminalControlSequences(data: string) {
     .replace(/\x1b[@-Z\\-_]/g, '')
 }
 
+function normalizeHostGroups(groups: HostGroup[], hosts: HostRecord[] = []) {
+  const seen = new Set<string>()
+  const normalized: HostGroup[] = []
+  const append = (name: string) => {
+    const trimmed = name.trim() || '默认'
+    if (seen.has(trimmed)) {
+      return
+    }
+    seen.add(trimmed)
+    normalized.push({ name: trimmed })
+  }
+
+  for (const group of groups) {
+    append(group.name)
+  }
+  for (const host of hosts) {
+    append(host.group ?? '默认')
+  }
+  if (normalized.length === 0) {
+    append('默认')
+  }
+  return normalized
+}
+
 function sessionStatusLabel(status: SessionRecord['status']) {
   if (status === 'connected') return '已连接'
   if (status === 'connecting') return '连接中'
@@ -166,6 +197,12 @@ export function App() {
   const [healthState, setHealthState] = useState<LoadState>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [hosts, setHosts] = useState<HostRecord[]>([])
+  const [hostGroups, setHostGroups] = useState<HostGroup[]>([{ name: '默认' }])
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
+  const [groupDrafts, setGroupDrafts] = useState<string[]>(['默认'])
+  const [originalGroupDrafts, setOriginalGroupDrafts] = useState<string[]>(['默认'])
+  const [groupDialogMessage, setGroupDialogMessage] = useState('')
+  const [groupDialogError, setGroupDialogError] = useState('')
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [selectedHostId, setSelectedHostId] = useState<string>('')
   const [activeSessionId, setActiveSessionId] = useState<string>('')
@@ -318,6 +355,7 @@ export function App() {
 
     void loadHealth()
     void loadHosts()
+    void loadHostGroups()
   }, [])
 
   useEffect(() => {
@@ -358,14 +396,13 @@ export function App() {
   const memorySparklinePoints = useMemo(() => metricPoints(metricHistory, 'memoryPercent'), [metricHistory])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
-  const groupedHosts = useMemo(() => {
-    const groups = new Map<string, HostRecord[]>()
-    for (const host of hosts) {
-      const group = host.group || '默认'
-      groups.set(group, [...(groups.get(group) ?? []), host])
-    }
-    return Array.from(groups.entries()).map(([name, items]) => ({ name, hosts: items }))
-  }, [hosts])
+  const groupedHosts = useMemo<HostGroupView[]>(() => {
+    const groups = normalizeHostGroups(hostGroups, hosts)
+    return groups.map((group) => ({
+      ...group,
+      hosts: hosts.filter((host) => (host.group || '默认') === group.name),
+    }))
+  }, [hostGroups, hosts])
 
   useEffect(() => {
     previousMetricsRef.current = null
@@ -387,6 +424,18 @@ export function App() {
     return data
   }
 
+  const loadHostGroups = async () => {
+    const response = await apiFetch('/host-groups')
+    if (!response.ok) {
+      appendLog('warn', 'ui.hostGroups', 'host groups load failed', { status: response.status })
+      return normalizeHostGroups(hostGroups, hosts)
+    }
+    const data = (await response.json()) as HostGroupsResponse
+    const groups = normalizeHostGroups(data.groups, hosts)
+    setHostGroups(groups)
+    return groups
+  }
+
   const resetHostForm = () => {
     setHostForm(emptyHostForm)
     setSavePassword(false)
@@ -398,6 +447,7 @@ export function App() {
 
   const openAddHostDialog = () => {
     resetHostForm()
+    setHostForm((current) => ({ ...current, group: hostGroups[0]?.name ?? '默认' }))
     setIsHostDialogOpen(true)
   }
 
@@ -524,6 +574,7 @@ export function App() {
         hosts: (parsed.hosts ?? []) as HostsImportRequest['hosts'],
         encrypted: parsed.encrypted,
         exportKey: parsed.exportKey,
+        groups: parsed.groups,
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '服务器列表 JSON 解析失败'
@@ -549,12 +600,14 @@ export function App() {
     }
 
     await loadHosts()
+    await loadHostGroups()
   }
 
   const exportSoftwareConfig = async () => {
     const config = {
       settings,
       leftRailWidth,
+      hostGroups,
       exportedAt: new Date().toISOString(),
       version: 1,
     }
@@ -571,6 +624,9 @@ export function App() {
       setSettings((current) => ({ ...current, ...parsed.settings }))
       if (typeof parsed.leftRailWidth === 'number') {
         setLeftRailWidth(Math.min(620, Math.max(320, parsed.leftRailWidth)))
+      }
+      if (Array.isArray((parsed as { hostGroups?: HostGroup[] }).hostGroups)) {
+        setHostGroups(normalizeHostGroups((parsed as { hostGroups: HostGroup[] }).hostGroups, hosts))
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '配置 JSON 解析失败'
@@ -649,6 +705,47 @@ export function App() {
     setOpenTopMenu('')
     setSettingsSavedMessage('')
     setIsSettingsDialogOpen(true)
+  }
+
+  const openGroupDialog = () => {
+    setOpenTopMenu('')
+    const groups = normalizeHostGroups(hostGroups, hosts)
+    const names = groups.map((group) => group.name)
+    setGroupDrafts(names)
+    setOriginalGroupDrafts(names)
+    setGroupDialogMessage('')
+    setGroupDialogError('')
+    setIsGroupDialogOpen(true)
+  }
+
+  const saveHostGroups = async () => {
+    const payload: HostGroupsUpdateRequest = {
+      groups: normalizeHostGroups(
+        groupDrafts.map((name, index) => ({
+          name,
+          previousName: originalGroupDrafts[index],
+        })),
+      ),
+    }
+    const response = await apiFetch('/host-groups', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) {
+      const detail = await response.text()
+      setGroupDialogError(detail.trim() || `保存分组失败：${response.status}`)
+      return
+    }
+    const data = (await response.json()) as HostGroupsResponse
+    setHostGroups(normalizeHostGroups(data.groups, hosts))
+    await loadHosts()
+    setOriginalGroupDrafts(payload.groups.map((group) => group.name))
+    setGroupDrafts(payload.groups.map((group) => group.name))
+    setGroupDialogError('')
+    setGroupDialogMessage('分组已保存')
   }
 
   const saveSettings = () => {
@@ -1190,6 +1287,7 @@ export function App() {
                   {key === 'session' ? (
                     <>
                       <button type="button" onClick={() => void createSession()}>新建会话</button>
+                      <button type="button" onClick={openGroupDialog}>管理分组</button>
                       <button disabled={!activeSession} type="button" onClick={() => activeSession && void closeSession(activeSession)}>
                         关闭当前
                       </button>
@@ -1245,6 +1343,7 @@ export function App() {
                 <strong>服务器</strong>
                 <div>
                   <button type="button" onClick={openAddHostDialog}>+</button>
+                  <button type="button" onClick={openGroupDialog}>分组</button>
                   <button type="button" onClick={() => void exportHosts(false)}>⇅</button>
                 </div>
               </div>
@@ -1252,7 +1351,8 @@ export function App() {
               <div className="server-groups">
                 {groupedHosts.map((group) => (
                   <section className="server-group" key={group.name}>
-                    <p>{group.name}</p>
+                    <p>{group.name}<span>{group.hosts.length}</span></p>
+                    {group.hosts.length === 0 ? <small className="empty-group-text">空分组</small> : null}
                     {group.hosts.map((host) => (
                       <div
                         key={host.id}
@@ -1676,10 +1776,16 @@ export function App() {
               <label>
                 <span>分组</span>
                 <input
+                  list="host-group-options"
                   value={hostForm.group ?? ''}
                   onChange={(event) => setHostForm((current) => ({ ...current, group: event.target.value }))}
                   placeholder="默认"
                 />
+                <datalist id="host-group-options">
+                  {hostGroups.map((group) => (
+                    <option key={group.name} value={group.name} />
+                  ))}
+                </datalist>
               </label>
               <label>
                 <span>认证</span>
@@ -1801,6 +1907,71 @@ export function App() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {isGroupDialogOpen ? (
+        <div className="modal-backdrop">
+          <section className="group-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">SSH 连接</p>
+                <h3>分组管理</h3>
+              </div>
+              <button type="button" onClick={() => setIsGroupDialogOpen(false)}>×</button>
+            </div>
+
+            {groupDialogError ? <p className="error-text modal-error">{groupDialogError}</p> : null}
+            {groupDialogMessage ? <p className="success-text">{groupDialogMessage}</p> : null}
+
+            <div className="group-list-editor">
+              {groupDrafts.map((group, index) => {
+                const usedCount = hosts.filter((host) => (host.group || '默认') === group.trim()).length
+                return (
+                  <div className="group-edit-row" key={`${group}-${index}`}>
+                    <input
+                      value={group}
+                      onChange={(event) => {
+                        const next = [...groupDrafts]
+                        next[index] = event.target.value
+                        setGroupDrafts(next)
+                        setGroupDialogMessage('')
+                      }}
+                      placeholder="分组名称"
+                    />
+                    <span>{usedCount} 台</span>
+                    <button
+                      disabled={usedCount > 0 || groupDrafts.length <= 1}
+                      type="button"
+                      onClick={() => {
+                        setGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                        setOriginalGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                        setGroupDialogMessage('')
+                      }}
+                    >
+                      删除
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setGroupDrafts((current) => [...current, '新分组'])
+                  setOriginalGroupDrafts((current) => [...current, ''])
+                  setGroupDialogMessage('')
+                }}
+              >
+                新增分组
+              </button>
+              <button className="primary-button" type="button" onClick={() => void saveHostGroups()}>
+                保存
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 

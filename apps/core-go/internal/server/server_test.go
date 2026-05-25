@@ -195,6 +195,72 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 	}
 }
 
+func TestHostGroupsPersistEmptyGroups(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "hosts.json")
+	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, newMemoryCredentialStore(), newAppLogger()))
+	updateBody := []byte(`{"groups":[{"name":"默认"},{"name":"生产环境"},{"name":"空分组"}]}`)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/host-groups", bytes.NewBuffer(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(updateRecorder, updateReq)
+
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", updateRecorder.Code)
+	}
+	if !bytes.Contains(updateRecorder.Body.Bytes(), []byte("空分组")) {
+		t.Fatalf("expected empty group in response, got %q", updateRecorder.Body.String())
+	}
+
+	restarted := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, newMemoryCredentialStore(), newAppLogger()))
+	listReq := httptest.NewRequest(http.MethodGet, "/api/host-groups", nil)
+	listRecorder := httptest.NewRecorder()
+	restarted.Handler.ServeHTTP(listRecorder, listReq)
+
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", listRecorder.Code)
+	}
+	if !bytes.Contains(listRecorder.Body.Bytes(), []byte("空分组")) {
+		t.Fatalf("expected persisted empty group, got %q", listRecorder.Body.String())
+	}
+}
+
+func TestHostGroupsRenameUpdatesHosts(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "hosts.json")
+	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, newMemoryCredentialStore(), newAppLogger()))
+	createBody := []byte(`{
+		"name":"Grouped Host",
+		"address":"192.168.1.22",
+		"port":22,
+		"username":"root",
+		"authType":"agent",
+		"group":"旧分组"
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewBuffer(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(createRecorder, createReq)
+	if createRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", createRecorder.Code)
+	}
+
+	updateBody := []byte(`{"groups":[{"name":"新分组","previousName":"旧分组"}]}`)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/host-groups", bytes.NewBuffer(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(updateRecorder, updateReq)
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", updateRecorder.Code)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	listRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(listRecorder, listReq)
+	if !bytes.Contains(listRecorder.Body.Bytes(), []byte("新分组")) {
+		t.Fatalf("expected host group to be renamed, got %q", listRecorder.Body.String())
+	}
+}
+
 func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "hosts.json")
 	credentials := newMemoryCredentialStore()
@@ -225,6 +291,9 @@ func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 	}
 	if bytes.Contains(stored, []byte("secret")) {
 		t.Fatal("expected persisted host file to omit password secret")
+	}
+	if !bytes.Contains(stored, []byte("groups")) {
+		t.Fatal("expected persisted host file to include host groups")
 	}
 
 	restarted := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, credentials, newAppLogger()))

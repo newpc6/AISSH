@@ -223,6 +223,19 @@ button {
   font-size: 12px;
 }
 
+.server-group p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.server-group p span,
+.empty-group-text {
+  color: #607189;
+  font-size: 11px;
+}
+
 .file-tree button,
 .history-list button,
 .suggestion-row {
@@ -763,6 +776,7 @@ button {
 }
 
 .host-modal,
+.group-modal,
 .log-modal,
 .settings-modal {
   display: grid;
@@ -770,6 +784,7 @@ button {
 }
 
 .host-modal label,
+.group-modal label,
 .log-toolbar label,
 .settings-modal label {
   display: grid;
@@ -786,6 +801,7 @@ button {
 .host-modal input,
 .host-modal select,
 .host-modal textarea,
+.group-modal input,
 .log-toolbar select,
 .settings-modal input {
   width: 100%;
@@ -807,6 +823,7 @@ button {
 .host-modal input:focus,
 .host-modal select:focus,
 .host-modal textarea:focus,
+.group-modal input:focus,
 .log-toolbar select:focus,
 .settings-modal input:focus {
   border-color: rgba(79, 140, 255, 0.7);
@@ -958,6 +975,7 @@ code {
 }
 
 .host-modal,
+.group-modal,
 .log-modal,
 .settings-modal {
   width: min(560px, 100%);
@@ -968,6 +986,40 @@ code {
   background: #101821;
   padding: 18px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.group-list-editor {
+  display: grid;
+  gap: 8px;
+  max-height: min(420px, 55vh);
+  overflow: auto;
+}
+
+.group-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-edit-row span {
+  color: #8ca0b8;
+  font-size: 12px;
+  text-align: right;
+}
+
+.group-edit-row button {
+  min-height: 34px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.group-edit-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .log-modal {

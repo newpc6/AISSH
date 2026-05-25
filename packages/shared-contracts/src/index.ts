@@ -66,10 +66,24 @@ export interface HostUpsertRequest {
   privateKey?: string
 }
 
+export interface HostGroup {
+  name: string
+  previousName?: string
+}
+
+export interface HostGroupsResponse {
+  groups: HostGroup[]
+}
+
+export interface HostGroupsUpdateRequest {
+  groups: HostGroup[]
+}
+
 export interface HostsImportRequest {
   hosts: HostUpsertRequest[]
   exportKey?: string
   encrypted?: boolean
+  groups?: HostGroup[]
 }
 
 export interface HostsExportResponse {
@@ -77,6 +91,7 @@ export interface HostsExportResponse {
   encrypted: boolean
   exportKey?: string
   hosts: HostRecord[]
+  groups?: HostGroup[]
 }
 
 export interface SessionRecord {

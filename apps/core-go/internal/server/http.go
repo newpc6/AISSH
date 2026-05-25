@@ -80,6 +80,21 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
+	mux.HandleFunc("/api/host-groups", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, hostGroupsResponse{Groups: manager.listHostGroups()})
+		case http.MethodPut:
+			var request hostGroupsUpdateRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, hostGroupsResponse{Groups: manager.updateHostGroups(request)})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/hosts/export", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
