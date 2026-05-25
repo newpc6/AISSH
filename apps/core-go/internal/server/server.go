@@ -1,23 +1,18 @@
 package server
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
-	pathpkg "path"
 	"path/filepath"
-	"sort"
-	"strconv"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -116,7 +111,6 @@ type terminalSession struct {
 	output chan terminalEvent
 	done   chan struct{}
 	once   sync.Once
-	line   string
 }
 
 type sessionManager struct {
@@ -565,29 +559,6 @@ func (s *terminalSession) send(event terminalEvent) {
 	}
 }
 
-func (s *terminalSession) observeInput(data string) string {
-	extra := ""
-	for _, r := range data {
-		switch r {
-		case '\r', '\n':
-			command := strings.TrimSpace(s.line)
-			if command == "pwd" || strings.HasPrefix(command, "cd ") {
-				extra += "\nprintf '\\n__AI_SSH_CWD__%s\\n' \"$PWD\"\n"
-			}
-			s.line = ""
-		case '\u007f', '\b':
-			if len(s.line) > 0 {
-				s.line = s.line[:len(s.line)-1]
-			}
-		default:
-			if r >= ' ' {
-				s.line += string(r)
-			}
-		}
-	}
-	return data + extra
-}
-
 func (s *terminalSession) close() {
 	s.once.Do(func() {
 		close(s.done)
@@ -707,7 +678,7 @@ func (s *terminalSession) runSSH(host hostRecord) {
 	for {
 		select {
 		case data := <-s.input:
-			if _, err := io.WriteString(stdin, s.observeInput(data)); err != nil {
+			if _, err := io.WriteString(stdin, data); err != nil {
 				s.record.Status = "error"
 				s.record.LastError = err.Error()
 				s.send(terminalEvent{Type: "error", Data: err.Error()})
@@ -719,222 +690,20 @@ func (s *terminalSession) runSSH(host hostRecord) {
 	}
 }
 
-func newSSHClient(host hostRecord) (*ssh.Client, error) {
-	addr := fmt.Sprintf("%s:%d", host.Address, host.Port)
-	authMethods := []ssh.AuthMethod{}
-	if host.AuthType == "password" && host.Password != "" {
-		authMethods = append(authMethods, ssh.Password(host.Password))
-	}
-	if host.AuthType == "privateKey" && host.PrivateKey != "" {
-		signer, err := ssh.ParsePrivateKey([]byte(host.PrivateKey))
-		if err != nil {
-			return nil, err
-		}
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
-	}
-
-	return ssh.Dial("tcp", addr, &ssh.ClientConfig{
-		User:            host.Username,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         8 * time.Second,
-	})
-}
-
-func withSFTPClient(host hostRecord, fn func(*sftp.Client) error) error {
-	client, err := newSSHClient(host)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	sftpClient, err := sftp.NewClient(client)
-	if err != nil {
-		return err
-	}
-	defer sftpClient.Close()
-
-	return fn(sftpClient)
-}
-
-func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, error) {
-	if remotePath == "" {
-		remotePath = "."
-	}
-
-	var response fileListResponse
-	err := withSFTPClient(host, func(client *sftp.Client) error {
-		cleanPath := pathpkg.Clean(remotePath)
-		infos, err := client.ReadDir(cleanPath)
-		if err != nil {
-			return err
-		}
-
-		entries := make([]fileEntry, 0, len(infos))
-		for _, info := range infos {
-			entryType := "file"
-			if info.IsDir() {
-				entryType = "directory"
-			}
-			entries = append(entries, fileEntry{
-				Name:       info.Name(),
-				Path:       pathpkg.Join(cleanPath, info.Name()),
-				Type:       entryType,
-				Size:       info.Size(),
-				ModifiedAt: info.ModTime().UTC().Format(time.RFC3339),
-			})
-		}
-
-		sort.SliceStable(entries, func(i, j int) bool {
-			if entries[i].Type != entries[j].Type {
-				return entries[i].Type == "directory"
-			}
-			return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
-		})
-
-		response = fileListResponse{Path: cleanPath, Entries: entries}
-		return nil
-	})
-
-	return response, err
-}
-
-func downloadRemoteFile(host hostRecord, remotePath string, w http.ResponseWriter) error {
-	return withSFTPClient(host, func(client *sftp.Client) error {
-		remoteFile, err := client.Open(remotePath)
-		if err != nil {
-			return err
-		}
-		defer remoteFile.Close()
-
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, pathpkg.Base(remotePath)))
-		_, err = io.Copy(w, remoteFile)
-		return err
-	})
-}
-
-func uploadRemoteFile(host hostRecord, remoteDir string, r *http.Request) error {
-	if remoteDir == "" {
-		remoteDir = "."
-	}
-
-	if err := r.ParseMultipartForm(256 << 20); err != nil {
-		return err
-	}
-
-	files := r.MultipartForm.File["files"]
-	if len(files) == 0 {
-		return fmt.Errorf("no files uploaded")
-	}
-
-	return withSFTPClient(host, func(client *sftp.Client) error {
-		for _, header := range files {
-			source, err := header.Open()
-			if err != nil {
-				return err
-			}
-
-			targetPath := pathpkg.Join(pathpkg.Clean(remoteDir), filepath.Base(header.Filename))
-			target, err := client.Create(targetPath)
-			if err != nil {
-				_ = source.Close()
-				return err
-			}
-
-			_, copyErr := io.Copy(target, source)
-			closeErr := target.Close()
-			_ = source.Close()
-			if copyErr != nil {
-				return copyErr
-			}
-			if closeErr != nil {
-				return closeErr
-			}
-		}
-		return nil
-	})
-}
-
-func collectServerMetrics(host hostRecord) (serverMetrics, error) {
-	metrics := serverMetrics{
-		HostID:      host.ID,
-		CollectedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-
-	client, err := newSSHClient(host)
-	if err != nil {
-		return metrics, err
-	}
-	defer client.Close()
-
-	output, err := runSSHCommand(client, "printf 'cpu='; awk 'NR==1 {total=$2+$3+$4+$5+$6+$7+$8; idle=$5; printf \"%d\\n\", (total-idle)*100/total}' /proc/stat; printf 'mem='; free | awk '/Mem:/ {printf \"%d\\n\", $3*100/$2}'; printf 'disk='; df -P / | awk 'NR==2 {gsub(\"%\", \"\", $5); print $5}'; printf 'net='; awk 'NR>2 {rx+=$2; tx+=$10} END {printf \"%d %d\\n\", rx, tx}' /proc/net/dev")
-	if err != nil {
-		return metrics, err
-	}
-
-	for _, line := range strings.Split(output, "\n") {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if !ok {
-			continue
-		}
-		switch key {
-		case "cpu":
-			metrics.CPUPercent = parsePercent(value)
-		case "mem":
-			metrics.MemoryPercent = parsePercent(value)
-		case "disk":
-			metrics.DiskPercent = parsePercent(value)
-		case "net":
-			fields := strings.Fields(value)
-			if len(fields) == 2 {
-				metrics.NetworkRxBytes, _ = strconv.ParseInt(fields[0], 10, 64)
-				metrics.NetworkTxBytes, _ = strconv.ParseInt(fields[1], 10, 64)
-			}
-		}
-	}
-
-	return metrics, nil
-}
-
-func parsePercent(value string) int {
-	percent, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil {
-		return 0
-	}
-	if percent < 0 {
-		return 0
-	}
-	if percent > 100 {
-		return 100
-	}
-	return percent
-}
-
-func runSSHCommand(client *ssh.Client, command string) (string, error) {
-	session, err := client.NewSession()
-	if err != nil {
-		return "", err
-	}
-	defer session.Close()
-
-	output, err := session.CombinedOutput(command)
-	return string(output), err
-}
-
 func copyOutput(session *terminalSession, reader io.Reader) {
 	buffer := make([]byte, 4096)
+	tail := ""
 	for {
 		n, err := reader.Read(buffer)
 		if n > 0 {
 			data := string(buffer[:n])
-			visible, cwd := extractCWDMarker(data)
-			if visible != "" {
-				session.send(terminalEvent{Type: "output", Data: visible})
-			}
+			session.send(terminalEvent{Type: "output", Data: data})
+			combined := tail + data
+			cwd := extractPromptCWD(combined)
 			if cwd != "" {
 				session.send(terminalEvent{Type: "cwd", Data: cwd})
 			}
+			tail = outputTail(combined)
 		}
 		if err != nil {
 			if err != io.EOF {
@@ -945,356 +714,35 @@ func copyOutput(session *terminalSession, reader io.Reader) {
 	}
 }
 
-func extractCWDMarker(data string) (string, string) {
-	const marker = "__AI_SSH_CWD__"
-	index := strings.LastIndex(data, marker)
-	if index < 0 {
-		return data, ""
+func outputTail(data string) string {
+	const maxTailLength = 512
+	if len(data) <= maxTailLength {
+		return data
 	}
-	before := data[:index]
-	after := data[index+len(marker):]
-	lineEnd := strings.IndexAny(after, "\r\n")
-	if lineEnd < 0 {
-		return before, strings.TrimSpace(after)
-	}
-	return before + after[lineEnd:], strings.TrimSpace(after[:lineEnd])
+	return data[len(data)-maxTailLength:]
 }
 
-func New(port string) *http.Server {
-	return newServer(port, newSessionManager())
-}
+var (
+	ansiSequencePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+	promptCWDPattern    = regexp.MustCompile(`(?m)(?:^|\r|\n)[^\r\n@]*@[^:\r\n]+:([~/][^\r\n$#]*)[$#]\s*$`)
+)
 
-func newServer(port string, manager *sessionManager) *http.Server {
-	mux := http.NewServeMux()
-	logger := manager.logger
-
-	healthHandler := func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		writeJSON(w, healthResponse{
-			Status:    "ok",
-			Service:   "ai-ssh-core",
-			Version:   "0.1.0",
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Capabilities: []string{
-				"health-check",
-				"api-contract",
-				"ssh-session-stream",
-			},
-		})
+func extractPromptCWD(data string) string {
+	clean := ansiSequencePattern.ReplaceAllString(data, "")
+	matches := promptCWDPattern.FindAllStringSubmatch(clean, -1)
+	if len(matches) == 0 {
+		return ""
 	}
 
-	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/api/health", healthHandler)
-	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		writeJSON(w, map[string][]logEntry{"logs": logger.list(parseLogLimit(r))})
-	})
-	mux.HandleFunc("/api/logs/settings", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			writeJSON(w, logger.settings())
-		case http.MethodPut:
-			var request logSettingsRequest
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
-				return
-			}
-			logger.setLevel(request.Level)
-			writeJSON(w, logger.settings())
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	})
-	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			writeJSON(w, manager.listHosts())
-		case http.MethodPost:
-			var request hostUpsertRequest
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
-				return
-			}
-			host, err := manager.createHost(request)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, host)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	})
-	mux.HandleFunc("/api/hosts/export", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		writeJSON(w, map[string][]hostRecord{"hosts": manager.listHosts()})
-	})
-	mux.HandleFunc("/api/hosts/import", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		var request hostsImportRequest
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-		writeJSON(w, map[string][]hostRecord{"hosts": manager.importHosts(request.Hosts)})
-	})
-	mux.HandleFunc("/api/hosts/", func(w http.ResponseWriter, r *http.Request) {
-		hostID := r.URL.Path[len("/api/hosts/"):]
-		if hostID == "" {
-			http.NotFound(w, r)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodPut:
-			var request hostUpsertRequest
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
-				return
-			}
-			host, ok, err := manager.updateHost(hostID, request)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if !ok {
-				http.Error(w, "host not found", http.StatusNotFound)
-				return
-			}
-			writeJSON(w, host)
-		case http.MethodDelete:
-			if !manager.deleteHost(hostID) {
-				http.Error(w, "host not found", http.StatusNotFound)
-				return
-			}
-			writeJSON(w, map[string]string{"status": "ok"})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	})
-	mux.HandleFunc("/api/files/", func(w http.ResponseWriter, r *http.Request) {
-		hostID := r.URL.Path[len("/api/files/"):]
-		if hostID == "" {
-			http.NotFound(w, r)
-			return
-		}
-
-		host, ok, err := manager.resolveStoredHost(hostID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if !ok {
-			http.Error(w, "host not found", http.StatusNotFound)
-			return
-		}
-
-		remotePath := r.URL.Query().Get("path")
-		switch r.Method {
-		case http.MethodGet:
-			if r.URL.Query().Get("download") == "1" {
-				if err := downloadRemoteFile(host, remotePath, w); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-				}
-				return
-			}
-			response, err := listRemoteFiles(host, remotePath)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, response)
-		case http.MethodPost:
-			if err := uploadRemoteFile(host, remotePath, r); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, map[string]string{"status": "ok"})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	})
-	mux.HandleFunc("/api/metrics/", func(w http.ResponseWriter, r *http.Request) {
-		hostID := r.URL.Path[len("/api/metrics/"):]
-		if hostID == "" {
-			http.NotFound(w, r)
-			return
-		}
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		host, ok, err := manager.resolveStoredHost(hostID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if !ok {
-			http.Error(w, "host not found", http.StatusNotFound)
-			return
-		}
-
-		metrics, err := collectServerMetrics(host)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, metrics)
-	})
-	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		var request sessionOpenRequest
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		session, ok, err := manager.openSession(request)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if !ok {
-			http.Error(w, "host not found", http.StatusNotFound)
-			return
-		}
-
-		writeJSON(w, sessionOpenResponse{Session: session.snapshot()})
-	})
-	mux.HandleFunc("/api/sessions/", func(w http.ResponseWriter, r *http.Request) {
-		sessionID, action, ok := parseSessionPath(r.URL.Path)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-
-		session, exists := manager.getSession(sessionID)
-		if !exists {
-			http.Error(w, "session not found", http.StatusNotFound)
-			return
-		}
-
-		switch action {
-		case "events":
-			if r.Method != http.MethodGet {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-			streamSessionEvents(w, r, session)
-		case "input":
-			if r.Method != http.MethodPost {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-			writeSessionInput(w, r, session)
-		case "close":
-			if r.Method != http.MethodPost {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-			session.close()
-			manager.closeSession(sessionID)
-			writeJSON(w, map[string]string{"status": "ok"})
-		default:
-			http.NotFound(w, r)
-		}
-	})
-
-	return &http.Server{
-		Addr:              fmt.Sprintf("127.0.0.1:%s", port),
-		Handler:           logger.middleware(withCORS(mux)),
-		ReadHeaderTimeout: 5 * time.Second,
+	cwd := strings.TrimSpace(matches[len(matches)-1][1])
+	if cwd == "~" {
+		return "."
 	}
-}
-
-func writeJSON(w http.ResponseWriter, value any) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(value)
-}
-
-func parseSessionPath(path string) (string, string, bool) {
-	const prefix = "/api/sessions/"
-	if len(path) <= len(prefix) {
-		return "", "", false
+	if strings.HasPrefix(cwd, "~/") {
+		return "." + strings.TrimPrefix(cwd, "~")
 	}
-
-	rest := path[len(prefix):]
-	for i := 0; i < len(rest); i++ {
-		if rest[i] == '/' {
-			return rest[:i], rest[i+1:], rest[:i] != "" && rest[i+1:] != ""
-		}
+	if strings.HasPrefix(cwd, "/") {
+		return cwd
 	}
-
-	return "", "", false
-}
-
-func streamSessionEvents(w http.ResponseWriter, r *http.Request, session *terminalSession) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	writer := bufio.NewWriter(w)
-	defer writer.Flush()
-
-	for {
-		select {
-		case event, ok := <-session.output:
-			if !ok {
-				_, _ = writer.WriteString("event: close\ndata: {}\n\n")
-				flusher.Flush()
-				return
-			}
-
-			payload, _ := json.Marshal(event)
-			_, _ = writer.WriteString("event: terminal\n")
-			_, _ = writer.WriteString("data: ")
-			_, _ = writer.Write(payload)
-			_, _ = writer.WriteString("\n\n")
-			_ = writer.Flush()
-			flusher.Flush()
-		case <-r.Context().Done():
-			return
-		}
-	}
-}
-
-func writeSessionInput(w http.ResponseWriter, r *http.Request, session *terminalSession) {
-	var request sessionInputRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	select {
-	case session.input <- request.Data:
-		writeJSON(w, map[string]string{"status": "ok"})
-	case <-session.done:
-		http.Error(w, "session closed", http.StatusGone)
-	}
+	return ""
 }

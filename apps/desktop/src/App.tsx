@@ -107,6 +107,25 @@ function parentPath(path: string) {
   return parts.length === 0 ? '/' : `/${parts.join('/')}`
 }
 
+function shouldRecordCommand(command: string) {
+  if (!command) return false
+  if (command.includes('__AI_SSH_CWD__')) return false
+  if (command.startsWith('printf ') && command.includes('$PWD')) return false
+  return true
+}
+
+function stripTerminalControlSequences(data: string) {
+  return data.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+}
+
+function sessionStatusLabel(status: SessionRecord['status']) {
+  if (status === 'connected') return '已连接'
+  if (status === 'connecting') return '连接中'
+  if (status === 'error') return '已断开'
+  if (status === 'closed') return '已关闭'
+  return '空闲'
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -134,7 +153,6 @@ export function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
-  const [, setCommandBuffer] = useState('')
   const [aiPrediction, setAiPrediction] = useState('')
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
@@ -149,6 +167,7 @@ export function App() {
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const commandBufferRef = useRef('')
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
 
@@ -290,6 +309,7 @@ export function App() {
     () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
     [hosts, activeSession, currentHost],
   )
+  const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const groupedHosts = useMemo(() => {
     const groups = new Map<string, HostRecord[]>()
     for (const host of hosts) {
@@ -673,6 +693,38 @@ export function App() {
     setServerMetrics((await response.json()) as ServerMetrics)
   }
 
+  const recordCommand = (command: string) => {
+    const normalized = command.trim()
+    if (!shouldRecordCommand(normalized)) {
+      return
+    }
+
+    setCommandHistory((history) => [normalized, ...history.filter((item) => item !== normalized)].slice(0, 80))
+    if (settings.aiPredictionEnabled && aiEnabled) {
+      setAiPrediction(normalized.startsWith('cd ') ? 'ls -lah' : 'pwd')
+    }
+  }
+
+  const observeTypedInput = (data: string) => {
+    const visibleInput = stripTerminalControlSequences(data)
+    let next = commandBufferRef.current
+
+    for (const char of visibleInput) {
+      if (char === '\r' || char === '\n') {
+        recordCommand(next)
+        next = ''
+      } else if (char === '\u0003') {
+        next = ''
+      } else if (char === '\u007f' || char === '\b') {
+        next = next.slice(0, -1)
+      } else if (char >= ' ' && char !== '\u001b') {
+        next += char
+      }
+    }
+
+    commandBufferRef.current = next
+  }
+
   useEffect(() => {
     if (!activeSession || !xtermRef.current) {
       return
@@ -686,27 +738,7 @@ export function App() {
       if (data !== '\t') {
         setAiPrediction('')
       }
-      setCommandBuffer((current) => {
-        let next = current
-        for (const char of data) {
-          if (char === '\r' || char === '\n') {
-            const command = next.trim()
-            if (command) {
-              setCommandHistory((history) => [command, ...history.filter((item) => item !== command)].slice(0, 80))
-              if (settings.aiPredictionEnabled && aiEnabled) {
-                const predicted = command.startsWith('cd ') ? 'ls -lah' : 'pwd'
-                setAiPrediction(predicted)
-              }
-            }
-            next = ''
-          } else if (char === '\u007f' || char === '\b') {
-            next = next.slice(0, -1)
-          } else if (char >= ' ') {
-            next += char
-          }
-        }
-        return next
-      })
+      observeTypedInput(data)
       void apiFetch(`/sessions/${activeSession.id}/input`, {
         method: 'POST',
         headers: {
@@ -811,11 +843,27 @@ export function App() {
     })
   }
 
+  const activateSession = (session: SessionRecord) => {
+    if (session.id === activeSessionId) {
+      return
+    }
+
+    commandBufferRef.current = ''
+    setAiPrediction('')
+    setActiveSessionId(session.id)
+    xtermRef.current?.clear()
+    xtermRef.current?.writeln(`已切换到 ${session.hostName}`)
+    openSessionStream(session)
+    fitAddonRef.current?.fit()
+  }
+
   const createSession = async (hostId = selectedHostId) => {
     if (!hostId) {
       return
     }
 
+    commandBufferRef.current = ''
+    setAiPrediction('')
     setSelectedHostId(hostId)
     xtermRef.current?.clear()
     xtermRef.current?.writeln(`正在为主机 ${hostId} 创建会话...`)
@@ -859,18 +907,33 @@ export function App() {
       return
     }
 
-    eventSourceRef.current?.close()
-    await apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
-    setSessions((current) => current.filter((item) => item.id !== session.id))
     if (activeSessionId === session.id) {
-      const next = sessions.find((item) => item.id !== session.id)
+      eventSourceRef.current?.close()
+    }
+    await apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
+    const remainingSessions = sessions.filter((item) => item.id !== session.id)
+    setSessions(remainingSessions)
+    if (activeSessionId === session.id) {
+      const next = remainingSessions[0]
       setActiveSessionId(next?.id ?? '')
+      if (next) {
+        xtermRef.current?.clear()
+        xtermRef.current?.writeln(`已切换到 ${next.hostName}`)
+        openSessionStream(next)
+      } else {
+        commandBufferRef.current = ''
+        setAiPrediction('')
+        setServerMetrics(null)
+        setFileEntries([])
+        xtermRef.current?.clear()
+      }
     }
   }
 
   const writeCommand = (command: string) => {
     xtermRef.current?.focus()
     xtermRef.current?.write(command)
+    observeTypedInput(command)
     if (activeSession) {
       void apiFetch(`/sessions/${activeSession.id}/input`, {
         method: 'POST',
@@ -1149,20 +1212,21 @@ export function App() {
                 <div
                   key={session.id}
                   className={`session-tab ${activeSession?.id === session.id ? 'active' : ''}`}
-                  onClick={() => setActiveSessionId(session.id)}
+                  onClick={() => activateSession(session)}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
-                      setActiveSessionId(session.id)
+                      activateSession(session)
                     }
                   }}
                 >
-                  <span>{session.hostName}</span>
-                  <small>{session.status}</small>
+                  <span className={`tab-status tab-status-${session.status}`} title={sessionStatusLabel(session.status)} />
+                  <span className="tab-title">{session.hostName}</span>
                   <button
                     className="tab-close"
                     type="button"
+                    aria-label={`关闭 ${session.hostName}`}
                     onClick={(event) => {
                       event.stopPropagation()
                       void closeSession(session)
@@ -1193,6 +1257,30 @@ export function App() {
               </span>
             </div>
             <div ref={terminalRef} className="terminal-surface" />
+            {!activeSession ? (
+              <div className="terminal-empty">
+                <div>
+                  <p className="section-label">快速连接</p>
+                  <h2>选择一个服务器开始 SSH 会话</h2>
+                  <span>关闭所有标签后，终端会回到这里。左侧也可以继续新增、导入或管理服务器。</span>
+                </div>
+                <div className="recent-hosts">
+                  {recentHosts.length > 0 ? (
+                    recentHosts.map((host) => (
+                      <button key={host.id} type="button" onClick={() => void createSession(host.id)}>
+                        <strong>{host.name}</strong>
+                        <span>{host.username}@{host.address}:{host.port}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <button type="button" onClick={openAddHostDialog}>
+                      <strong>新增 SSH 连接</strong>
+                      <span>保存后双击服务器卡片即可连接</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </section>
         </main>
 

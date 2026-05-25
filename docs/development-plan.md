@@ -18,11 +18,11 @@
 当前仓库说明：
 
 - 仓库已初始化 git
-- 当前阶段正在进行 Milestone 0
+- 当前阶段已完成 Milestone 0，正在推进 Milestone 1 / Milestone 2 的可用性，并提前建设 Milestone 3 的 AI 配置入口
 - Rust / Cargo 环境已可用
 - Tauri 桌面壳已接入现有前端工程，并完成 `cargo check` 与 `tauri info` 验证
 - 当前已完成 React + TypeScript 前端骨架、Go core health server、共享契约包与本地联调配置
-- 当前已开始 Milestone 1，并推进 Milestone 2 / Milestone 3 的基础能力。已实现主机列表、服务器卡片菜单、服务器编辑/删除、会话接口、SSE 输出流、input 写入接口、会话 tab 关闭、真实命令历史记录、`local-demo` 终端演示链路、临时密码认证 SSH 连接、工作台主布局、顶部下拉菜单、设置弹窗、左侧新增 SSH 连接弹窗、SSH Key 文件选择、保存失败弹窗内反馈、保存成功自动选中新服务器、服务器新增/导入导出、服务器基础配置本地 JSON 持久化、密码 / SSH Key 系统安全存储、Go core 请求日志、前端运行日志面板、日志级别设置、SSE 连接失败状态反馈、SFTP 文件列表/上传/下载首版、服务器指标刷新首版，以及 API 405 自动回退诊断
+- 当前已进入 SSH / SFTP MVP 可用性打磨阶段，并推进 Milestone 3 的基础入口。已实现主机列表、服务器卡片菜单、服务器编辑/删除、会话接口、SSE 输出流、input 写入接口、会话 tab 关闭、tab 状态圆点、关闭后自动切换或回到空状态、真实命令历史记录、被动 prompt 路径跟踪、`local-demo` 终端演示链路、临时密码认证 SSH 连接、工作台主布局、固定视口布局、顶部下拉菜单、设置弹窗、左侧新增 SSH 连接弹窗、SSH Key 文件选择、保存失败弹窗内反馈、保存成功自动选中新服务器、服务器新增/导入导出、服务器基础配置本地 JSON 持久化、密码 / SSH Key 系统安全存储、Go core 请求日志、前端运行日志面板、日志级别设置、SSE 连接失败状态反馈、SFTP 文件列表/上传/下载首版、服务器指标刷新首版、Go core HTTP 与远端 SSH/SFTP 模块拆分，以及 API 405 自动回退诊断
 
 ## 3. 交付策略
 
@@ -202,7 +202,9 @@
 19. 完成 SFTP 文件列表、上传、下载与基础进度展示首版
 20. 完成当前服务器指标轮询展示与刷新频率设置
 21. 完成 AI 提供方配置入口与命令预测交互占位
-22. 接入真实 AI provider 调用、agent 认证与 known_hosts 校验
+22. 修复命令历史截断、移除路径跟踪命令注入、优化 tab 状态/关闭切换和无会话空状态
+23. 拆分 Go core HTTP 路由与远端 SSH/SFTP 模块，继续使用 Go 标准库 `net/http`
+24. 接入真实 AI provider 调用、agent 认证与 known_hosts 校验
 
 ## 6. 工程规则
 
@@ -228,10 +230,10 @@
 
 当前状态：
 
-- Milestone 0：进行中
+- Milestone 0：已完成
 - Milestone 1：进行中
-- Milestone 2：未开始
-- Milestone 3：未开始
+- Milestone 2：进行中
+- Milestone 3：进行中（配置入口与交互占位）
 - Milestone 4：未开始
 - Milestone 5：未开始
 
@@ -266,10 +268,15 @@
 - [x] 顶部菜单改为下拉菜单，并将日志入口放入工具菜单
 - [x] 支持会话 tab 关闭确认与后端会话关闭接口
 - [x] 记录终端中输入的真实命令历史
+- [x] 修复历史命令截断问题，只记录回车提交的完整命令
+- [x] 路径跟踪改为被动识别常见 shell prompt，不再向远端自动注入 `printf` 探测命令
+- [x] 优化会话 tab 关闭按钮、状态圆点、关闭后自动切换和全部关闭后的空状态
+- [x] 固定主界面高度，页面本身不产生全局滚动，左右侧内容独立滚动
 - [x] 接入 SFTP 文件列表、目录进入、上传、下载和基础传输进度
 - [x] 接入当前服务器 CPU、内存、硬盘、网络指标首版
 - [x] 增加设置弹窗，支持服务器指标刷新频率和 AI provider 配置
 - [x] 增加 AI 命令预测交互占位和 Tab 应用逻辑
+- [x] 拆分 Go core HTTP API 与 SSH/SFTP 远端能力模块，降低 `server.go` 体积
 - [ ] 接入真实 AI provider 命令预测
 - [ ] 完善 Tauri 原生文件拖出下载体验
 - [ ] 接入 agent 认证

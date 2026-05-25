@@ -386,14 +386,27 @@ func TestSessionEventsEndpointStreamsThroughLoggingMiddleware(t *testing.T) {
 	}
 }
 
-func TestExtractCWDMarker(t *testing.T) {
-	visible, cwd := extractCWDMarker("hello\r\n__AI_SSH_CWD__/var/www\n$ ")
+func TestExtractPromptCWD(t *testing.T) {
+	cwd := extractPromptCWD("(base) deploy@app-server:/var/www$ ")
 
 	if cwd != "/var/www" {
 		t.Fatalf("expected cwd /var/www, got %q", cwd)
 	}
-	if strings.Contains(visible, "__AI_SSH_CWD__") {
-		t.Fatalf("expected marker to be hidden, got %q", visible)
+}
+
+func TestExtractPromptCWDForHome(t *testing.T) {
+	cwd := extractPromptCWD("deploy@app-server:~/logs$ ")
+
+	if cwd != "./logs" {
+		t.Fatalf("expected cwd ./logs, got %q", cwd)
+	}
+}
+
+func TestOutputTail(t *testing.T) {
+	tail := outputTail(strings.Repeat("a", 600))
+
+	if len(tail) != 512 {
+		t.Fatalf("expected tail length 512, got %d", len(tail))
 	}
 }
 
