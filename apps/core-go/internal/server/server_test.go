@@ -636,6 +636,29 @@ func TestExtractPromptCWDForHome(t *testing.T) {
 	}
 }
 
+func TestExtractPromptCWDForHomeRoot(t *testing.T) {
+	cwd := extractPromptCWD("(base) hwits@root123-Super-Server:~$ ")
+
+	if cwd != "." {
+		t.Fatalf("expected cwd ., got %q", cwd)
+	}
+}
+
+func TestNormalizeRemotePathForRequest(t *testing.T) {
+	cases := map[string]string{
+		"":              ".",
+		"   ":           ".",
+		"/var//log/":    "/var/log",
+		" ./egova_apps": "egova_apps",
+	}
+
+	for input, expected := range cases {
+		if actual := normalizeRemotePathForRequest(input); actual != expected {
+			t.Fatalf("expected %q to normalize to %q, got %q", input, expected, actual)
+		}
+	}
+}
+
 func TestOutputTail(t *testing.T) {
 	tail := outputTail(strings.Repeat("a", 600))
 

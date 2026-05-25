@@ -54,14 +54,19 @@ func withSFTPClient(host hostRecord, fn func(*sftp.Client) error) error {
 }
 
 func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, error) {
-	if remotePath == "" {
-		remotePath = "."
-	}
-
 	var response fileListResponse
 	err := withSFTPClient(host, func(client *sftp.Client) error {
-		cleanPath := pathpkg.Clean(remotePath)
-		infos, err := client.ReadDir(cleanPath)
+		cleanPath := normalizeRemotePathForRequest(remotePath)
+		listPath := cleanPath
+		if resolvedPath, err := client.RealPath(cleanPath); err == nil && strings.TrimSpace(resolvedPath) != "" {
+			listPath = pathpkg.Clean(resolvedPath)
+		}
+
+		infos, err := client.ReadDir(listPath)
+		if err != nil && listPath != cleanPath {
+			listPath = cleanPath
+			infos, err = client.ReadDir(listPath)
+		}
 		if err != nil {
 			return err
 		}
@@ -74,7 +79,7 @@ func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, erro
 			}
 			entries = append(entries, fileEntry{
 				Name:       info.Name(),
-				Path:       pathpkg.Join(cleanPath, info.Name()),
+				Path:       pathpkg.Join(listPath, info.Name()),
 				Type:       entryType,
 				Size:       info.Size(),
 				ModifiedAt: info.ModTime().UTC().Format(time.RFC3339),
@@ -88,11 +93,15 @@ func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, erro
 			return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 		})
 
-		response = fileListResponse{Path: cleanPath, Entries: entries}
+		response = fileListResponse{Path: listPath, Entries: entries}
 		return nil
 	})
 
 	return response, err
+}
+
+func normalizeRemotePathForRequest(remotePath string) string {
+	return pathpkg.Clean(strings.TrimSpace(remotePath))
 }
 
 func downloadRemoteFile(host hostRecord, remotePath string, w http.ResponseWriter) error {
