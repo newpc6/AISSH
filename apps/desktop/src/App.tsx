@@ -76,6 +76,7 @@ export function App() {
   const [aiEnabled, setAiEnabled] = useState(true)
   const [editingHostId, setEditingHostId] = useState<string>('')
   const [hostForm, setHostForm] = useState<HostUpsertRequest>(emptyHostForm)
+  const editingHost = hosts.find((host) => host.id === editingHostId) ?? null
   const [transientHost, setTransientHost] = useState<TransientHostConfig>({
     address: '',
     port: 22,
@@ -657,22 +658,28 @@ export function App() {
             </div>
             {hostForm.authType === 'password' ? (
               <label>
-                <span>密码</span>
+                <span>
+                  密码
+                  {editingHost?.hasPassword ? <em className="credential-state">已保存</em> : null}
+                </span>
                 <input
                   type="password"
                   value={hostForm.password ?? ''}
                   onChange={(event) => setHostForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="留空则保留原密码"
+                  placeholder="留空则保留系统安全存储中的密码"
                 />
               </label>
             ) : null}
             {hostForm.authType === 'privateKey' ? (
               <label>
-                <span>SSH Key</span>
+                <span>
+                  SSH Key
+                  {editingHost?.hasPrivateKey ? <em className="credential-state">已保存</em> : null}
+                </span>
                 <textarea
                   value={hostForm.privateKey ?? ''}
                   onChange={(event) => setHostForm((current) => ({ ...current, privateKey: event.target.value }))}
-                  placeholder="粘贴私钥，当前仅内存保存"
+                  placeholder="粘贴私钥，保存到系统安全存储"
                 />
               </label>
             ) : null}

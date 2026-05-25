@@ -5,14 +5,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 func newTestServer(t *testing.T) *http.Server {
 	t.Helper()
-	t.Setenv("AI_SSH_HOSTS_PATH", filepath.Join(t.TempDir(), "hosts.json"))
-	return New("18555")
+	return newTestServerWithCredentials(t, newMemoryCredentialStore())
+}
+
+func newTestServerWithCredentials(t *testing.T, credentials credentialStore) *http.Server {
+	t.Helper()
+	store := &hostStore{path: filepath.Join(t.TempDir(), "hosts.json")}
+	return newServer("18555", newSessionManagerWithStores(store, credentials))
 }
 
 func TestHealthEndpoint(t *testing.T) {
@@ -86,6 +92,9 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 	if _, ok := created["password"]; ok {
 		t.Fatal("expected password to be omitted from host response")
 	}
+	if created["hasPassword"] != true {
+		t.Fatalf("expected saved password flag, got %v", created["hasPassword"])
+	}
 
 	hostID := created["id"].(string)
 	updateBody := []byte(`{
@@ -106,6 +115,14 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", updateRecorder.Code)
 	}
 
+	var updated map[string]any
+	if err := json.Unmarshal(updateRecorder.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+	if updated["hasPassword"] != true {
+		t.Fatalf("expected password flag to be retained, got %v", updated["hasPassword"])
+	}
+
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/hosts/"+hostID, nil)
 	deleteRecorder := httptest.NewRecorder()
 
@@ -118,9 +135,9 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 
 func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "hosts.json")
-	t.Setenv("AI_SSH_HOSTS_PATH", storePath)
+	credentials := newMemoryCredentialStore()
 
-	srv := New("18555")
+	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, credentials))
 	createBody := []byte(`{
 		"name":"Persisted Host",
 		"address":"192.168.1.30",
@@ -140,7 +157,15 @@ func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", createRecorder.Code)
 	}
 
-	restarted := New("18555")
+	stored, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("expected persisted host file, got error: %v", err)
+	}
+	if bytes.Contains(stored, []byte("secret")) {
+		t.Fatal("expected persisted host file to omit password secret")
+	}
+
+	restarted := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, credentials))
 	listReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
 	listRecorder := httptest.NewRecorder()
 
@@ -162,13 +187,50 @@ func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 		if _, ok := host["password"]; ok {
 			t.Fatal("expected password to be omitted from persisted host response")
 		}
-		if host["hasPassword"] == true {
-			t.Fatal("expected password flag to be false after persistence reload")
+		if host["hasPassword"] != true {
+			t.Fatalf("expected password flag to persist, got %v", host["hasPassword"])
 		}
 		return
 	}
 
 	t.Fatal("expected persisted host after server restart")
+}
+
+func TestSavedHostCredentialsStayInCredentialStore(t *testing.T) {
+	credentials := newMemoryCredentialStore()
+	srv := newTestServerWithCredentials(t, credentials)
+	createBody := []byte(`{
+		"name":"Credential Host",
+		"address":"192.168.1.40",
+		"port":22,
+		"username":"deploy",
+		"authType":"password",
+		"group":"测试",
+		"password":"secret"
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewBuffer(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(createRecorder, createReq)
+
+	if createRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", createRecorder.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(createRecorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+	hostID := created["id"].(string)
+
+	password, ok, err := credentials.Get(hostID, passwordCredential)
+	if err != nil {
+		t.Fatalf("expected credential read without error, got %v", err)
+	}
+	if !ok || password != "secret" {
+		t.Fatalf("expected password in credential store, ok=%v value=%q", ok, password)
+	}
 }
 
 func TestCreateSessionEndpoint(t *testing.T) {

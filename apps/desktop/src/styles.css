@@ -342,6 +342,11 @@ button {
   font-size: 12px;
 }
 
+.host-editor span {
+  color: #7f91a7;
+  font-size: 12px;
+}
+
 .connect-panel,
 .host-editor {
   display: grid;
@@ -352,6 +357,19 @@ button {
 .host-editor label {
   display: grid;
   gap: 6px;
+}
+
+.host-editor label > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.credential-state {
+  font-style: normal;
+  color: #86efac;
+  font-size: 11px;
 }
 
 .connect-panel input,

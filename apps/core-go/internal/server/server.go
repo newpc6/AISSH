@@ -91,10 +91,11 @@ type terminalSession struct {
 }
 
 type sessionManager struct {
-	mu       sync.RWMutex
-	hosts    []hostRecord
-	sessions map[string]*terminalSession
-	store    *hostStore
+	mu          sync.RWMutex
+	hosts       []hostRecord
+	sessions    map[string]*terminalSession
+	store       *hostStore
+	credentials credentialStore
 }
 
 type hostStore struct {
@@ -106,10 +107,15 @@ type hostStoreFile struct {
 }
 
 func newSessionManager() *sessionManager {
+	return newSessionManagerWithStores(newHostStore(), newCredentialStore())
+}
+
+func newSessionManagerWithStores(store *hostStore, credentials credentialStore) *sessionManager {
 	manager := &sessionManager{
-		hosts:    defaultHosts(),
-		sessions: make(map[string]*terminalSession),
-		store:    newHostStore(),
+		hosts:       defaultHosts(),
+		sessions:    make(map[string]*terminalSession),
+		store:       store,
+		credentials: credentials,
 	}
 
 	if hosts, err := manager.store.load(); err == nil && len(hosts) > 0 {
@@ -214,18 +220,21 @@ func (m *sessionManager) listHosts() []hostRecord {
 	return hosts
 }
 
-func (m *sessionManager) createHost(request hostUpsertRequest) hostRecord {
+func (m *sessionManager) createHost(request hostUpsertRequest) (hostRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	host := hostFromRequest(request)
 	host.ID = "host-" + uuid.NewString()
+	if err := m.saveHostCredentials(&host); err != nil {
+		return hostRecord{}, err
+	}
 	m.hosts = append(m.hosts, host)
 	_ = m.store.save(m.hosts)
-	return host.sanitized()
+	return host.sanitized(), nil
 }
 
-func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (hostRecord, bool) {
+func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (hostRecord, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -233,19 +242,22 @@ func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (h
 		if m.hosts[i].ID == hostID {
 			next := hostFromRequest(request)
 			next.ID = hostID
-			if next.Password == "" {
-				next.Password = m.hosts[i].Password
+			if request.Password == "" {
+				next.HasPassword = m.hosts[i].HasPassword
 			}
-			if next.PrivateKey == "" {
-				next.PrivateKey = m.hosts[i].PrivateKey
+			if request.PrivateKey == "" {
+				next.HasPrivateKey = m.hosts[i].HasPrivateKey
+			}
+			if err := m.saveHostCredentials(&next); err != nil {
+				return hostRecord{}, true, err
 			}
 			m.hosts[i] = next
 			_ = m.store.save(m.hosts)
-			return next.sanitized(), true
+			return next.sanitized(), true, nil
 		}
 	}
 
-	return hostRecord{}, false
+	return hostRecord{}, false, nil
 }
 
 func (m *sessionManager) deleteHost(hostID string) bool {
@@ -255,6 +267,8 @@ func (m *sessionManager) deleteHost(hostID string) bool {
 	for i := range m.hosts {
 		if m.hosts[i].ID == hostID {
 			m.hosts = append(m.hosts[:i], m.hosts[i+1:]...)
+			_ = m.credentials.Delete(hostID, passwordCredential)
+			_ = m.credentials.Delete(hostID, privateKeyCredential)
 			_ = m.store.save(m.hosts)
 			return true
 		}
@@ -271,6 +285,9 @@ func (m *sessionManager) importHosts(requests []hostUpsertRequest) []hostRecord 
 	for _, request := range requests {
 		host := hostFromRequest(request)
 		host.ID = "host-" + uuid.NewString()
+		if err := m.saveHostCredentials(&host); err != nil {
+			continue
+		}
 		m.hosts = append(m.hosts, host)
 		created = append(created, host.sanitized())
 	}
@@ -301,8 +318,6 @@ func hostFromRequest(request hostUpsertRequest) hostRecord {
 }
 
 func (h hostRecord) sanitized() hostRecord {
-	h.HasPassword = h.Password != ""
-	h.HasPrivateKey = h.PrivateKey != ""
 	h.Password = ""
 	h.PrivateKey = ""
 	return h
@@ -311,16 +326,38 @@ func (h hostRecord) sanitized() hostRecord {
 func (h hostRecord) withoutSecrets() hostRecord {
 	h.Password = ""
 	h.PrivateKey = ""
-	h.HasPassword = false
-	h.HasPrivateKey = false
 	return h
 }
 
-func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSession, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *sessionManager) saveHostCredentials(host *hostRecord) error {
+	if host.AuthType == "password" && host.Password != "" {
+		if err := m.credentials.Set(host.ID, passwordCredential, host.Password); err != nil {
+			return err
+		}
+		host.HasPassword = true
+	}
+	if host.AuthType != "password" {
+		_ = m.credentials.Delete(host.ID, passwordCredential)
+		host.HasPassword = false
+	}
+	host.Password = ""
 
-	var selectedHost *hostRecord
+	if host.AuthType == "privateKey" && host.PrivateKey != "" {
+		if err := m.credentials.Set(host.ID, privateKeyCredential, host.PrivateKey); err != nil {
+			return err
+		}
+		host.HasPrivateKey = true
+	}
+	if host.AuthType != "privateKey" {
+		_ = m.credentials.Delete(host.ID, privateKeyCredential)
+		host.HasPrivateKey = false
+	}
+	host.PrivateKey = ""
+
+	return nil
+}
+
+func (m *sessionManager) resolveSessionHost(request sessionOpenRequest) (hostRecord, bool) {
 	if request.TransientHost != nil {
 		host := *request.TransientHost
 		host.ID = "transient-" + uuid.NewString()
@@ -330,18 +367,55 @@ func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSessi
 		if host.Port == 0 {
 			host.Port = 22
 		}
-		selectedHost = &host
-	} else {
-		for i := range m.hosts {
-			if m.hosts[i].ID == request.HostID {
-				selectedHost = &m.hosts[i]
-				break
-			}
+		return host, true
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for i := range m.hosts {
+		if m.hosts[i].ID == request.HostID {
+			return m.hosts[i], true
 		}
 	}
 
-	if selectedHost == nil {
-		return nil, false
+	return hostRecord{}, false
+}
+
+func (m *sessionManager) loadHostCredentials(host *hostRecord) error {
+	if host.HasPassword && host.Password == "" {
+		password, found, err := m.credentials.Get(host.ID, passwordCredential)
+		if err != nil {
+			return err
+		}
+		if found {
+			host.Password = password
+		}
+	}
+
+	if host.HasPrivateKey && host.PrivateKey == "" {
+		privateKey, found, err := m.credentials.Get(host.ID, privateKeyCredential)
+		if err != nil {
+			return err
+		}
+		if found {
+			host.PrivateKey = privateKey
+		}
+	}
+
+	return nil
+}
+
+func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSession, bool, error) {
+	selectedHost, ok := m.resolveSessionHost(request)
+	if !ok {
+		return nil, false, nil
+	}
+
+	if request.TransientHost == nil {
+		if err := m.loadHostCredentials(&selectedHost); err != nil {
+			return nil, true, err
+		}
 	}
 
 	session := &terminalSession{
@@ -357,15 +431,17 @@ func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSessi
 		done:   make(chan struct{}),
 	}
 
+	m.mu.Lock()
 	m.sessions[session.record.ID] = session
+	m.mu.Unlock()
 
 	if selectedHost.ID == "local-demo" {
 		go session.runDemo()
 	} else {
-		go session.runSSH(*selectedHost)
+		go session.runSSH(selectedHost)
 	}
 
-	return session, true
+	return session, true, nil
 }
 
 func (m *sessionManager) getSession(sessionID string) (*terminalSession, bool) {
@@ -558,8 +634,11 @@ func copyOutput(session *terminalSession, reader io.Reader) {
 }
 
 func New(port string) *http.Server {
+	return newServer(port, newSessionManager())
+}
+
+func newServer(port string, manager *sessionManager) *http.Server {
 	mux := http.NewServeMux()
-	manager := newSessionManager()
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -592,7 +671,12 @@ func New(port string) *http.Server {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
 				return
 			}
-			writeJSON(w, manager.createHost(request))
+			host, err := manager.createHost(request)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, host)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -630,7 +714,11 @@ func New(port string) *http.Server {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
 				return
 			}
-			host, ok := manager.updateHost(hostID, request)
+			host, ok, err := manager.updateHost(hostID, request)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			if !ok {
 				http.Error(w, "host not found", http.StatusNotFound)
 				return
@@ -658,7 +746,11 @@ func New(port string) *http.Server {
 			return
 		}
 
-		session, ok := manager.openSession(request)
+		session, ok, err := manager.openSession(request)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		if !ok {
 			http.Error(w, "host not found", http.StatusNotFound)
 			return
