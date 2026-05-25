@@ -34,6 +34,7 @@ export interface LogSettings {
 
 export interface AppSettings {
   metricsRefreshIntervalSeconds: number
+  metricsHistoryWindowMinutes: number
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string
@@ -104,9 +105,16 @@ export interface ServerMetrics {
   cpuPercent: number
   memoryPercent: number
   diskPercent: number
+  disks: DiskMetric[]
   networkRxBytes: number
   networkTxBytes: number
   collectedAt: string
+}
+
+export interface DiskMetric {
+  mount: string
+  filesystem: string
+  usedPercent: number
 }
 
 export interface SessionOpenRequest {

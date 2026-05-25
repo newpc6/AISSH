@@ -422,6 +422,17 @@ func TestParsePercent(t *testing.T) {
 	}
 }
 
+func TestParseCPUStat(t *testing.T) {
+	total, idle, ok := parseCPUStat("1200 900")
+
+	if !ok {
+		t.Fatal("expected cpu stat parse to succeed")
+	}
+	if total != 1200 || idle != 900 {
+		t.Fatalf("expected total 1200 and idle 900, got %d %d", total, idle)
+	}
+}
+
 func TestCreateTransientSessionEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	body := []byte(`{

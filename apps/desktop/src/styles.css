@@ -132,9 +132,9 @@ button {
 }
 
 .workbench-grid {
+  position: relative;
   min-height: 0;
   display: grid;
-  grid-template-columns: 280px minmax(560px, 1fr) 340px;
   overflow: hidden;
 }
 
@@ -149,6 +149,23 @@ button {
 .left-rail {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.rail-resizer {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  bottom: 0;
+  left: var(--left-rail-width, 380px);
+  width: 8px;
+  transform: translateX(-4px);
+  cursor: col-resize;
+}
+
+.rail-resizer:hover,
+.rail-resizer:focus {
+  background: rgba(79, 140, 255, 0.16);
+  outline: none;
 }
 
 .right-rail {
@@ -329,6 +346,28 @@ button {
   font-size: 12px;
 }
 
+.file-path-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.file-path-form input {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(8, 12, 18, 0.72);
+  color: #edf2f7;
+  padding: 0 10px;
+  outline: none;
+}
+
+.file-path-form input:focus {
+  border-color: rgba(79, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+
 .file-path-row span {
   min-width: 0;
   overflow: hidden;
@@ -337,6 +376,7 @@ button {
 }
 
 .file-path-row button,
+.file-path-form button,
 .file-table button {
   min-height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -615,7 +655,7 @@ button {
   gap: 10px;
 }
 
-.info-panel div {
+.info-panel dl > div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -626,28 +666,71 @@ button {
   font-size: 12px;
 }
 
-.metric-grid {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px !important;
+.metric-stack {
+  display: grid;
+  gap: 8px;
   margin-top: 12px;
 }
 
-.metric-grid div {
+.metric-card {
   display: grid;
-  gap: 3px;
-  padding: 9px;
+  gap: 8px;
+  padding: 10px;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.04);
 }
 
-.metric-grid span {
+.metric-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-card span,
+.metric-card small {
   color: #8ca0b8;
   font-size: 12px;
 }
 
-.metric-grid strong {
+.metric-card strong {
   font-size: 14px;
+}
+
+.metric-card svg {
+  width: 100%;
+  height: 36px;
+}
+
+.metric-card polyline {
+  fill: none;
+  stroke: #67e8f9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.disk-list {
+  display: grid;
+  gap: 6px;
+}
+
+.disk-list div {
+  display: grid;
+  grid-template-columns: minmax(0, 64px) minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
+}
+
+.disk-list progress {
+  width: 100%;
+  height: 8px;
+}
+
+.disk-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .host-modal span {
@@ -996,7 +1079,7 @@ code {
 
 @media (max-width: 1180px) {
   .workbench-grid {
-    grid-template-columns: 240px minmax(420px, 1fr);
+    grid-template-columns: minmax(320px, var(--left-rail-width, 380px)) minmax(420px, 1fr) !important;
   }
 
   .right-rail {
@@ -1016,10 +1099,14 @@ code {
   }
 
   .workbench-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
 
   .left-rail {
+    display: none;
+  }
+
+  .rail-resizer {
     display: none;
   }
 }

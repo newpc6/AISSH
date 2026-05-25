@@ -29,6 +29,11 @@ type RightTool = 'ai' | 'history'
 type HostDialogMode = 'create' | 'edit'
 type TopMenu = 'file' | 'edit' | 'session' | 'transfer' | 'tools' | 'settings' | ''
 
+type MetricSample = ServerMetrics & {
+  networkRxRateBytes: number
+  networkTxRateBytes: number
+}
+
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 
 const aiSuggestions = [
@@ -60,6 +65,7 @@ const emptyHostForm: HostUpsertRequest = {
 
 const defaultSettings: AppSettings = {
   metricsRefreshIntervalSeconds: 2,
+  metricsHistoryWindowMinutes: 5,
   aiBaseUrl: '',
   aiApiKey: '',
   aiModel: '',
@@ -100,6 +106,10 @@ function formatBytes(size: number) {
   return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
+function formatRate(size: number) {
+  return `${formatBytes(Math.max(0, size))}/s`
+}
+
 function parentPath(path: string) {
   if (!path || path === '.' || path === '/') return '.'
   const parts = path.split('/').filter(Boolean)
@@ -124,6 +134,21 @@ function sessionStatusLabel(status: SessionRecord['status']) {
   if (status === 'error') return '已断开'
   if (status === 'closed') return '已关闭'
   return '空闲'
+}
+
+function metricPoints(samples: MetricSample[], key: 'cpuPercent' | 'memoryPercent') {
+  if (samples.length === 0) return ''
+  if (samples.length === 1) {
+    const value = 34 - samples[0][key] * 0.32
+    return `0,${value.toFixed(1)} 120,${value.toFixed(1)}`
+  }
+  return samples
+    .map((sample, index) => {
+      const x = (index / (samples.length - 1)) * 120
+      const y = 34 - sample[key] * 0.32
+      return `${x.toFixed(1)},${Math.max(2, Math.min(34, y)).toFixed(1)}`
+    })
+    .join(' ')
 }
 
 export function App() {
@@ -158,16 +183,20 @@ export function App() {
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
   const [fileError, setFileError] = useState('')
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
+  const [leftRailWidth, setLeftRailWidth] = useState(380)
+  const [filePathDraft, setFilePathDraft] = useState('.')
   const [trackTerminalPath, setTrackTerminalPath] = useState(true)
   const [transferTasks, setTransferTasks] = useState<
     { id: string; name: string; direction: 'upload' | 'download'; progress: number; status: string }[]
   >([])
   const [serverMetrics, setServerMetrics] = useState<ServerMetrics | null>(null)
+  const [metricHistory, setMetricHistory] = useState<MetricSample[]>([])
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const commandBufferRef = useRef('')
+  const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
 
@@ -300,6 +329,10 @@ export function App() {
     return () => window.removeEventListener('click', closeMenu)
   }, [openTopMenu])
 
+  useEffect(() => {
+    setFilePathDraft(filePath)
+  }, [filePath])
+
   const currentHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
@@ -310,6 +343,10 @@ export function App() {
     [hosts, activeSession, currentHost],
   )
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
+  const cpuSparklinePoints = useMemo(() => metricPoints(metricHistory, 'cpuPercent'), [metricHistory])
+  const memorySparklinePoints = useMemo(() => metricPoints(metricHistory, 'memoryPercent'), [metricHistory])
+  const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
+  const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
   const groupedHosts = useMemo(() => {
     const groups = new Map<string, HostRecord[]>()
     for (const host of hosts) {
@@ -318,6 +355,11 @@ export function App() {
     }
     return Array.from(groups.entries()).map(([name, items]) => ({ name, hosts: items }))
   }, [hosts])
+
+  useEffect(() => {
+    previousMetricsRef.current = null
+    setMetricHistory([])
+  }, [activeSession?.hostId])
 
   const loadHosts = async (preferredHostId?: string) => {
     const response = await apiFetch('/hosts')
@@ -482,6 +524,33 @@ export function App() {
     }
 
     await loadHosts()
+  }
+
+  const exportSoftwareConfig = async () => {
+    const config = {
+      settings,
+      leftRailWidth,
+      exportedAt: new Date().toISOString(),
+      version: 1,
+    }
+    await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
+  }
+
+  const importSoftwareConfig = async () => {
+    const text = window.prompt('粘贴软件配置 JSON')
+    if (!text) {
+      return
+    }
+    try {
+      const parsed = JSON.parse(text) as { settings?: Partial<AppSettings>; leftRailWidth?: number }
+      setSettings((current) => ({ ...current, ...parsed.settings }))
+      if (typeof parsed.leftRailWidth === 'number') {
+        setLeftRailWidth(Math.min(620, Math.max(320, parsed.leftRailWidth)))
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '配置 JSON 解析失败'
+      setErrorMessage(message)
+    }
   }
 
   const deleteHost = async (host: HostRecord) => {
@@ -684,13 +753,36 @@ export function App() {
     const hostId = activeSession?.hostId
     if (!hostId || hostId === 'local-demo') {
       setServerMetrics(null)
+      setMetricHistory([])
+      previousMetricsRef.current = null
       return
     }
     const response = await apiFetch(`/metrics/${hostId}`)
     if (!response.ok) {
       return
     }
-    setServerMetrics((await response.json()) as ServerMetrics)
+    const metrics = (await response.json()) as ServerMetrics
+    const previousMetrics = previousMetricsRef.current
+    const previousTime = previousMetrics ? Date.parse(previousMetrics.collectedAt) : 0
+    const currentTime = Date.parse(metrics.collectedAt)
+    const elapsedSeconds = previousTime > 0 ? Math.max(1, (currentTime - previousTime) / 1000) : 1
+    const sample: MetricSample = {
+      ...metrics,
+      networkRxRateBytes: previousMetrics
+        ? Math.max(0, (metrics.networkRxBytes - previousMetrics.networkRxBytes) / elapsedSeconds)
+        : 0,
+      networkTxRateBytes: previousMetrics
+        ? Math.max(0, (metrics.networkTxBytes - previousMetrics.networkTxBytes) / elapsedSeconds)
+        : 0,
+    }
+    const historyWindowMs = Math.max(1, settings.metricsHistoryWindowMinutes) * 60 * 1000
+    setServerMetrics(metrics)
+    setMetricHistory((current) => {
+      const next = [...current, sample]
+      const cutoff = currentTime - historyWindowMs
+      return next.filter((item) => Date.parse(item.collectedAt) >= cutoff).slice(-240)
+    })
+    previousMetricsRef.current = metrics
   }
 
   const recordCommand = (command: string) => {
@@ -768,7 +860,7 @@ export function App() {
       Math.max(1, settings.metricsRefreshIntervalSeconds) * 1000,
     )
     return () => window.clearInterval(interval)
-  }, [activeSession?.hostId, settings.metricsRefreshIntervalSeconds])
+  }, [activeSession?.hostId, settings.metricsRefreshIntervalSeconds, settings.metricsHistoryWindowMinutes])
 
   const openSessionStream = (session: SessionRecord) => {
     eventSourceRef.current?.close()
@@ -924,6 +1016,8 @@ export function App() {
         commandBufferRef.current = ''
         setAiPrediction('')
         setServerMetrics(null)
+        setMetricHistory([])
+        previousMetricsRef.current = null
         setFileEntries([])
         xtermRef.current?.clear()
       }
@@ -951,6 +1045,24 @@ export function App() {
     }
     writeCommand(aiPrediction)
     setAiPrediction('')
+  }
+
+  const startLeftRailResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = leftRailWidth
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setLeftRailWidth(Math.min(620, Math.max(320, startWidth + moveEvent.clientX - startX)))
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
   }
 
   return (
@@ -984,8 +1096,10 @@ export function App() {
                   {key === 'file' ? (
                     <>
                       <button type="button" onClick={openAddHostDialog}>新增连接</button>
-                      <button type="button" onClick={() => void importSampleHost()}>导入</button>
-                      <button type="button" onClick={() => void exportHosts()}>导出</button>
+                      <button type="button" onClick={() => void exportHosts()}>导出服务器列表</button>
+                      <button type="button" onClick={() => void exportSoftwareConfig()}>导出软件配置</button>
+                      <button type="button" onClick={() => void importSampleHost()}>导入服务器列表</button>
+                      <button type="button" onClick={() => void importSoftwareConfig()}>导入软件配置</button>
                     </>
                   ) : null}
                   {key === 'session' ? (
@@ -1011,13 +1125,17 @@ export function App() {
           ))}
         </nav>
         <div className="top-actions">
-          <button type="button" onClick={() => void importSampleHost()}>导入</button>
-          <button type="button" onClick={() => void exportHosts()}>导出</button>
           <span className={`status-dot status-${healthState}`} />
         </div>
       </header>
 
-      <div className="workbench-grid">
+      <div
+        className="workbench-grid"
+        style={{
+          '--left-rail-width': `${leftRailWidth}px`,
+          gridTemplateColumns: `${leftRailWidth}px minmax(560px, 1fr) 340px`,
+        } as React.CSSProperties}
+      >
         <aside className="left-rail">
           <div className="rail-tabs">
             <button
@@ -1107,6 +1225,20 @@ export function App() {
                   <button type="button" onClick={() => uploadFileRef.current?.click()}>上传</button>
                 </div>
               </div>
+              <form
+                className="file-path-form"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void loadFiles(filePathDraft.trim() || '.')
+                }}
+              >
+                <input
+                  aria-label="远程路径"
+                  value={filePathDraft}
+                  onChange={(event) => setFilePathDraft(event.target.value)}
+                />
+                <button type="submit">进入</button>
+              </form>
               <input
                 ref={uploadFileRef}
                 hidden
@@ -1200,6 +1332,13 @@ export function App() {
             </div>
           )}
         </aside>
+        <div
+          aria-label="调整左侧宽度"
+          className="rail-resizer"
+          role="separator"
+          tabIndex={0}
+          onPointerDown={startLeftRailResize}
+        />
 
         <main className="center-workspace">
           <div className="session-tabs">
@@ -1302,26 +1441,54 @@ export function App() {
                 <dd>{activeHost?.authType ?? '-'}</dd>
               </div>
             </dl>
-            <div className="metric-grid">
-              <div>
-                <span>CPU</span>
-                <strong>{serverMetrics ? `${serverMetrics.cpuPercent}%` : '-'}</strong>
+            <div className="metric-stack">
+              <div className="metric-card">
+                <div>
+                  <span>CPU</span>
+                  <strong>{serverMetrics ? `${serverMetrics.cpuPercent}%` : '-'}</strong>
+                </div>
+                <svg viewBox="0 0 120 36" preserveAspectRatio="none">
+                  <polyline points={cpuSparklinePoints} />
+                </svg>
               </div>
-              <div>
-                <span>内存</span>
-                <strong>{serverMetrics ? `${serverMetrics.memoryPercent}%` : '-'}</strong>
+              <div className="metric-card">
+                <div>
+                  <span>内存</span>
+                  <strong>{serverMetrics ? `${serverMetrics.memoryPercent}%` : '-'}</strong>
+                </div>
+                <svg viewBox="0 0 120 36" preserveAspectRatio="none">
+                  <polyline points={memorySparklinePoints} />
+                </svg>
               </div>
-              <div>
-                <span>硬盘</span>
-                <strong>{serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
+              <div className="metric-card">
+                <div>
+                  <span>硬盘</span>
+                  <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
+                </div>
+                <div className="disk-list">
+                  {(serverMetrics?.disks?.length ? serverMetrics.disks : []).slice(0, 4).map((disk) => (
+                    <div key={`${disk.filesystem}-${disk.mount}`}>
+                      <span>{disk.mount}</span>
+                      <progress max="100" value={disk.usedPercent} />
+                      <strong>{disk.usedPercent}%</strong>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div>
-                <span>网络</span>
-                <strong>
+              <div className="metric-card">
+                <div>
+                  <span>网络</span>
+                  <strong>
+                    {latestMetricSample
+                      ? `↓ ${formatRate(latestMetricSample.networkRxRateBytes)} / ↑ ${formatRate(latestMetricSample.networkTxRateBytes)}`
+                      : '-'}
+                  </strong>
+                </div>
+                <small>
                   {serverMetrics
-                    ? `${formatBytes(serverMetrics.networkRxBytes)} / ${formatBytes(serverMetrics.networkTxBytes)}`
-                    : '-'}
-                </strong>
+                    ? `累计 ↓ ${formatBytes(serverMetrics.networkRxBytes)} / ↑ ${formatBytes(serverMetrics.networkTxBytes)}`
+                    : '等待采样'}
+                </small>
               </div>
             </div>
           </section>
@@ -1621,6 +1788,20 @@ export function App() {
                   setSettings((current) => ({
                     ...current,
                     metricsRefreshIntervalSeconds: Number(event.target.value) || 2,
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>指标折线时间范围（分钟）</span>
+              <input
+                min="1"
+                type="number"
+                value={settings.metricsHistoryWindowMinutes}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    metricsHistoryWindowMinutes: Number(event.target.value) || 5,
                   }))
                 }
               />
