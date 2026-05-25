@@ -151,6 +151,16 @@ button {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.left-rail .left-content {
+  min-height: 0;
+}
+
+.left-rail .left-content:has(.file-browser) {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  overflow: hidden;
+}
+
 .rail-resizer {
   position: absolute;
   z-index: 6;
@@ -349,6 +359,13 @@ button {
 
 .file-browser {
   min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.file-browser-status {
+  display: grid;
+  gap: 6px;
 }
 
 .file-tree button,
@@ -434,9 +451,25 @@ button {
   white-space: nowrap;
 }
 
+.transfer-dock {
+  min-height: 92px;
+  max-height: 172px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.transfer-dock strong {
+  font-size: 13px;
+}
+
 .transfer-list {
   display: grid;
   gap: 6px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .transfer-list div {
@@ -555,6 +588,7 @@ button {
 .terminal-stage {
   position: relative;
   min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 12px;
@@ -590,6 +624,12 @@ button {
 .terminal-wrap {
   position: relative;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.terminal-surface .xterm {
+  height: 100%;
 }
 
 .terminal-header + .terminal-wrap .terminal-surface {
@@ -1099,6 +1139,9 @@ button {
 .tool-panel {
   padding: 0;
   min-height: 0;
+  height: 360px;
+  max-height: 42vh;
+  align-self: start;
   overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1128,15 +1171,16 @@ button {
 }
 
 .suggestion-row {
-  min-height: 64px;
+  height: 64px;
   padding: 10px;
   display: grid;
   gap: 8px;
+  align-content: center;
 }
 
 .prediction-row {
   width: 100%;
-  min-height: 70px;
+  height: 74px;
   display: grid;
   gap: 6px;
   padding: 10px;
@@ -1145,6 +1189,13 @@ button {
   background: rgba(34, 211, 238, 0.08);
   text-align: left;
   cursor: pointer;
+}
+
+.suggestion-row code,
+.prediction-row code,
+.history-list button {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .prediction-row.primary {

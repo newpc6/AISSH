@@ -641,6 +641,15 @@ func TestExtractPromptCWD(t *testing.T) {
 	}
 }
 
+func TestExtractPromptCWDFromCondaPromptAfterCD(t *testing.T) {
+	output := "(base) hwits@root123-Super-Server:~$ cd /egova_apps/\r\n(base) hwits@root123-Super-Server:/egova_apps$ "
+	cwd := extractPromptCWD(output)
+
+	if cwd != "/egova_apps" {
+		t.Fatalf("expected cwd /egova_apps, got %q", cwd)
+	}
+}
+
 func TestExtractPromptCWDForHome(t *testing.T) {
 	cwd := extractPromptCWD("deploy@app-server:~/logs$ ")
 

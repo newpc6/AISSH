@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { writeFile } from '@tauri-apps/plugin-fs'
 import '@xterm/xterm/css/xterm.css'
 import {
   type AIPredictionRequest,
@@ -66,6 +68,17 @@ type MetricChartKey = 'cpuPercent' | 'memoryPercent'
 
 type HostGroupView = HostGroup & {
   hosts: HostRecord[]
+}
+
+type SaveFilePickerHandle = {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>
+    close: () => Promise<void>
+  }>
+}
+
+type WindowWithSaveFilePicker = Window & {
+  showSaveFilePicker?: (options: { suggestedName?: string }) => Promise<SaveFilePickerHandle>
 }
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
@@ -175,6 +188,83 @@ function parentPath(path: string) {
   const parts = path.split('/').filter(Boolean)
   parts.pop()
   return parts.length === 0 ? '/' : `/${parts.join('/')}`
+}
+
+function normalizeRemotePath(path: string) {
+  const trimmed = path.trim()
+  if (!trimmed || trimmed === '.') return '.'
+  const isAbsolute = trimmed.startsWith('/')
+  const parts: string[] = []
+  for (const part of trimmed.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') {
+      parts.pop()
+      continue
+    }
+    parts.push(part)
+  }
+  if (isAbsolute) {
+    return parts.length === 0 ? '/' : `/${parts.join('/')}`
+  }
+  return parts.length === 0 ? '.' : parts.join('/')
+}
+
+function unquoteShellPath(value: string) {
+  const trimmed = value.trim().replace(/\\ /g, ' ')
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
+function inferRemotePathFromCommand(command: string, currentPath: string) {
+  const firstCommand = command.trim().split(/\s*(?:&&|\|\||;)\s*/)[0] ?? ''
+  const match = firstCommand.match(/^cd(?:\s+(.+))?$/)
+  if (!match) return ''
+
+  const target = unquoteShellPath(match[1] ?? '~')
+  if (!target || target === '~') return '.'
+  if (target === '-') return ''
+  if (target.startsWith('~/')) return normalizeRemotePath(`.${target.slice(1)}`)
+  if (target.startsWith('/')) return normalizeRemotePath(target)
+
+  const basePath = currentPath && currentPath !== '.' ? currentPath : '.'
+  return normalizeRemotePath(`${basePath}/${target}`)
+}
+
+async function saveBlobWithFilePicker(blob: Blob, suggestedName: string) {
+  if ('__TAURI_INTERNALS__' in window) {
+    const targetPath = await saveDialog({ defaultPath: suggestedName })
+    if (!targetPath) {
+      return true
+    }
+    const data = new Uint8Array(await blob.arrayBuffer())
+    await writeFile(targetPath, data)
+    return true
+  }
+
+  const picker = (window as WindowWithSaveFilePicker).showSaveFilePicker
+  if (!picker) {
+    return false
+  }
+
+  const handle = await picker({ suggestedName })
+  const writable = await handle.createWritable()
+  await writable.write(blob)
+  await writable.close()
+  return true
+}
+
+function downloadBlobInBrowser(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function shouldRecordCommand(command: string) {
@@ -411,6 +501,8 @@ export function App() {
   const aiEnabledRef = useRef(true)
   const commandHistoryRef = useRef<string[]>([])
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
+  const leftModeRef = useRef<LeftMode>('servers')
+  const trackTerminalPathRef = useRef(true)
   const inputQueuesRef = useRef<Record<string, Promise<void>>>({})
   const pendingResizeRef = useRef<Record<string, number>>({})
   const pendingAIPredictionTimerRef = useRef<number | undefined>(undefined)
@@ -418,6 +510,7 @@ export function App() {
   const aiPredictionRequestRef = useRef(0)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
+  const filePathRef = useRef('.')
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
 
@@ -436,6 +529,11 @@ export function App() {
   const setActiveSession = (sessionId: string) => {
     activeSessionIdRef.current = sessionId
     setActiveSessionId(sessionId)
+  }
+
+  const setTrackedFilePath = (path: string) => {
+    filePathRef.current = path
+    setFilePath(path)
   }
 
   const clearAIPrediction = (options: { cancelPending?: boolean } = {}) => {
@@ -644,10 +742,19 @@ export function App() {
       syncTerminalSize()
     }
     window.addEventListener('resize', onResize)
+    const resizeObserver = terminalRef.current
+      ? new ResizeObserver(() => {
+          window.requestAnimationFrame(onResize)
+        })
+      : null
+    if (terminalRef.current && resizeObserver) {
+      resizeObserver.observe(terminalRef.current)
+    }
     const resizeDisposable = terminal.onResize(() => syncTerminalSize())
 
     return () => {
       window.removeEventListener('resize', onResize)
+      resizeObserver?.disconnect()
       resizeDisposable.dispose()
       Object.values(eventSourcesRef.current).forEach((source) => source.close())
       eventSourcesRef.current = {}
@@ -701,6 +808,7 @@ export function App() {
   }, [openTopMenu])
 
   useEffect(() => {
+    filePathRef.current = filePath
     setFilePathDraft(filePath)
   }, [filePath])
 
@@ -733,6 +841,14 @@ export function App() {
     terminalCachesRef.current = terminalCaches
   }, [terminalCaches])
 
+  useEffect(() => {
+    leftModeRef.current = leftMode
+  }, [leftMode])
+
+  useEffect(() => {
+    trackTerminalPathRef.current = trackTerminalPath
+  }, [trackTerminalPath])
+
   const currentHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
@@ -746,6 +862,7 @@ export function App() {
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
   const primaryPrediction = aiPredictions[0] ?? ''
+  const isAIProviderConfigured = Boolean(settings.aiBaseUrl.trim() && settings.aiModel.trim())
   const groupedHosts = useMemo<HostGroupView[]>(() => {
     const groups = normalizeHostGroups(hostGroups, hosts)
     return groups.map((group) => ({
@@ -1164,7 +1281,7 @@ export function App() {
         throw new Error(detail.trim() || `文件列表加载失败：${response.status}`)
       }
       const data = (await response.json()) as FileListResponse
-      setFilePath(data.path)
+      setTrackedFilePath(data.path)
       setFileEntries(data.entries)
     } catch (error) {
       const message = error instanceof Error ? error.message : '文件列表加载失败'
@@ -1220,12 +1337,10 @@ export function App() {
         throw new Error(detail.trim() || `下载失败：${response.status}`)
       }
       const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = entry.name
-      link.click()
-      URL.revokeObjectURL(url)
+      const savedWithPicker = await saveBlobWithFilePicker(blob, entry.name)
+      if (!savedWithPicker) {
+        downloadBlobInBrowser(blob, entry.name)
+      }
       setTransferTasks((current) =>
         current.map((task) => (task.id === taskID ? { ...task, progress: 100, status: 'done' } : task)),
       )
@@ -1330,6 +1445,14 @@ export function App() {
     const normalized = stripTerminalControlSequences(command).trim()
     if (!shouldRecordCommand(normalized)) {
       return
+    }
+
+    const inferredPath = inferRemotePathFromCommand(normalized, filePathRef.current)
+    if (inferredPath && trackTerminalPathRef.current && activeSession && activeSession.hostId !== 'local-demo') {
+      setTrackedFilePath(inferredPath)
+      if (leftModeRef.current === 'files') {
+        void loadFiles(inferredPath, activeSession.hostId)
+      }
     }
 
     const nextHistory = [normalized, ...commandHistoryRef.current.filter((item) => item !== normalized)].slice(0, 200)
@@ -1476,7 +1599,8 @@ export function App() {
         applyPrediction()
         return
       }
-      if (data !== '\t') {
+      const isEnter = data === '\r' || data === '\n' || data === '\r\n'
+      if (data !== '\t' && !isEnter) {
         clearAIPrediction()
       }
       queueSessionInput(activeSession.id, data)
@@ -1576,10 +1700,11 @@ export function App() {
         )
       }
 
-      if (payload.type === 'cwd' && payload.data && trackTerminalPath) {
-        setFilePath(payload.data)
-        if (leftMode === 'files') {
+      if (payload.type === 'cwd' && payload.data && trackTerminalPathRef.current) {
+        if (leftModeRef.current === 'files') {
           void loadFiles(payload.data, session.hostId)
+        } else {
+          setTrackedFilePath(payload.data)
         }
       }
 
@@ -2137,8 +2262,10 @@ export function App() {
                     刷新
                   </button>
                 </div>
-                {fileError ? <p className="error-text">{fileError}</p> : null}
-                {isLoadingFiles ? <p className="hint-text">加载中...</p> : null}
+                <div className="file-browser-status">
+                  {fileError ? <p className="error-text">{fileError}</p> : null}
+                  {isLoadingFiles ? <p className="hint-text">加载中...</p> : null}
+                </div>
                 <div className="file-table">
                   <div className="file-table-head">
                     <span>名称</span>
@@ -2180,7 +2307,10 @@ export function App() {
                     </button>
                   ))}
                 </div>
-                {transferTasks.length > 0 ? (
+              </div>
+              {transferTasks.length > 0 ? (
+                <div className="transfer-dock">
+                  <strong>传输任务</strong>
                   <div className="transfer-list">
                     {transferTasks.slice(0, 4).map((task) => (
                       <div key={task.id}>
@@ -2190,8 +2320,8 @@ export function App() {
                       </div>
                     ))}
                   </div>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
           )}
         </aside>
@@ -2402,6 +2532,15 @@ export function App() {
                   <span>预测下一步命令</span>
                 </label>
                 {aiPredictionState === 'loading' ? <p className="hint-text">正在调用大模型预测...</p> : null}
+                {!isAIProviderConfigured && aiEnabled && settings.aiPredictionEnabled ? (
+                  <p className="hint-text">请先在设置里填写大模型地址和模型，保存后才会调用 AI 预测。</p>
+                ) : null}
+                {aiPredictionState === 'idle' && aiEnabled && settings.aiPredictionEnabled && isAIProviderConfigured ? (
+                  <p className="hint-text">AI 预测已开启，输入命令并回车后会自动预测下一步。</p>
+                ) : null}
+                {aiPredictionState === 'success' && aiPredictions.length === 0 ? (
+                  <p className="hint-text">本次没有可用预测，继续输入命令后会再次尝试。</p>
+                ) : null}
                 {aiPredictionError ? <p className="error-text">{aiPredictionError}</p> : null}
                 {aiSuggestions.map((suggestion) => (
                   <button
