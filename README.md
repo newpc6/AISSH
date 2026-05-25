@@ -13,3 +13,4 @@ AI SSH 是一个面向桌面端优先的智能 SSH 工具，目标是把终端�
 
 - [产品设计文档](docs/product-design.md)
 - [开发计划文档](docs/development-plan.md)
+- [启动与查看效果说明](docs/run-and-preview.md)

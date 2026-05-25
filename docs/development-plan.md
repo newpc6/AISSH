@@ -22,6 +22,7 @@
 - Rust / Cargo 环境已可用
 - Tauri 桌面壳已接入现有前端工程，并完成 `cargo check` 与 `tauri info` 验证
 - 当前已完成 React + TypeScript 前端骨架、Go core health server、共享契约包与本地联调配置
+- 当前已开始 Milestone 1，正在实现主机列表、会话接口与终端容器
 
 ## 3. 交付策略
 
@@ -187,7 +188,8 @@
    - session 基础结构
 6. 完成前端到 core 的最小健康检查链路
 7. 完成 Tauri 桌面壳接入与基础验证
-8. 开始 SSH 会话管理与终端容器开发
+8. 实现主机列表、会话接口与终端容器首版
+9. 接入真实 SSH 会话流
 
 ## 6. 工程规则
 
@@ -214,7 +216,7 @@
 当前状态：
 
 - Milestone 0：进行中
-- Milestone 1：未开始
+- Milestone 1：进行中
 - Milestone 2：未开始
 - Milestone 3：未开始
 - Milestone 4：未开始
@@ -230,7 +232,9 @@
 - [x] 初始化 Go core
 - [x] 打通健康检查链路
 - [x] 接入 Tauri 桌面壳
-- [ ] 开始 SSH 会话管理
+- [x] 开始 SSH 会话管理
+- [x] 完成终端容器首版
+- [ ] 接入真实 SSH 会话流
 
 ## 8. Git 提交约定
 
