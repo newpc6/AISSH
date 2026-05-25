@@ -74,6 +74,39 @@ func TestCreateSessionEndpoint(t *testing.T) {
 	}
 }
 
+func TestCreateTransientSessionEndpoint(t *testing.T) {
+	srv := New("18555")
+	body := []byte(`{
+		"hostId":"transient",
+		"transientHost":{
+			"address":"127.0.0.1",
+			"port":22,
+			"username":"test",
+			"password":"secret",
+			"authType":"password"
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+
+	var response map[string]map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+
+	session := response["session"]
+	if session["hostName"] != "test@127.0.0.1" {
+		t.Fatalf("expected transient hostName test@127.0.0.1, got %v", session["hostName"])
+	}
+}
+
 func TestWriteSessionInputEndpoint(t *testing.T) {
 	srv := New("18555")
 	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))

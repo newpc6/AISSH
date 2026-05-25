@@ -6,9 +6,11 @@ import {
   CORE_API_BASE,
   type HealthResponse,
   type HostRecord,
+  type SessionOpenRequest,
   type SessionOpenResponse,
   type SessionRecord,
   type TerminalEvent,
+  type TransientHostConfig,
 } from '@ai-ssh/shared-contracts'
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
@@ -46,6 +48,13 @@ export function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [selectedHostId, setSelectedHostId] = useState<string>('')
   const [sessionState, setSessionState] = useState<LoadState>('idle')
+  const [transientHost, setTransientHost] = useState<TransientHostConfig>({
+    address: '',
+    port: 22,
+    username: '',
+    password: '',
+    authType: 'password',
+  })
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -203,14 +212,36 @@ export function App() {
     })
   }
 
-  const createSession = async () => {
-    if (!selectedHostId) {
+  const createSession = async (mode: 'saved' | 'transient') => {
+    if (mode === 'saved' && !selectedHostId) {
+      return
+    }
+
+    if (mode === 'transient' && (!transientHost.address || !transientHost.username)) {
+      setErrorMessage('请填写主机地址和用户名')
       return
     }
 
     setSessionState('loading')
     xtermRef.current?.clear()
-    xtermRef.current?.writeln(`正在为主机 ${selectedHostId} 创建会话...`)
+    xtermRef.current?.writeln(
+      mode === 'saved'
+        ? `正在为主机 ${selectedHostId} 创建会话...`
+        : `正在连接 ${transientHost.username}@${transientHost.address}:${transientHost.port}...`,
+    )
+
+    const payload: SessionOpenRequest =
+      mode === 'saved'
+        ? { hostId: selectedHostId }
+        : {
+            hostId: 'transient',
+            transientHost: {
+              ...transientHost,
+              name: `${transientHost.username}@${transientHost.address}`,
+              port: Number(transientHost.port) || 22,
+              authType: 'password',
+            },
+          }
 
     try {
       const response = await fetch(`${CORE_API_BASE}/sessions`, {
@@ -218,9 +249,7 @@ export function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          hostId: selectedHostId,
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
@@ -311,7 +340,7 @@ export function App() {
               <button
                 className="primary-button"
                 type="button"
-                onClick={() => void createSession()}
+                onClick={() => void createSession('saved')}
                 disabled={!selectedHostId || sessionState === 'loading'}
               >
                 {sessionState === 'loading' ? '创建中...' : '创建会话'}
@@ -373,6 +402,73 @@ export function App() {
           </article>
 
           <aside className="session-panel">
+            <div className="connect-panel">
+              <div>
+                <p className="section-label">临时连接</p>
+                <h3>真实 SSH</h3>
+              </div>
+
+              <label>
+                <span>地址</span>
+                <input
+                  value={transientHost.address}
+                  onChange={(event) =>
+                    setTransientHost((current) => ({ ...current, address: event.target.value }))
+                  }
+                  placeholder="192.168.1.10"
+                />
+              </label>
+
+              <div className="form-row">
+                <label>
+                  <span>端口</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    value={transientHost.port}
+                    onChange={(event) =>
+                      setTransientHost((current) => ({
+                        ...current,
+                        port: Number(event.target.value) || 22,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>用户</span>
+                  <input
+                    value={transientHost.username}
+                    onChange={(event) =>
+                      setTransientHost((current) => ({ ...current, username: event.target.value }))
+                    }
+                    placeholder="root"
+                  />
+                </label>
+              </div>
+
+              <label>
+                <span>密码</span>
+                <input
+                  type="password"
+                  value={transientHost.password ?? ''}
+                  onChange={(event) =>
+                    setTransientHost((current) => ({ ...current, password: event.target.value }))
+                  }
+                  placeholder="仅本次连接使用"
+                />
+              </label>
+
+              <button
+                className="primary-button full-width"
+                type="button"
+                onClick={() => void createSession('transient')}
+                disabled={sessionState === 'loading'}
+              >
+                连接临时主机
+              </button>
+            </div>
+
             <div className="panel-header">
               <div>
                 <p className="section-label">会话状态</p>

@@ -210,6 +210,10 @@ select {
   cursor: not-allowed;
 }
 
+.full-width {
+  width: 100%;
+}
+
 .context-block {
   display: grid;
   gap: 6px;
@@ -292,6 +296,47 @@ select {
   display: grid;
   gap: 20px;
   align-content: start;
+}
+
+.connect-panel {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.connect-panel h3 {
+  margin: 8px 0 0;
+  font-size: 22px;
+}
+
+.connect-panel label {
+  display: grid;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.connect-panel input {
+  width: 100%;
+  min-height: 38px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 12, 18, 0.72);
+  color: #edf2f7;
+  padding: 0 11px;
+  outline: none;
+}
+
+.connect-panel input:focus {
+  border-color: rgba(79, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 10px;
 }
 
 .panel-header {

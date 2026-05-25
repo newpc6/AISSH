@@ -34,10 +34,20 @@ export interface SessionRecord {
 
 export interface SessionOpenRequest {
   hostId: string
+  transientHost?: TransientHostConfig
 }
 
 export interface SessionOpenResponse {
   session: SessionRecord
+}
+
+export interface TransientHostConfig {
+  name?: string
+  address: string
+  port: number
+  username: string
+  password?: string
+  authType: HostAuthType
 }
 
 export interface SessionInputRequest {

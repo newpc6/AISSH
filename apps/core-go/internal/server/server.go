@@ -29,6 +29,7 @@ type hostRecord struct {
 	Port        int    `json:"port"`
 	Username    string `json:"username"`
 	AuthType    string `json:"authType"`
+	Password    string `json:"-"`
 	Description string `json:"description,omitempty"`
 }
 
@@ -42,7 +43,8 @@ type sessionRecord struct {
 }
 
 type sessionOpenRequest struct {
-	HostID string `json:"hostId"`
+	HostID        string      `json:"hostId"`
+	TransientHost *hostRecord `json:"transientHost,omitempty"`
 }
 
 type sessionOpenResponse struct {
@@ -116,15 +118,27 @@ func (m *sessionManager) listHosts() []hostRecord {
 	return hosts
 }
 
-func (m *sessionManager) openSession(hostID string) (*terminalSession, bool) {
+func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSession, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var selectedHost *hostRecord
-	for i := range m.hosts {
-		if m.hosts[i].ID == hostID {
-			selectedHost = &m.hosts[i]
-			break
+	if request.TransientHost != nil {
+		host := *request.TransientHost
+		host.ID = "transient-" + uuid.NewString()
+		if host.Name == "" {
+			host.Name = host.Username + "@" + host.Address
+		}
+		if host.Port == 0 {
+			host.Port = 22
+		}
+		selectedHost = &host
+	} else {
+		for i := range m.hosts {
+			if m.hosts[i].ID == request.HostID {
+				selectedHost = &m.hosts[i]
+				break
+			}
 		}
 	}
 
@@ -222,9 +236,14 @@ func (s *terminalSession) runSSH(host hostRecord) {
 	defer s.close()
 
 	addr := fmt.Sprintf("%s:%d", host.Address, host.Port)
+	authMethods := []ssh.AuthMethod{}
+	if host.AuthType == "password" && host.Password != "" {
+		authMethods = append(authMethods, ssh.Password(host.Password))
+	}
+
 	config := &ssh.ClientConfig{
 		User:            host.Username,
-		Auth:            []ssh.AuthMethod{},
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         8 * time.Second,
 	}
@@ -375,7 +394,7 @@ func New(port string) *http.Server {
 			return
 		}
 
-		session, ok := manager.openSession(request.HostID)
+		session, ok := manager.openSession(request)
 		if !ok {
 			http.Error(w, "host not found", http.StatusNotFound)
 			return
