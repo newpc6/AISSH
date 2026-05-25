@@ -129,6 +129,8 @@ export interface ServerMetrics {
   hostId: string
   cpuPercent: number
   memoryPercent: number
+  memoryUsedBytes: number
+  memoryTotalBytes: number
   diskPercent: number
   disks: DiskMetric[]
   networkRxBytes: number

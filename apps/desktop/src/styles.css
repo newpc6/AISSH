@@ -750,20 +750,43 @@ button {
   font-size: 14px;
 }
 
+.metric-chart-top strong {
+  min-width: 0;
+  flex: 1;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .metric-chart {
   display: grid;
   gap: 8px;
 }
 
-.metric-chart-top button {
-  min-width: 42px;
+.metric-zoom {
+  width: 24px;
   height: 24px;
+  min-width: 24px;
+  padding: 0;
   border: 1px solid rgba(103, 232, 249, 0.28);
-  border-radius: 6px;
+  border-radius: 999px;
   background: rgba(103, 232, 249, 0.08);
   color: #67e8f9;
-  font-size: 12px;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-grid;
+  place-items: center;
   cursor: pointer;
+}
+
+.metric-zoom:hover {
+  border-color: rgba(103, 232, 249, 0.68);
+  background: rgba(103, 232, 249, 0.16);
+}
+
+.metric-plot {
+  position: relative;
 }
 
 .metric-chart svg {
@@ -783,6 +806,51 @@ button {
   stroke-linejoin: round;
   stroke-width: 2.4;
   filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.52));
+  pointer-events: none;
+}
+
+.metric-hover-zone {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.metric-point {
+  fill: #0f1720;
+  stroke: #67e8f9;
+  stroke-width: 2;
+  cursor: crosshair;
+  pointer-events: none;
+}
+
+.metric-point.active {
+  fill: #67e8f9;
+  stroke: #e0f2fe;
+}
+
+.metric-tooltip {
+  position: absolute;
+  z-index: 4;
+  min-width: 142px;
+  padding: 8px 10px;
+  border: 1px solid rgba(103, 232, 249, 0.34);
+  border-radius: 7px;
+  background: rgba(8, 13, 20, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
+  display: grid;
+  gap: 3px;
+  pointer-events: none;
+  transform: translate(10px, calc(-100% - 8px));
+}
+
+.metric-tooltip strong,
+.metric-tooltip span,
+.metric-tooltip small {
+  font-size: 12px;
+}
+
+.metric-tooltip span,
+.metric-tooltip small {
+  color: #8ca0b8;
 }
 
 .axis-line {

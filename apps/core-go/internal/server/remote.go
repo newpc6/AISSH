@@ -170,7 +170,7 @@ func collectServerMetrics(host hostRecord) (serverMetrics, error) {
 	}
 
 	metrics.CPUPercent = parseCPUPercent(output)
-	metrics.MemoryPercent = parseMemoryPercent(output)
+	metrics.MemoryPercent, metrics.MemoryUsedBytes, metrics.MemoryTotalBytes = parseMemoryMetrics(output)
 	metrics.Disks, metrics.DiskPercent = parseDiskMetrics(output)
 	metrics.NetworkRxBytes, metrics.NetworkTxBytes = parseNetworkTotals(output)
 	return metrics, nil
@@ -220,6 +220,11 @@ func parseCPUStat(value string) (int64, int64, bool) {
 }
 
 func parseMemoryPercent(output string) int {
+	percent, _, _ := parseMemoryMetrics(output)
+	return percent
+}
+
+func parseMemoryMetrics(output string) (int, int64, int64) {
 	section := metricSection(output, "__AI_SSH_MEMINFO__", "__AI_SSH_DF__")
 	values := map[string]int64{}
 	for _, line := range strings.Split(section, "\n") {
@@ -239,9 +244,10 @@ func parseMemoryPercent(output string) int {
 		available = values["MemFree"] + values["Buffers"] + values["Cached"]
 	}
 	if total <= 0 {
-		return 0
+		return 0, 0, 0
 	}
-	return parsePercent(strconv.FormatInt((total-available)*100/total, 10))
+	used := total - available
+	return parsePercent(strconv.FormatInt(used*100/total, 10)), used * 1024, total * 1024
 }
 
 func parseDiskMetrics(output string) ([]diskMetric, int) {

@@ -707,6 +707,10 @@ Inter-| Receive | Transmit
 	if parseMemoryPercent(output) != 75 {
 		t.Fatalf("expected memory percent 75, got %d", parseMemoryPercent(output))
 	}
+	memoryPercent, memoryUsedBytes, memoryTotalBytes := parseMemoryMetrics(output)
+	if memoryPercent != 75 || memoryUsedBytes != 750*1024 || memoryTotalBytes != 1000*1024 {
+		t.Fatalf("expected memory metrics 75%% 750/1000 KiB, got percent=%d used=%d total=%d", memoryPercent, memoryUsedBytes, memoryTotalBytes)
+	}
 	disks, diskPercent := parseDiskMetrics(output)
 	if diskPercent != 58 || len(disks) != 1 || disks[0].Mount != "/egova_data" {
 		t.Fatalf("expected egova_data disk metric, got percent=%d disks=%v", diskPercent, disks)

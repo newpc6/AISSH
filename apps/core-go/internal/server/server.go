@@ -130,14 +130,16 @@ type fileListResponse struct {
 }
 
 type serverMetrics struct {
-	HostID         string       `json:"hostId"`
-	CPUPercent     int          `json:"cpuPercent"`
-	MemoryPercent  int          `json:"memoryPercent"`
-	DiskPercent    int          `json:"diskPercent"`
-	Disks          []diskMetric `json:"disks"`
-	NetworkRxBytes int64        `json:"networkRxBytes"`
-	NetworkTxBytes int64        `json:"networkTxBytes"`
-	CollectedAt    string       `json:"collectedAt"`
+	HostID           string       `json:"hostId"`
+	CPUPercent       int          `json:"cpuPercent"`
+	MemoryPercent    int          `json:"memoryPercent"`
+	MemoryUsedBytes  int64        `json:"memoryUsedBytes"`
+	MemoryTotalBytes int64        `json:"memoryTotalBytes"`
+	DiskPercent      int          `json:"diskPercent"`
+	Disks            []diskMetric `json:"disks"`
+	NetworkRxBytes   int64        `json:"networkRxBytes"`
+	NetworkTxBytes   int64        `json:"networkTxBytes"`
+	CollectedAt      string       `json:"collectedAt"`
 }
 
 type diskMetric struct {
