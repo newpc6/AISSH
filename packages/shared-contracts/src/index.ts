@@ -68,6 +68,15 @@ export interface HostUpsertRequest {
 
 export interface HostsImportRequest {
   hosts: HostUpsertRequest[]
+  exportKey?: string
+  encrypted?: boolean
+}
+
+export interface HostsExportResponse {
+  version: number
+  encrypted: boolean
+  exportKey?: string
+  hosts: HostRecord[]
 }
 
 export interface SessionRecord {

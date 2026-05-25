@@ -85,7 +85,13 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, map[string][]hostRecord{"hosts": manager.listHosts()})
+		includeCredentials := r.URL.Query().Get("credentials") == "1"
+		response, err := manager.exportHosts(includeCredentials)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, response)
 	})
 	mux.HandleFunc("/api/hosts/import", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -97,7 +103,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, map[string][]hostRecord{"hosts": manager.importHosts(request.Hosts)})
+		writeJSON(w, map[string][]hostRecord{"hosts": manager.importHosts(request)})
 	})
 	mux.HandleFunc("/api/hosts/", func(w http.ResponseWriter, r *http.Request) {
 		hostID := r.URL.Path[len("/api/hosts/"):]

@@ -11,6 +11,8 @@ import {
   type AppSettings,
   type FileEntry,
   type FileListResponse,
+  type HostsExportResponse,
+  type HostsImportRequest,
   type LogEntry,
   type LogLevel,
   type LogsResponse,
@@ -487,39 +489,53 @@ export function App() {
     }
   }
 
-  const exportHosts = async () => {
-    const response = await apiFetch('/hosts/export')
+  const exportHosts = async (includeCredentials = false) => {
+    const response = await apiFetch(`/hosts/export${includeCredentials ? '?credentials=1' : ''}`)
     if (!response.ok) {
       setErrorMessage(`导出失败：${response.status}`)
       return
     }
-    const text = JSON.stringify(await response.json(), null, 2)
+    const payload = (await response.json()) as HostsExportResponse
+    const text = JSON.stringify(payload, null, 2)
     await navigator.clipboard.writeText(text)
+    if (includeCredentials && payload.exportKey) {
+      window.alert('已复制加密服务器列表。JSON 中包含 exportKey，导入到其他电脑后可以恢复密码或 SSH Key。请只把这份文件交给可信的人。')
+    }
   }
 
-  const importSampleHost = async () => {
+  const importHostsFromClipboard = async () => {
+    const text = window.prompt('粘贴服务器列表 JSON')
+    if (!text) {
+      return
+    }
+    let payload: HostsImportRequest
+    try {
+      const parsed = JSON.parse(text) as Partial<HostsExportResponse & HostsImportRequest>
+      payload = {
+        hosts: (parsed.hosts ?? []) as HostsImportRequest['hosts'],
+        encrypted: parsed.encrypted,
+        exportKey: parsed.exportKey,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '服务器列表 JSON 解析失败'
+      setErrorMessage(message)
+      return
+    }
+    await importHosts(payload)
+  }
+
+  const importHosts = async (payload: HostsImportRequest) => {
     const response = await apiFetch('/hosts/import', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        hosts: [
-          {
-            name: 'Imported Demo',
-            address: '192.168.56.10',
-            port: 22,
-            username: 'ubuntu',
-            authType: 'password',
-            group: '导入',
-            description: '导入示例主机',
-          },
-        ],
-      }),
+      body: JSON.stringify(payload),
     })
 
     if (!response.ok) {
-      setErrorMessage(`导入失败：${response.status}`)
+      const detail = await response.text()
+      setErrorMessage(`导入失败：${detail.trim() || response.status}`)
       return
     }
 
@@ -1096,9 +1112,10 @@ export function App() {
                   {key === 'file' ? (
                     <>
                       <button type="button" onClick={openAddHostDialog}>新增连接</button>
-                      <button type="button" onClick={() => void exportHosts()}>导出服务器列表</button>
+                      <button type="button" onClick={() => void exportHosts(false)}>导出服务器列表</button>
+                      <button type="button" onClick={() => void exportHosts(true)}>导出服务器列表（含加密凭据）</button>
                       <button type="button" onClick={() => void exportSoftwareConfig()}>导出软件配置</button>
-                      <button type="button" onClick={() => void importSampleHost()}>导入服务器列表</button>
+                      <button type="button" onClick={() => void importHostsFromClipboard()}>导入服务器列表</button>
                       <button type="button" onClick={() => void importSoftwareConfig()}>导入软件配置</button>
                     </>
                   ) : null}
@@ -1160,7 +1177,7 @@ export function App() {
                 <strong>服务器</strong>
                 <div>
                   <button type="button" onClick={openAddHostDialog}>+</button>
-                  <button type="button" onClick={() => void exportHosts()}>⇅</button>
+                  <button type="button" onClick={() => void exportHosts(false)}>⇅</button>
                 </div>
               </div>
 

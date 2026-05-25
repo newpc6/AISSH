@@ -1,6 +1,11 @@
 package server
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,6 +44,13 @@ type hostRecord struct {
 	HasPrivateKey bool   `json:"hasPrivateKey,omitempty"`
 }
 
+type hostsExportResponse struct {
+	Version   int          `json:"version"`
+	Encrypted bool         `json:"encrypted"`
+	ExportKey string       `json:"exportKey,omitempty"`
+	Hosts     []hostRecord `json:"hosts"`
+}
+
 type hostUpsertRequest struct {
 	Name        string `json:"name"`
 	Address     string `json:"address"`
@@ -52,7 +64,9 @@ type hostUpsertRequest struct {
 }
 
 type hostsImportRequest struct {
-	Hosts []hostUpsertRequest `json:"hosts"`
+	Hosts     []hostUpsertRequest `json:"hosts"`
+	ExportKey string              `json:"exportKey,omitempty"`
+	Encrypted bool                `json:"encrypted,omitempty"`
 }
 
 type sessionRecord struct {
@@ -200,12 +214,16 @@ func newHostStore() *hostStore {
 		return &hostStore{path: path}
 	}
 
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		configDir = "."
+	baseDir := os.Getenv("AI_SSH_HOME")
+	if baseDir == "" {
+		var err error
+		baseDir, err = os.Getwd()
+		if err != nil {
+			baseDir = "."
+		}
 	}
 
-	return &hostStore{path: filepath.Join(configDir, "ai-ssh", "hosts.json")}
+	return &hostStore{path: filepath.Join(baseDir, "data", "hosts.json")}
 }
 
 func (s *hostStore) load() ([]hostRecord, error) {
@@ -253,6 +271,55 @@ func (m *sessionManager) listHosts() []hostRecord {
 		hosts[i] = host.sanitized()
 	}
 	return hosts
+}
+
+func (m *sessionManager) exportHosts(includeCredentials bool) (hostsExportResponse, error) {
+	m.mu.RLock()
+	hosts := make([]hostRecord, len(m.hosts))
+	copy(hosts, m.hosts)
+	m.mu.RUnlock()
+
+	response := hostsExportResponse{
+		Version:   1,
+		Encrypted: includeCredentials,
+		Hosts:     make([]hostRecord, 0, len(hosts)),
+	}
+
+	exportKey := ""
+	if includeCredentials {
+		var err error
+		exportKey, err = generateExportKey()
+		if err != nil {
+			return response, err
+		}
+		response.ExportKey = exportKey
+	}
+
+	for _, host := range hosts {
+		exportedHost := host.sanitized()
+		if includeCredentials {
+			if err := m.loadHostCredentials(&exportedHost); err != nil {
+				return response, err
+			}
+			if exportedHost.Password != "" {
+				encrypted, err := encryptExportSecret(exportKey, exportedHost.Password)
+				if err != nil {
+					return response, err
+				}
+				exportedHost.Password = encrypted
+			}
+			if exportedHost.PrivateKey != "" {
+				encrypted, err := encryptExportSecret(exportKey, exportedHost.PrivateKey)
+				if err != nil {
+					return response, err
+				}
+				exportedHost.PrivateKey = encrypted
+			}
+		}
+		response.Hosts = append(response.Hosts, exportedHost)
+	}
+
+	return response, nil
 }
 
 func (m *sessionManager) createHost(request hostUpsertRequest) (hostRecord, error) {
@@ -334,13 +401,26 @@ func (m *sessionManager) deleteHost(hostID string) bool {
 	return false
 }
 
-func (m *sessionManager) importHosts(requests []hostUpsertRequest) []hostRecord {
+func (m *sessionManager) importHosts(request hostsImportRequest) []hostRecord {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	created := make([]hostRecord, 0, len(requests))
-	for _, request := range requests {
-		host := hostFromRequest(request)
+	created := make([]hostRecord, 0, len(request.Hosts))
+	for _, hostRequest := range request.Hosts {
+		if request.Encrypted {
+			var err error
+			hostRequest.Password, err = decryptOptionalExportSecret(request.ExportKey, hostRequest.Password)
+			if err != nil {
+				m.logger.warn("hosts", "skip imported encrypted password", map[string]any{"name": hostRequest.Name, "error": err.Error()})
+				continue
+			}
+			hostRequest.PrivateKey, err = decryptOptionalExportSecret(request.ExportKey, hostRequest.PrivateKey)
+			if err != nil {
+				m.logger.warn("hosts", "skip imported encrypted private key", map[string]any{"name": hostRequest.Name, "error": err.Error()})
+				continue
+			}
+		}
+		host := hostFromRequest(hostRequest)
 		host.ID = "host-" + uuid.NewString()
 		if err := m.saveHostCredentials(&host); err != nil {
 			m.logger.warn("hosts", "skip imported host credentials", map[string]any{"name": host.Name, "error": err.Error()})
@@ -385,6 +465,73 @@ func (h hostRecord) withoutSecrets() hostRecord {
 	h.Password = ""
 	h.PrivateKey = ""
 	return h
+}
+
+func generateExportKey() (string, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return "", fmt.Errorf("生成导出密钥失败: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(key), nil
+}
+
+func exportCipherKey(exportKey string) []byte {
+	hash := sha256.Sum256([]byte(exportKey))
+	return hash[:]
+}
+
+func encryptExportSecret(exportKey string, value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+
+	block, err := aes.NewCipher(exportCipherKey(exportKey))
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("生成凭据加密随机数失败: %w", err)
+	}
+	ciphertext := gcm.Seal(nil, nonce, []byte(value), nil)
+	payload := append(nonce, ciphertext...)
+	return "enc:v1:" + base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decryptOptionalExportSecret(exportKey string, value string) (string, error) {
+	if value == "" || !strings.HasPrefix(value, "enc:v1:") {
+		return value, nil
+	}
+	if exportKey == "" {
+		return "", fmt.Errorf("缺少导出密钥")
+	}
+
+	block, err := aes.NewCipher(exportCipherKey(exportKey))
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, "enc:v1:"))
+	if err != nil {
+		return "", fmt.Errorf("凭据密文格式无效: %w", err)
+	}
+	if len(payload) <= gcm.NonceSize() {
+		return "", fmt.Errorf("凭据密文太短")
+	}
+	nonce := payload[:gcm.NonceSize()]
+	ciphertext := payload[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("凭据解密失败: %w", err)
+	}
+	return string(plaintext), nil
 }
 
 func (m *sessionManager) saveHostCredentials(host *hostRecord) error {

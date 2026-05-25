@@ -13,6 +13,33 @@ import (
 	"time"
 )
 
+func TestNewHostStoreDefaultsToCurrentDataDirectory(t *testing.T) {
+	previousHostsPath := os.Getenv("AI_SSH_HOSTS_PATH")
+	previousHome := os.Getenv("AI_SSH_HOME")
+	t.Setenv("AI_SSH_HOSTS_PATH", "")
+	t.Setenv("AI_SSH_HOME", "")
+	defer func() {
+		_ = os.Setenv("AI_SSH_HOSTS_PATH", previousHostsPath)
+		_ = os.Setenv("AI_SSH_HOME", previousHome)
+	}()
+
+	workspace := t.TempDir()
+	current, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("expected cwd, got error: %v", err)
+	}
+	if err := os.Chdir(workspace); err != nil {
+		t.Fatalf("expected chdir, got error: %v", err)
+	}
+	defer func() { _ = os.Chdir(current) }()
+
+	store := newHostStore()
+	expected := filepath.Join(workspace, "data", "hosts.json")
+	if store.path != expected {
+		t.Fatalf("expected host store path %q, got %q", expected, store.path)
+	}
+}
+
 func newTestServer(t *testing.T) *http.Server {
 	t.Helper()
 	return newTestServerWithCredentials(t, newMemoryCredentialStore())
@@ -229,6 +256,92 @@ func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 	}
 
 	t.Fatal("expected persisted host after server restart")
+}
+
+func TestHostsEncryptedExportAndImportCredentials(t *testing.T) {
+	exportCredentials := newMemoryCredentialStore()
+	exportServer := newTestServerWithCredentials(t, exportCredentials)
+	createBody := []byte(`{
+		"name":"Exported Host",
+		"address":"192.168.1.60",
+		"port":22,
+		"username":"deploy",
+		"authType":"password",
+		"group":"迁移",
+		"password":"secret"
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewBuffer(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+
+	exportServer.Handler.ServeHTTP(createRecorder, createReq)
+
+	if createRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", createRecorder.Code)
+	}
+
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/hosts/export?credentials=1", nil)
+	exportRecorder := httptest.NewRecorder()
+	exportServer.Handler.ServeHTTP(exportRecorder, exportReq)
+
+	if exportRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", exportRecorder.Code)
+	}
+	if bytes.Contains(exportRecorder.Body.Bytes(), []byte("secret")) {
+		t.Fatal("expected encrypted export to omit plaintext secret")
+	}
+
+	var exported hostsExportResponse
+	if err := json.Unmarshal(exportRecorder.Body.Bytes(), &exported); err != nil {
+		t.Fatalf("expected valid export json, got error: %v", err)
+	}
+	if !exported.Encrypted || exported.ExportKey == "" {
+		t.Fatal("expected encrypted export with export key")
+	}
+	var exportedHost hostRecord
+	for _, host := range exported.Hosts {
+		if host.Name == "Exported Host" {
+			exportedHost = host
+			break
+		}
+	}
+	if exportedHost.ID == "" || exportedHost.Password == "" {
+		t.Fatal("expected encrypted password in export")
+	}
+
+	importCredentials := newMemoryCredentialStore()
+	importServer := newTestServerWithCredentials(t, importCredentials)
+	importReq := httptest.NewRequest(http.MethodPost, "/api/hosts/import", bytes.NewBuffer(exportRecorder.Body.Bytes()))
+	importReq.Header.Set("Content-Type", "application/json")
+	importRecorder := httptest.NewRecorder()
+
+	importServer.Handler.ServeHTTP(importRecorder, importReq)
+
+	if importRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", importRecorder.Code)
+	}
+
+	var imported map[string][]hostRecord
+	if err := json.Unmarshal(importRecorder.Body.Bytes(), &imported); err != nil {
+		t.Fatalf("expected valid import json, got error: %v", err)
+	}
+	var importedHost hostRecord
+	for _, host := range imported["hosts"] {
+		if host.Name == "Exported Host" {
+			importedHost = host
+			break
+		}
+	}
+	if importedHost.ID == "" {
+		t.Fatal("expected exported host to be imported")
+	}
+	password, ok, err := importCredentials.Get(importedHost.ID, passwordCredential)
+	if err != nil {
+		t.Fatalf("expected imported credential read without error, got %v", err)
+	}
+	if !ok || password != "secret" {
+		t.Fatalf("expected imported password secret, ok=%v value=%q", ok, password)
+	}
 }
 
 func TestSavedHostCredentialsStayInCredentialStore(t *testing.T) {
