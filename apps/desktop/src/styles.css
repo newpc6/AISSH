@@ -460,6 +460,8 @@ button {
 .file-table {
   display: grid;
   gap: 4px;
+  align-content: start;
+  grid-auto-rows: 34px;
   min-height: 0;
   overflow: auto;
 }
@@ -468,6 +470,12 @@ button {
   color: #7f91a7;
   font-size: 11px;
   padding: 0 8px;
+}
+
+.file-table-head,
+.file-table button {
+  height: 34px;
+  min-height: 34px;
 }
 
 .file-table button span {
