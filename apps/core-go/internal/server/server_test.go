@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -230,6 +231,50 @@ func TestSavedHostCredentialsStayInCredentialStore(t *testing.T) {
 	}
 	if !ok || password != "secret" {
 		t.Fatalf("expected password in credential store, ok=%v value=%q", ok, password)
+	}
+}
+
+func TestSavedPrivateKeyCredentialCanBeLarge(t *testing.T) {
+	credentials := newMemoryCredentialStore()
+	srv := newTestServerWithCredentials(t, credentials)
+	privateKey := strings.Repeat("key-material", 300)
+	body, err := json.Marshal(map[string]any{
+		"name":       "Key Host",
+		"address":    "192.168.1.50",
+		"port":       22,
+		"username":   "deploy",
+		"authType":   "privateKey",
+		"group":      "测试",
+		"privateKey": privateKey,
+	})
+	if err != nil {
+		t.Fatalf("expected json marshal without error, got %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+	if created["hasPrivateKey"] != true {
+		t.Fatalf("expected private key flag, got %v", created["hasPrivateKey"])
+	}
+
+	hostID := created["id"].(string)
+	stored, ok, err := credentials.Get(hostID, privateKeyCredential)
+	if err != nil {
+		t.Fatalf("expected credential read without error, got %v", err)
+	}
+	if !ok || stored != privateKey {
+		t.Fatalf("expected private key in credential store, ok=%v", ok)
 	}
 }
 

@@ -445,6 +445,12 @@ code {
   background: rgba(239, 68, 68, 0.1);
 }
 
+.modal-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
@@ -504,6 +510,12 @@ code {
   background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
   padding: 0 12px;
+}
+
+.modal-header button:disabled,
+.modal-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .secret-area {

@@ -76,6 +76,8 @@ export function App() {
   const [hostForm, setHostForm] = useState<HostUpsertRequest>(emptyHostForm)
   const [savePassword, setSavePassword] = useState(false)
   const [savePrivateKey, setSavePrivateKey] = useState(false)
+  const [hostDialogError, setHostDialogError] = useState('')
+  const [isSavingHost, setIsSavingHost] = useState(false)
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -168,22 +170,26 @@ export function App() {
     return Array.from(groups.entries()).map(([name, items]) => ({ name, hosts: items }))
   }, [hosts])
 
-  const loadHosts = async () => {
+  const loadHosts = async (preferredHostId?: string) => {
     const response = await fetch(`${CORE_API_BASE}/hosts`)
     if (!response.ok) {
       throw new Error(`主机列表加载失败：${response.status}`)
     }
     const data = (await response.json()) as HostRecord[]
     setHosts(data)
-    if (!selectedHostId && data.length > 0) {
+    if (preferredHostId && data.some((host) => host.id === preferredHostId)) {
+      setSelectedHostId(preferredHostId)
+    } else if (!selectedHostId && data.length > 0) {
       setSelectedHostId(data[0].id)
     }
+    return data
   }
 
   const resetHostForm = () => {
     setHostForm(emptyHostForm)
     setSavePassword(false)
     setSavePrivateKey(false)
+    setHostDialogError('')
   }
 
   const openAddHostDialog = () => {
@@ -205,38 +211,61 @@ export function App() {
       const privateKey = await file.text()
       setHostForm((current) => ({ ...current, privateKey }))
       setSavePrivateKey(true)
+      setHostDialogError('')
     } catch (error) {
       const message = error instanceof Error ? error.message : '读取 SSH Key 文件失败'
+      setHostDialogError(message)
       setErrorMessage(message)
     }
   }
 
   const saveHost = async () => {
+    setHostDialogError('')
     if (!hostForm.name || !hostForm.address || !hostForm.username) {
-      setErrorMessage('请填写主机名称、地址和用户名')
+      setHostDialogError('请填写主机名称、地址和用户名')
+      return
+    }
+    if (hostForm.authType === 'password' && (!savePassword || !hostForm.password)) {
+      setHostDialogError('密码认证需要勾选并填写保存密码')
+      return
+    }
+    if (hostForm.authType === 'privateKey' && (!savePrivateKey || !hostForm.privateKey)) {
+      setHostDialogError('SSH Key 认证需要勾选保存，并粘贴或选择私钥文件')
       return
     }
 
-    const response = await fetch(`${CORE_API_BASE}/hosts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...hostForm,
-        port: Number(hostForm.port) || 22,
-        password: hostForm.authType === 'password' && savePassword ? hostForm.password : '',
-        privateKey: hostForm.authType === 'privateKey' && savePrivateKey ? hostForm.privateKey : '',
-      }),
-    })
+    setIsSavingHost(true)
+    try {
+      const response = await fetch(`${CORE_API_BASE}/hosts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...hostForm,
+          port: Number(hostForm.port) || 22,
+          password: hostForm.authType === 'password' && savePassword ? hostForm.password : '',
+          privateKey: hostForm.authType === 'privateKey' && savePrivateKey ? hostForm.privateKey : '',
+        }),
+      })
 
-    if (!response.ok) {
-      setErrorMessage(`保存主机失败：${response.status}`)
-      return
+      if (!response.ok) {
+        const detail = await response.text()
+        const message = detail.trim() || `HTTP ${response.status}`
+        throw new Error(`保存主机失败：${message}`)
+      }
+
+      const created = (await response.json()) as HostRecord
+      await loadHosts(created.id)
+      setErrorMessage('')
+      closeAddHostDialog()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存主机失败'
+      setHostDialogError(message)
+      setErrorMessage(message)
+    } finally {
+      setIsSavingHost(false)
     }
-
-    closeAddHostDialog()
-    await loadHosts()
   }
 
   const exportHosts = async () => {
@@ -338,15 +367,16 @@ export function App() {
     })
   }
 
-  const createSession = async () => {
-    if (!selectedHostId) {
+  const createSession = async (hostId = selectedHostId) => {
+    if (!hostId) {
       return
     }
 
+    setSelectedHostId(hostId)
     xtermRef.current?.clear()
-    xtermRef.current?.writeln(`正在为主机 ${selectedHostId} 创建会话...`)
+    xtermRef.current?.writeln(`正在为主机 ${hostId} 创建会话...`)
 
-    const payload: SessionOpenRequest = { hostId: selectedHostId }
+    const payload: SessionOpenRequest = { hostId }
 
     try {
       const response = await fetch(`${CORE_API_BASE}/sessions`, {
@@ -452,7 +482,7 @@ export function App() {
                       key={host.id}
                       className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
                       onClick={() => setSelectedHostId(host.id)}
-                      onDoubleClick={() => void createSession()}
+                      onDoubleClick={() => void createSession(host.id)}
                       type="button"
                     >
                       <span>{host.name}</span>
@@ -620,6 +650,8 @@ export function App() {
               <button type="button" onClick={closeAddHostDialog}>×</button>
             </div>
 
+            {hostDialogError ? <p className="error-text modal-error">{hostDialogError}</p> : null}
+
             <label>
               <span>名称</span>
               <input
@@ -751,8 +783,10 @@ export function App() {
             ) : null}
 
             <div className="modal-actions">
-              <button type="button" onClick={closeAddHostDialog}>取消</button>
-              <button className="primary-button" type="submit">保存</button>
+              <button disabled={isSavingHost} type="button" onClick={closeAddHostDialog}>取消</button>
+              <button className="primary-button" disabled={isSavingHost} type="submit">
+                {isSavingHost ? '保存中' : '保存'}
+              </button>
             </div>
           </form>
         </div>

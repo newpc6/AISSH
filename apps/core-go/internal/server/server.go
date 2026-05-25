@@ -230,7 +230,12 @@ func (m *sessionManager) createHost(request hostUpsertRequest) (hostRecord, erro
 		return hostRecord{}, err
 	}
 	m.hosts = append(m.hosts, host)
-	_ = m.store.save(m.hosts)
+	if err := m.store.save(m.hosts); err != nil {
+		m.hosts = m.hosts[:len(m.hosts)-1]
+		_ = m.credentials.Delete(host.ID, passwordCredential)
+		_ = m.credentials.Delete(host.ID, privateKeyCredential)
+		return hostRecord{}, err
+	}
 	return host.sanitized(), nil
 }
 
