@@ -61,6 +61,41 @@ button {
   gap: 8px;
 }
 
+.menu-item {
+  position: relative;
+}
+
+.top-dropdown {
+  position: absolute;
+  z-index: 12;
+  top: 32px;
+  left: 0;
+  min-width: 128px;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #111a24;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.34);
+}
+
+.top-dropdown button {
+  width: 100%;
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #dbe5ef;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 9px;
+}
+
+.top-dropdown button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .app-title span,
 .core-line,
 .hint-text {
@@ -252,6 +287,7 @@ button {
   color: #fca5a5;
 }
 
+.file-browser,
 .file-tree,
 .history-list,
 .ai-box {
@@ -263,6 +299,77 @@ button {
 .history-list button {
   min-height: 34px;
   padding: 0 10px;
+}
+
+.file-path-row,
+.file-table-head,
+.file-table button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px 112px;
+  gap: 8px;
+  align-items: center;
+}
+
+.file-path-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.file-path-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-path-row button,
+.file-table button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #dbe5ef;
+  cursor: pointer;
+  padding: 0 8px;
+  text-align: left;
+}
+
+.file-table {
+  display: grid;
+  gap: 4px;
+}
+
+.file-table-head {
+  color: #7f91a7;
+  font-size: 11px;
+  padding: 0 8px;
+}
+
+.file-table button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-list {
+  display: grid;
+  gap: 6px;
+}
+
+.transfer-list div {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.transfer-list span,
+.transfer-list small {
+  color: #8ca0b8;
+  font-size: 12px;
 }
 
 .center-workspace {
@@ -283,7 +390,7 @@ button {
 }
 
 .session-tab {
-  min-width: 150px;
+  min-width: 172px;
   height: 34px;
   padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -305,6 +412,20 @@ button {
 .session-tab small {
   color: #8ca0b8;
   font-size: 11px;
+}
+
+.tab-close {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  color: #8ca0b8;
+}
+
+.tab-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fca5a5;
 }
 
 .session-new {
@@ -403,19 +524,50 @@ button {
   font-size: 12px;
 }
 
+.metric-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px !important;
+  margin-top: 12px;
+}
+
+.metric-grid div {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.metric-grid span {
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.metric-grid strong {
+  font-size: 14px;
+}
+
 .host-modal span {
   color: #7f91a7;
   font-size: 12px;
 }
 
+.settings-modal span {
+  color: #7f91a7;
+  font-size: 12px;
+}
+
 .host-modal,
-.log-modal {
+.log-modal,
+.settings-modal {
   display: grid;
   gap: 10px;
 }
 
 .host-modal label,
-.log-toolbar label {
+.log-toolbar label,
+.settings-modal label {
   display: grid;
   gap: 6px;
 }
@@ -430,7 +582,8 @@ button {
 .host-modal input,
 .host-modal select,
 .host-modal textarea,
-.log-toolbar select {
+.log-toolbar select,
+.settings-modal input {
   width: 100%;
   min-height: 36px;
   border-radius: 7px;
@@ -450,7 +603,8 @@ button {
 .host-modal input:focus,
 .host-modal select:focus,
 .host-modal textarea:focus,
-.log-toolbar select:focus {
+.log-toolbar select:focus,
+.settings-modal input:focus {
   border-color: rgba(79, 140, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }
@@ -501,6 +655,23 @@ button {
   padding: 10px;
   display: grid;
   gap: 8px;
+}
+
+.prediction-row {
+  width: 100%;
+  min-height: 70px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.08);
+  text-align: left;
+  cursor: pointer;
+}
+
+.prediction-row small {
+  color: #67e8f9;
 }
 
 code {
@@ -561,7 +732,8 @@ code {
 }
 
 .host-modal,
-.log-modal {
+.log-modal,
+.settings-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;

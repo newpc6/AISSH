@@ -386,6 +386,29 @@ func TestSessionEventsEndpointStreamsThroughLoggingMiddleware(t *testing.T) {
 	}
 }
 
+func TestExtractCWDMarker(t *testing.T) {
+	visible, cwd := extractCWDMarker("hello\r\n__AI_SSH_CWD__/var/www\n$ ")
+
+	if cwd != "/var/www" {
+		t.Fatalf("expected cwd /var/www, got %q", cwd)
+	}
+	if strings.Contains(visible, "__AI_SSH_CWD__") {
+		t.Fatalf("expected marker to be hidden, got %q", visible)
+	}
+}
+
+func TestParsePercent(t *testing.T) {
+	if parsePercent("88") != 88 {
+		t.Fatal("expected percent 88")
+	}
+	if parsePercent("200") != 100 {
+		t.Fatal("expected percent to be capped")
+	}
+	if parsePercent("bad") != 0 {
+		t.Fatal("expected invalid percent to be zero")
+	}
+}
+
 func TestCreateTransientSessionEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	body := []byte(`{

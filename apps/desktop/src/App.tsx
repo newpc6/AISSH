@@ -8,10 +8,14 @@ import {
   type HealthResponse,
   type HostAuthType,
   type HostRecord,
+  type AppSettings,
+  type FileEntry,
+  type FileListResponse,
   type LogEntry,
   type LogLevel,
   type LogsResponse,
   type LogSettings,
+  type ServerMetrics,
   type HostUpsertRequest,
   type SessionOpenRequest,
   type SessionOpenResponse,
@@ -23,17 +27,9 @@ type LoadState = 'idle' | 'loading' | 'success' | 'error'
 type LeftMode = 'servers' | 'files'
 type RightTool = 'ai' | 'history'
 type HostDialogMode = 'create' | 'edit'
+type TopMenu = 'file' | 'edit' | 'session' | 'transfer' | 'tools' | 'settings' | ''
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
-
-const commandHistory = [
-  'pwd',
-  'ls -lah',
-  'df -h',
-  'free -m',
-  'tail -f /var/log/syslog',
-  'docker ps',
-]
 
 const aiSuggestions = [
   {
@@ -62,6 +58,14 @@ const emptyHostForm: HostUpsertRequest = {
   privateKey: '',
 }
 
+const defaultSettings: AppSettings = {
+  metricsRefreshIntervalSeconds: 2,
+  aiBaseUrl: '',
+  aiApiKey: '',
+  aiModel: '',
+  aiPredictionEnabled: true,
+}
+
 function statusToLabel(state: LoadState) {
   if (state === 'loading') return '连接 core 中'
   if (state === 'success') return 'core 已连接'
@@ -81,6 +85,28 @@ function resolveApiStreamUrl(path: string) {
   return `${CORE_API_FALLBACK_BASE}${requestPath}`
 }
 
+function resolveApiUrl(path: string) {
+  const requestPath = path.startsWith('/') ? path : `/${path}`
+  if (window.location.origin.startsWith('http://127.0.0.1:1420')) {
+    return `${CORE_API_BASE}${requestPath}`
+  }
+  return `${CORE_API_FALLBACK_BASE}${requestPath}`
+}
+
+function formatBytes(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
+  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+function parentPath(path: string) {
+  if (!path || path === '.' || path === '/') return '.'
+  const parts = path.split('/').filter(Boolean)
+  parts.pop()
+  return parts.length === 0 ? '/' : `/${parts.join('/')}`
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -91,7 +117,10 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string>('')
   const [leftMode, setLeftMode] = useState<LeftMode>('servers')
   const [rightTool, setRightTool] = useState<RightTool>('ai')
+  const [openTopMenu, setOpenTopMenu] = useState<TopMenu>('')
   const [aiEnabled, setAiEnabled] = useState(true)
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings)
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
   const [isHostDialogOpen, setIsHostDialogOpen] = useState(false)
   const [hostDialogMode, setHostDialogMode] = useState<HostDialogMode>('create')
   const [editingHostId, setEditingHostId] = useState('')
@@ -104,11 +133,24 @@ export function App() {
   const [isLogDialogOpen, setIsLogDialogOpen] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
+  const [commandHistory, setCommandHistory] = useState<string[]>([])
+  const [, setCommandBuffer] = useState('')
+  const [aiPrediction, setAiPrediction] = useState('')
+  const [filePath, setFilePath] = useState('.')
+  const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
+  const [fileError, setFileError] = useState('')
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false)
+  const [trackTerminalPath, setTrackTerminalPath] = useState(true)
+  const [transferTasks, setTransferTasks] = useState<
+    { id: string; name: string; direction: 'upload' | 'download'; progress: number; status: string }[]
+  >([])
+  const [serverMetrics, setServerMetrics] = useState<ServerMetrics | null>(null)
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
+  const uploadFileRef = useRef<HTMLInputElement | null>(null)
 
   const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
     const entry: LogEntry = {
@@ -229,11 +271,25 @@ export function App() {
     return () => window.removeEventListener('click', closeMenu)
   }, [openHostMenuId])
 
+  useEffect(() => {
+    if (!openTopMenu) {
+      return
+    }
+
+    const closeMenu = () => setOpenTopMenu('')
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [openTopMenu])
+
   const currentHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
   )
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
+  const activeHost = useMemo(
+    () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
+    [hosts, activeSession, currentHost],
+  )
   const groupedHosts = useMemo(() => {
     const groups = new Map<string, HostRecord[]>()
     for (const host of hosts) {
@@ -470,8 +526,14 @@ export function App() {
   }
 
   const openLogDialog = () => {
+    setOpenTopMenu('')
     setIsLogDialogOpen(true)
     void loadLogs()
+  }
+
+  const openSettingsDialog = () => {
+    setOpenTopMenu('')
+    setIsSettingsDialogOpen(true)
   }
 
   const updateLogLevel = async (level: LogLevel) => {
@@ -489,12 +551,162 @@ export function App() {
     await loadLogs()
   }
 
+  const loadFiles = async (path = filePath, hostId = activeSession?.hostId ?? selectedHostId) => {
+    if (!hostId || hostId === 'local-demo') {
+      setFileEntries([])
+      setFileError('请选择一个真实 SSH 会话后查看文件')
+      return
+    }
+
+    setIsLoadingFiles(true)
+    setFileError('')
+    try {
+      const response = await apiFetch(`/files/${hostId}?path=${encodeURIComponent(path)}`)
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail.trim() || `文件列表加载失败：${response.status}`)
+      }
+      const data = (await response.json()) as FileListResponse
+      setFilePath(data.path)
+      setFileEntries(data.entries)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '文件列表加载失败'
+      setFileError(message)
+      setErrorMessage(message)
+    } finally {
+      setIsLoadingFiles(false)
+    }
+  }
+
+  const downloadFile = async (entry: FileEntry) => {
+    const hostId = activeSession?.hostId ?? selectedHostId
+    if (!hostId || entry.type !== 'file') {
+      return
+    }
+
+    const taskID = `${Date.now()}-${entry.name}`
+    setTransferTasks((current) => [
+      { id: taskID, name: entry.name, direction: 'download', progress: 20, status: 'running' },
+      ...current,
+    ])
+    try {
+      const response = await apiFetch(`/files/${hostId}?download=1&path=${encodeURIComponent(entry.path)}`)
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail.trim() || `下载失败：${response.status}`)
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = entry.name
+      link.click()
+      URL.revokeObjectURL(url)
+      setTransferTasks((current) =>
+        current.map((task) => (task.id === taskID ? { ...task, progress: 100, status: 'done' } : task)),
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '下载失败'
+      setErrorMessage(message)
+      setTransferTasks((current) =>
+        current.map((task) => (task.id === taskID ? { ...task, status: 'error' } : task)),
+      )
+    }
+  }
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    const hostId = activeSession?.hostId ?? selectedHostId
+    const selectedFiles = Array.from(files)
+    if (!hostId || selectedFiles.length === 0) {
+      return
+    }
+
+    const taskID = `${Date.now()}-upload`
+    setTransferTasks((current) => [
+      {
+        id: taskID,
+        name: selectedFiles.length === 1 ? selectedFiles[0].name : `${selectedFiles.length} 个文件`,
+        direction: 'upload',
+        progress: 20,
+        status: 'running',
+      },
+      ...current,
+    ])
+
+    const body = new FormData()
+    for (const file of selectedFiles) {
+      body.append('files', file)
+    }
+
+    try {
+      const response = await apiFetch(`/files/${hostId}?path=${encodeURIComponent(filePath)}`, {
+        method: 'POST',
+        body,
+      })
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail.trim() || `上传失败：${response.status}`)
+      }
+      setTransferTasks((current) =>
+        current.map((task) => (task.id === taskID ? { ...task, progress: 100, status: 'done' } : task)),
+      )
+      await loadFiles(filePath, hostId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '上传失败'
+      setErrorMessage(message)
+      setTransferTasks((current) =>
+        current.map((task) => (task.id === taskID ? { ...task, status: 'error' } : task)),
+      )
+    }
+  }
+
+  const loadServerMetrics = async () => {
+    const hostId = activeSession?.hostId
+    if (!hostId || hostId === 'local-demo') {
+      setServerMetrics(null)
+      return
+    }
+    const response = await apiFetch(`/metrics/${hostId}`)
+    if (!response.ok) {
+      return
+    }
+    setServerMetrics((await response.json()) as ServerMetrics)
+  }
+
   useEffect(() => {
     if (!activeSession || !xtermRef.current) {
       return
     }
 
     const disposable = xtermRef.current.onData((data) => {
+      if (data === '\t' && aiPrediction) {
+        applyPrediction()
+        return
+      }
+      if (data !== '\t') {
+        setAiPrediction('')
+      }
+      setCommandBuffer((current) => {
+        let next = current
+        for (const char of data) {
+          if (char === '\r' || char === '\n') {
+            const command = next.trim()
+            if (command) {
+              setCommandHistory((history) => [command, ...history.filter((item) => item !== command)].slice(0, 80))
+              if (settings.aiPredictionEnabled && aiEnabled) {
+                const predicted = command.startsWith('cd ') ? 'ls -lah' : 'pwd'
+                setAiPrediction(predicted)
+              }
+            }
+            next = ''
+          } else if (char === '\u007f' || char === '\b') {
+            next = next.slice(0, -1)
+          } else if (char >= ' ') {
+            next += char
+          }
+        }
+        return next
+      })
       void apiFetch(`/sessions/${activeSession.id}/input`, {
         method: 'POST',
         headers: {
@@ -505,7 +717,26 @@ export function App() {
     })
 
     return () => disposable.dispose()
-  }, [activeSession])
+  }, [activeSession, aiPrediction, settings.aiPredictionEnabled, aiEnabled])
+
+  useEffect(() => {
+    if (leftMode === 'files') {
+      void loadFiles(filePath)
+    }
+  }, [leftMode, activeSessionId])
+
+  useEffect(() => {
+    void loadServerMetrics()
+    if (!activeSession?.hostId || activeSession.hostId === 'local-demo') {
+      return
+    }
+
+    const interval = window.setInterval(
+      () => void loadServerMetrics(),
+      Math.max(1, settings.metricsRefreshIntervalSeconds) * 1000,
+    )
+    return () => window.clearInterval(interval)
+  }, [activeSession?.hostId, settings.metricsRefreshIntervalSeconds])
 
   const openSessionStream = (session: SessionRecord) => {
     eventSourceRef.current?.close()
@@ -552,6 +783,13 @@ export function App() {
               : item,
           ),
         )
+      }
+
+      if (payload.type === 'cwd' && payload.data && trackTerminalPath) {
+        setFilePath(payload.data)
+        if (leftMode === 'files') {
+          void loadFiles(payload.data, session.hostId)
+        }
       }
 
       if (payload.type === 'error') {
@@ -615,6 +853,21 @@ export function App() {
     }
   }
 
+  const closeSession = async (session: SessionRecord) => {
+    const confirmed = window.confirm(`确定关闭「${session.hostName}」会话吗？`)
+    if (!confirmed) {
+      return
+    }
+
+    eventSourceRef.current?.close()
+    await apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
+    setSessions((current) => current.filter((item) => item.id !== session.id))
+    if (activeSessionId === session.id) {
+      const next = sessions.find((item) => item.id !== session.id)
+      setActiveSessionId(next?.id ?? '')
+    }
+  }
+
   const writeCommand = (command: string) => {
     xtermRef.current?.focus()
     xtermRef.current?.write(command)
@@ -629,6 +882,14 @@ export function App() {
     }
   }
 
+  const applyPrediction = () => {
+    if (!aiPrediction) {
+      return
+    }
+    writeCommand(aiPrediction)
+    setAiPrediction('')
+  }
+
   return (
     <div className="workbench-shell">
       <header className="top-menu">
@@ -637,12 +898,54 @@ export function App() {
           <span>{statusToLabel(healthState)}</span>
         </div>
         <nav className="menu-groups">
-          <button type="button">文件</button>
-          <button type="button">编辑</button>
-          <button type="button">会话</button>
-          <button type="button">传输</button>
-          <button type="button" onClick={openLogDialog}>工具</button>
-          <button type="button">设置</button>
+          {[
+            ['file', '文件'],
+            ['edit', '编辑'],
+            ['session', '会话'],
+            ['transfer', '传输'],
+            ['tools', '工具'],
+            ['settings', '设置'],
+          ].map(([key, label]) => (
+            <div className="menu-item" key={key}>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setOpenTopMenu((current) => (current === key ? '' : (key as TopMenu)))
+                }}
+              >
+                {label}
+              </button>
+              {openTopMenu === key ? (
+                <div className="top-dropdown" onClick={(event) => event.stopPropagation()}>
+                  {key === 'file' ? (
+                    <>
+                      <button type="button" onClick={openAddHostDialog}>新增连接</button>
+                      <button type="button" onClick={() => void importSampleHost()}>导入</button>
+                      <button type="button" onClick={() => void exportHosts()}>导出</button>
+                    </>
+                  ) : null}
+                  {key === 'session' ? (
+                    <>
+                      <button type="button" onClick={() => void createSession()}>新建会话</button>
+                      <button disabled={!activeSession} type="button" onClick={() => activeSession && void closeSession(activeSession)}>
+                        关闭当前
+                      </button>
+                    </>
+                  ) : null}
+                  {key === 'transfer' ? (
+                    <>
+                      <button type="button" onClick={() => uploadFileRef.current?.click()}>上传文件</button>
+                      <button type="button" onClick={() => setLeftMode('files')}>打开文件</button>
+                    </>
+                  ) : null}
+                  {key === 'tools' ? <button type="button" onClick={openLogDialog}>日志</button> : null}
+                  {key === 'settings' ? <button type="button" onClick={openSettingsDialog}>偏好设置</button> : null}
+                  {key === 'edit' ? <button type="button" disabled>复制</button> : null}
+                </div>
+              ) : null}
+            </div>
+          ))}
         </nav>
         <div className="top-actions">
           <button type="button" onClick={() => void importSampleHost()}>导入</button>
@@ -737,15 +1040,99 @@ export function App() {
               <div className="panel-toolbar">
                 <strong>远程文件</strong>
                 <div>
-                  <button type="button">↑</button>
-                  <button type="button">↓</button>
+                  <button type="button" onClick={() => void loadFiles(parentPath(filePath))}>↑</button>
+                  <button type="button" onClick={() => uploadFileRef.current?.click()}>上传</button>
                 </div>
               </div>
-              <div className="file-tree">
-                <button type="button">/home</button>
-                <button type="button">/var/log</button>
-                <button type="button">/etc</button>
-                <button type="button">/data</button>
+              <input
+                ref={uploadFileRef}
+                hidden
+                multiple
+                type="file"
+                onChange={(event) => {
+                  if (event.target.files) {
+                    void uploadFiles(event.target.files)
+                  }
+                  event.target.value = ''
+                }}
+              />
+              <label className="toggle-row">
+                <input
+                  checked={trackTerminalPath}
+                  type="checkbox"
+                  onChange={(event) => setTrackTerminalPath(event.target.checked)}
+                />
+                <span>跟踪终端路径</span>
+              </label>
+              <div
+                className="file-browser"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  if (event.dataTransfer.files.length > 0) {
+                    void uploadFiles(event.dataTransfer.files)
+                  }
+                }}
+              >
+                <div className="file-path-row">
+                  <span>{filePath}</span>
+                  <button type="button" onClick={() => void loadFiles(filePath)}>
+                    刷新
+                  </button>
+                </div>
+                {fileError ? <p className="error-text">{fileError}</p> : null}
+                {isLoadingFiles ? <p className="hint-text">加载中...</p> : null}
+                <div className="file-table">
+                  <div className="file-table-head">
+                    <span>名称</span>
+                    <span>大小</span>
+                    <span>修改日期</span>
+                  </div>
+                  {fileEntries.map((entry) => (
+                    <button
+                      key={entry.path}
+                      draggable={entry.type === 'file'}
+                      type="button"
+                      onDragStart={(event) => {
+                        if (entry.type === 'file') {
+                          event.dataTransfer.setData(
+                            'text/uri-list',
+                            resolveApiUrl(`/files/${activeSession?.hostId ?? selectedHostId}?download=1&path=${encodeURIComponent(entry.path)}`),
+                          )
+                          event.dataTransfer.setData('DownloadURL', `application/octet-stream:${entry.name}:${resolveApiUrl(`/files/${activeSession?.hostId ?? selectedHostId}?download=1&path=${encodeURIComponent(entry.path)}`)}`)
+                        }
+                      }}
+                      onDoubleClick={() => {
+                        if (entry.type === 'directory') {
+                          void loadFiles(entry.path)
+                        } else {
+                          void downloadFile(entry)
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        if (entry.type === 'file') {
+                          void downloadFile(entry)
+                        }
+                      }}
+                    >
+                      <span>{entry.type === 'directory' ? '▸ ' : ''}{entry.name}</span>
+                      <span>{entry.type === 'directory' ? '-' : formatBytes(entry.size)}</span>
+                      <span>{new Date(entry.modifiedAt).toLocaleString()}</span>
+                    </button>
+                  ))}
+                </div>
+                {transferTasks.length > 0 ? (
+                  <div className="transfer-list">
+                    {transferTasks.slice(0, 4).map((task) => (
+                      <div key={task.id}>
+                        <span>{task.direction === 'upload' ? '上传' : '下载'} · {task.name}</span>
+                        <progress max="100" value={task.progress} />
+                        <small>{task.status}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
@@ -759,15 +1146,31 @@ export function App() {
               </button>
             ) : (
               sessions.map((session) => (
-                <button
+                <div
                   key={session.id}
                   className={`session-tab ${activeSession?.id === session.id ? 'active' : ''}`}
-                  type="button"
                   onClick={() => setActiveSessionId(session.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      setActiveSessionId(session.id)
+                    }
+                  }}
                 >
                   <span>{session.hostName}</span>
                   <small>{session.status}</small>
-                </button>
+                  <button
+                    className="tab-close"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void closeSession(session)
+                    }}
+                  >
+                    x
+                  </button>
+                </div>
               ))
             )}
             <button className="session-new" type="button" onClick={() => void createSession()}>
@@ -796,21 +1199,43 @@ export function App() {
         <aside className="right-rail">
           <section className="info-panel">
             <p className="section-label">当前服务器</p>
-            <h3>{activeSession?.hostName ?? currentHost?.name ?? '未连接'}</h3>
+            <h3>{activeSession?.hostName ?? activeHost?.name ?? '未连接'}</h3>
             <dl>
               <div>
                 <dt>地址</dt>
-                <dd>{currentHost ? `${currentHost.address}:${currentHost.port}` : '-'}</dd>
+                <dd>{activeHost ? `${activeHost.address}:${activeHost.port}` : '-'}</dd>
               </div>
               <div>
                 <dt>用户</dt>
-                <dd>{currentHost?.username ?? '-'}</dd>
+                <dd>{activeHost?.username ?? '-'}</dd>
               </div>
               <div>
                 <dt>认证</dt>
-                <dd>{currentHost?.authType ?? '-'}</dd>
+                <dd>{activeHost?.authType ?? '-'}</dd>
               </div>
             </dl>
+            <div className="metric-grid">
+              <div>
+                <span>CPU</span>
+                <strong>{serverMetrics ? `${serverMetrics.cpuPercent}%` : '-'}</strong>
+              </div>
+              <div>
+                <span>内存</span>
+                <strong>{serverMetrics ? `${serverMetrics.memoryPercent}%` : '-'}</strong>
+              </div>
+              <div>
+                <span>硬盘</span>
+                <strong>{serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
+              </div>
+              <div>
+                <span>网络</span>
+                <strong>
+                  {serverMetrics
+                    ? `${formatBytes(serverMetrics.networkRxBytes)} / ${formatBytes(serverMetrics.networkTxBytes)}`
+                    : '-'}
+                </strong>
+              </div>
+            </div>
           </section>
 
           <section className="tool-panel">
@@ -853,6 +1278,13 @@ export function App() {
                     <code>{suggestion.command}</code>
                   </button>
                 ))}
+                {aiPrediction ? (
+                  <button className="prediction-row" type="button" onClick={applyPrediction}>
+                    <strong>预测</strong>
+                    <code>{aiPrediction}</code>
+                    <small>Tab 应用</small>
+                  </button>
+                ) : null}
                 <p className="hint-text">后续会读取终端上下文，支持 Tab 应用建议。</p>
               </div>
             ) : (
@@ -1076,6 +1508,72 @@ export function App() {
                     </article>
                   ))
               )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isSettingsDialogOpen ? (
+        <div className="modal-backdrop">
+          <section className="settings-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">设置</p>
+                <h3>偏好设置</h3>
+              </div>
+              <button type="button" onClick={() => setIsSettingsDialogOpen(false)}>×</button>
+            </div>
+            <label>
+              <span>服务器信息刷新频率（秒）</span>
+              <input
+                min="1"
+                type="number"
+                value={settings.metricsRefreshIntervalSeconds}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    metricsRefreshIntervalSeconds: Number(event.target.value) || 2,
+                  }))
+                }
+              />
+            </label>
+            <label className="checkbox-row">
+              <input
+                checked={settings.aiPredictionEnabled}
+                type="checkbox"
+                onChange={(event) =>
+                  setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
+                }
+              />
+              <span>开启 AI 命令预测</span>
+            </label>
+            <label>
+              <span>大模型地址</span>
+              <input
+                value={settings.aiBaseUrl}
+                onChange={(event) => setSettings((current) => ({ ...current, aiBaseUrl: event.target.value }))}
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+            <label>
+              <span>API Key</span>
+              <input
+                type="password"
+                value={settings.aiApiKey}
+                onChange={(event) => setSettings((current) => ({ ...current, aiApiKey: event.target.value }))}
+                placeholder="sk-..."
+              />
+            </label>
+            <label>
+              <span>模型</span>
+              <input
+                value={settings.aiModel}
+                onChange={(event) => setSettings((current) => ({ ...current, aiModel: event.target.value }))}
+                placeholder="gpt-4.1-mini"
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" onClick={() => setIsSettingsDialogOpen(false)}>关闭</button>
             </div>
           </section>
         </div>

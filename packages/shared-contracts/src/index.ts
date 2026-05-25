@@ -2,7 +2,7 @@ export const CORE_API_BASE = '/api'
 export const CORE_DEFAULT_PORT = 18555
 
 export type HealthStatus = 'ok'
-export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error'
+export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error' | 'closed'
 export type HostAuthType = 'password' | 'privateKey' | 'agent'
 
 export interface HealthResponse {
@@ -30,6 +30,14 @@ export interface LogsResponse {
 
 export interface LogSettings {
   level: LogLevel
+}
+
+export interface AppSettings {
+  metricsRefreshIntervalSeconds: number
+  aiBaseUrl: string
+  aiApiKey: string
+  aiModel: string
+  aiPredictionEnabled: boolean
 }
 
 export interface HostRecord {
@@ -70,6 +78,37 @@ export interface SessionRecord {
   lastError?: string
 }
 
+export interface FileEntry {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  size: number
+  modifiedAt: string
+}
+
+export interface FileListResponse {
+  path: string
+  entries: FileEntry[]
+}
+
+export interface TransferTask {
+  id: string
+  direction: 'upload' | 'download'
+  name: string
+  status: 'queued' | 'running' | 'done' | 'error'
+  progress: number
+}
+
+export interface ServerMetrics {
+  hostId: string
+  cpuPercent: number
+  memoryPercent: number
+  diskPercent: number
+  networkRxBytes: number
+  networkTxBytes: number
+  collectedAt: string
+}
+
 export interface SessionOpenRequest {
   hostId: string
   transientHost?: TransientHostConfig
@@ -93,7 +132,7 @@ export interface SessionInputRequest {
   data: string
 }
 
-export type TerminalEventType = 'output' | 'status' | 'error'
+export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd'
 
 export interface TerminalEvent {
   type: TerminalEventType
