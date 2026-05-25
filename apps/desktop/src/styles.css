@@ -192,6 +192,8 @@ button {
   padding: 12px;
   display: grid;
   gap: 14px;
+  align-content: start;
+  grid-auto-rows: max-content;
   overflow: auto;
 }
 
@@ -205,6 +207,12 @@ button {
 .server-group {
   display: grid;
   gap: 8px;
+}
+
+.server-groups {
+  display: grid;
+  gap: 14px;
+  align-content: start;
 }
 
 .server-group p,

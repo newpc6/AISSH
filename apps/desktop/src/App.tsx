@@ -1164,57 +1164,59 @@ export function App() {
                 </div>
               </div>
 
-              {groupedHosts.map((group) => (
-                <section className="server-group" key={group.name}>
-                  <p>{group.name}</p>
-                  {group.hosts.map((host) => (
-                    <div
-                      key={host.id}
-                      className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
-                      onClick={() => {
-                        setSelectedHostId(host.id)
-                        setOpenHostMenuId('')
-                      }}
-                      onDoubleClick={() => void createSession(host.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          void createSession(host.id)
-                        }
-                      }}
-                    >
-                      <div className="server-row-main">
-                        <span>{host.name}</span>
-                        <small>
-                          {host.username}@{host.address}:{host.port}
-                        </small>
-                      </div>
-                      <button
-                        aria-label={`${host.name} 菜单`}
-                        className="host-menu-trigger"
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setOpenHostMenuId((current) => (current === host.id ? '' : host.id))
+              <div className="server-groups">
+                {groupedHosts.map((group) => (
+                  <section className="server-group" key={group.name}>
+                    <p>{group.name}</p>
+                    {group.hosts.map((host) => (
+                      <div
+                        key={host.id}
+                        className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
+                        onClick={() => {
+                          setSelectedHostId(host.id)
+                          setOpenHostMenuId('')
+                        }}
+                        onDoubleClick={() => void createSession(host.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            void createSession(host.id)
+                          }
                         }}
                       >
-                        ⋯
-                      </button>
-                      {openHostMenuId === host.id ? (
-                        <div className="host-menu" onClick={(event) => event.stopPropagation()}>
-                          <button type="button" onClick={() => openEditHostDialog(host)}>编辑</button>
-                          <button type="button" onClick={() => void createSession(host.id)}>连接</button>
-                          <button type="button" onClick={() => void duplicateHost(host)}>复制配置</button>
-                          <button className="danger-item" type="button" onClick={() => void deleteHost(host)}>
-                            删除
-                          </button>
+                        <div className="server-row-main">
+                          <span>{host.name}</span>
+                          <small>
+                            {host.username}@{host.address}:{host.port}
+                          </small>
                         </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </section>
-              ))}
+                        <button
+                          aria-label={`${host.name} 菜单`}
+                          className="host-menu-trigger"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setOpenHostMenuId((current) => (current === host.id ? '' : host.id))
+                          }}
+                        >
+                          ⋯
+                        </button>
+                        {openHostMenuId === host.id ? (
+                          <div className="host-menu" onClick={(event) => event.stopPropagation()}>
+                            <button type="button" onClick={() => openEditHostDialog(host)}>编辑</button>
+                            <button type="button" onClick={() => void createSession(host.id)}>连接</button>
+                            <button type="button" onClick={() => void duplicateHost(host)}>复制配置</button>
+                            <button className="danger-item" type="button" onClick={() => void deleteHost(host)}>
+                              删除
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </section>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="left-content">
