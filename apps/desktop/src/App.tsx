@@ -4,9 +4,14 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import {
   CORE_API_BASE,
+  CORE_DEFAULT_PORT,
   type HealthResponse,
   type HostAuthType,
   type HostRecord,
+  type LogEntry,
+  type LogLevel,
+  type LogsResponse,
+  type LogSettings,
   type HostUpsertRequest,
   type SessionOpenRequest,
   type SessionOpenResponse,
@@ -17,6 +22,8 @@ import {
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
 type LeftMode = 'servers' | 'files'
 type RightTool = 'ai' | 'history'
+
+const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 
 const commandHistory = [
   'pwd',
@@ -61,6 +68,10 @@ function statusToLabel(state: LoadState) {
   return '等待检查'
 }
 
+function isLikelyStatic405(response: Response) {
+  return response.status === 405 && response.url.startsWith(window.location.origin)
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -78,11 +89,51 @@ export function App() {
   const [savePrivateKey, setSavePrivateKey] = useState(false)
   const [hostDialogError, setHostDialogError] = useState('')
   const [isSavingHost, setIsSavingHost] = useState(false)
+  const [isLogDialogOpen, setIsLogDialogOpen] = useState(false)
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
+
+  const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
+    const entry: LogEntry = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      timestamp: new Date().toISOString(),
+      level,
+      source,
+      message,
+      fields,
+    }
+    setLogs((current) => [...current.slice(-199), entry])
+  }
+
+  const apiFetch = async (path: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    const requestPath = path.startsWith('/') ? path : `/${path}`
+    const primaryUrl = `${CORE_API_BASE}${requestPath}`
+    appendLog('debug', 'ui.api', 'request started', { method, path: requestPath })
+
+    let response = await fetch(primaryUrl, init)
+    if (isLikelyStatic405(response)) {
+      appendLog('warn', 'ui.api', 'primary api returned 405, retrying core fallback', {
+        method,
+        path: requestPath,
+        primaryUrl: response.url,
+      })
+      response = await fetch(`${CORE_API_FALLBACK_BASE}${requestPath}`, init)
+    }
+
+    appendLog(response.ok ? 'debug' : 'warn', 'ui.api', 'request completed', {
+      method,
+      path: requestPath,
+      status: response.status,
+      url: response.url,
+    })
+    return response
+  }
 
   useEffect(() => {
     const terminal = new Terminal({
@@ -138,7 +189,7 @@ export function App() {
     const loadHealth = async () => {
       setHealthState('loading')
       try {
-        const response = await fetch(`${CORE_API_BASE}/health`)
+        const response = await apiFetch('/health')
         if (!response.ok) {
           throw new Error(`请求失败：${response.status}`)
         }
@@ -171,7 +222,7 @@ export function App() {
   }, [hosts])
 
   const loadHosts = async (preferredHostId?: string) => {
-    const response = await fetch(`${CORE_API_BASE}/hosts`)
+    const response = await apiFetch('/hosts')
     if (!response.ok) {
       throw new Error(`主机列表加载失败：${response.status}`)
     }
@@ -236,7 +287,7 @@ export function App() {
 
     setIsSavingHost(true)
     try {
-      const response = await fetch(`${CORE_API_BASE}/hosts`, {
+      const response = await apiFetch('/hosts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -269,7 +320,7 @@ export function App() {
   }
 
   const exportHosts = async () => {
-    const response = await fetch(`${CORE_API_BASE}/hosts/export`)
+    const response = await apiFetch('/hosts/export')
     if (!response.ok) {
       setErrorMessage(`导出失败：${response.status}`)
       return
@@ -279,7 +330,7 @@ export function App() {
   }
 
   const importSampleHost = async () => {
-    const response = await fetch(`${CORE_API_BASE}/hosts/import`, {
+    const response = await apiFetch('/hosts/import', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -307,13 +358,49 @@ export function App() {
     await loadHosts()
   }
 
+  const loadLogs = async () => {
+    const [logsResponse, settingsResponse] = await Promise.all([
+      apiFetch('/logs?limit=200'),
+      apiFetch('/logs/settings'),
+    ])
+
+    if (logsResponse.ok) {
+      const data = (await logsResponse.json()) as LogsResponse
+      setLogs((current) => [...current, ...data.logs].slice(-300))
+    }
+    if (settingsResponse.ok) {
+      const settings = (await settingsResponse.json()) as LogSettings
+      setLogLevel(settings.level)
+    }
+  }
+
+  const openLogDialog = () => {
+    setIsLogDialogOpen(true)
+    void loadLogs()
+  }
+
+  const updateLogLevel = async (level: LogLevel) => {
+    setLogLevel(level)
+    const response = await apiFetch('/logs/settings', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ level }),
+    })
+    if (!response.ok) {
+      setErrorMessage(`设置日志级别失败：${response.status}`)
+    }
+    await loadLogs()
+  }
+
   useEffect(() => {
     if (!activeSession || !xtermRef.current) {
       return
     }
 
     const disposable = xtermRef.current.onData((data) => {
-      void fetch(`${CORE_API_BASE}/sessions/${activeSession.id}/input`, {
+      void apiFetch(`/sessions/${activeSession.id}/input`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -379,7 +466,7 @@ export function App() {
     const payload: SessionOpenRequest = { hostId }
 
     try {
-      const response = await fetch(`${CORE_API_BASE}/sessions`, {
+      const response = await apiFetch('/sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -413,7 +500,7 @@ export function App() {
     xtermRef.current?.focus()
     xtermRef.current?.write(command)
     if (activeSession) {
-      void fetch(`${CORE_API_BASE}/sessions/${activeSession.id}/input`, {
+      void apiFetch(`/sessions/${activeSession.id}/input`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -435,7 +522,7 @@ export function App() {
           <button type="button">编辑</button>
           <button type="button">会话</button>
           <button type="button">传输</button>
-          <button type="button">工具</button>
+          <button type="button" onClick={openLogDialog}>工具</button>
           <button type="button">设置</button>
         </nav>
         <div className="top-actions">
@@ -789,6 +876,57 @@ export function App() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {isLogDialogOpen ? (
+        <div className="modal-backdrop">
+          <section className="log-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">工具</p>
+                <h3>运行日志</h3>
+              </div>
+              <button type="button" onClick={() => setIsLogDialogOpen(false)}>×</button>
+            </div>
+
+            <div className="log-toolbar">
+              <label>
+                <span>日志级别</span>
+                <select
+                  value={logLevel}
+                  onChange={(event) => void updateLogLevel(event.target.value as LogLevel)}
+                >
+                  <option value="debug">debug</option>
+                  <option value="info">info</option>
+                  <option value="warn">warn</option>
+                  <option value="error">error</option>
+                </select>
+              </label>
+              <button type="button" onClick={() => void loadLogs()}>刷新</button>
+            </div>
+
+            <div className="log-list">
+              {logs.length === 0 ? (
+                <p className="hint-text">暂无日志</p>
+              ) : (
+                logs
+                  .slice()
+                  .reverse()
+                  .map((entry) => (
+                    <article className={`log-row log-${entry.level}`} key={entry.id}>
+                      <header>
+                        <strong>{entry.level}</strong>
+                        <span>{entry.source}</span>
+                        <time>{new Date(entry.timestamp).toLocaleString()}</time>
+                      </header>
+                      <p>{entry.message}</p>
+                      {entry.fields ? <code>{JSON.stringify(entry.fields)}</code> : null}
+                    </article>
+                  ))
+              )}
+            </div>
+          </section>
         </div>
       ) : null}
     </div>

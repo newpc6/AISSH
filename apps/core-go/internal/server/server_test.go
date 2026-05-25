@@ -19,7 +19,7 @@ func newTestServer(t *testing.T) *http.Server {
 func newTestServerWithCredentials(t *testing.T, credentials credentialStore) *http.Server {
 	t.Helper()
 	store := &hostStore{path: filepath.Join(t.TempDir(), "hosts.json")}
-	return newServer("18555", newSessionManagerWithStores(store, credentials))
+	return newServer("18555", newSessionManagerWithStores(store, credentials, newAppLogger()))
 }
 
 func TestHealthEndpoint(t *testing.T) {
@@ -61,6 +61,38 @@ func TestHostsEndpoint(t *testing.T) {
 
 	if len(response) == 0 {
 		t.Fatal("expected seeded hosts, got empty list")
+	}
+}
+
+func TestLogsEndpoints(t *testing.T) {
+	srv := newTestServer(t)
+
+	settingsBody := bytes.NewBufferString(`{"level":"debug"}`)
+	settingsReq := httptest.NewRequest(http.MethodPut, "/api/logs/settings", settingsBody)
+	settingsReq.Header.Set("Content-Type", "application/json")
+	settingsRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(settingsRecorder, settingsReq)
+
+	if settingsRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", settingsRecorder.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?limit=10", nil)
+	recorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+
+	var response map[string][]map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+	if len(response["logs"]) == 0 {
+		t.Fatal("expected logs after settings request")
 	}
 }
 
@@ -138,7 +170,7 @@ func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "hosts.json")
 	credentials := newMemoryCredentialStore()
 
-	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, credentials))
+	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, credentials, newAppLogger()))
 	createBody := []byte(`{
 		"name":"Persisted Host",
 		"address":"192.168.1.30",
@@ -166,7 +198,7 @@ func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 		t.Fatal("expected persisted host file to omit password secret")
 	}
 
-	restarted := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, credentials))
+	restarted := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, credentials, newAppLogger()))
 	listReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
 	listRecorder := httptest.NewRecorder()
 

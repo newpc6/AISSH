@@ -96,6 +96,7 @@ type sessionManager struct {
 	sessions    map[string]*terminalSession
 	store       *hostStore
 	credentials credentialStore
+	logger      *appLogger
 }
 
 type hostStore struct {
@@ -107,19 +108,23 @@ type hostStoreFile struct {
 }
 
 func newSessionManager() *sessionManager {
-	return newSessionManagerWithStores(newHostStore(), newCredentialStore())
+	return newSessionManagerWithStores(newHostStore(), newCredentialStore(), newAppLogger())
 }
 
-func newSessionManagerWithStores(store *hostStore, credentials credentialStore) *sessionManager {
+func newSessionManagerWithStores(store *hostStore, credentials credentialStore, logger *appLogger) *sessionManager {
 	manager := &sessionManager{
 		hosts:       defaultHosts(),
 		sessions:    make(map[string]*terminalSession),
 		store:       store,
 		credentials: credentials,
+		logger:      logger,
 	}
 
 	if hosts, err := manager.store.load(); err == nil && len(hosts) > 0 {
 		manager.hosts = hosts
+		manager.logger.info("hosts", "loaded hosts from local store", map[string]any{"count": len(hosts)})
+	} else if err != nil {
+		manager.logger.debug("hosts", "using default hosts", map[string]any{"reason": err.Error()})
 	}
 
 	return manager
@@ -227,6 +232,11 @@ func (m *sessionManager) createHost(request hostUpsertRequest) (hostRecord, erro
 	host := hostFromRequest(request)
 	host.ID = "host-" + uuid.NewString()
 	if err := m.saveHostCredentials(&host); err != nil {
+		m.logger.error("hosts", "save host credentials failed", map[string]any{
+			"hostName": host.Name,
+			"authType": host.AuthType,
+			"error":    err.Error(),
+		})
 		return hostRecord{}, err
 	}
 	m.hosts = append(m.hosts, host)
@@ -234,8 +244,17 @@ func (m *sessionManager) createHost(request hostUpsertRequest) (hostRecord, erro
 		m.hosts = m.hosts[:len(m.hosts)-1]
 		_ = m.credentials.Delete(host.ID, passwordCredential)
 		_ = m.credentials.Delete(host.ID, privateKeyCredential)
+		m.logger.error("hosts", "save host file failed", map[string]any{"hostID": host.ID, "error": err.Error()})
 		return hostRecord{}, err
 	}
+	m.logger.info("hosts", "host created", map[string]any{
+		"hostID":        host.ID,
+		"name":          host.Name,
+		"address":       host.Address,
+		"authType":      host.AuthType,
+		"hasPassword":   host.HasPassword,
+		"hasPrivateKey": host.HasPrivateKey,
+	})
 	return host.sanitized(), nil
 }
 
@@ -254,10 +273,12 @@ func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (h
 				next.HasPrivateKey = m.hosts[i].HasPrivateKey
 			}
 			if err := m.saveHostCredentials(&next); err != nil {
+				m.logger.error("hosts", "update host credentials failed", map[string]any{"hostID": hostID, "error": err.Error()})
 				return hostRecord{}, true, err
 			}
 			m.hosts[i] = next
 			_ = m.store.save(m.hosts)
+			m.logger.info("hosts", "host updated", map[string]any{"hostID": hostID, "name": next.Name})
 			return next.sanitized(), true, nil
 		}
 	}
@@ -275,6 +296,7 @@ func (m *sessionManager) deleteHost(hostID string) bool {
 			_ = m.credentials.Delete(hostID, passwordCredential)
 			_ = m.credentials.Delete(hostID, privateKeyCredential)
 			_ = m.store.save(m.hosts)
+			m.logger.info("hosts", "host deleted", map[string]any{"hostID": hostID})
 			return true
 		}
 	}
@@ -291,6 +313,7 @@ func (m *sessionManager) importHosts(requests []hostUpsertRequest) []hostRecord 
 		host := hostFromRequest(request)
 		host.ID = "host-" + uuid.NewString()
 		if err := m.saveHostCredentials(&host); err != nil {
+			m.logger.warn("hosts", "skip imported host credentials", map[string]any{"name": host.Name, "error": err.Error()})
 			continue
 		}
 		m.hosts = append(m.hosts, host)
@@ -414,11 +437,13 @@ func (m *sessionManager) loadHostCredentials(host *hostRecord) error {
 func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSession, bool, error) {
 	selectedHost, ok := m.resolveSessionHost(request)
 	if !ok {
+		m.logger.warn("sessions", "host not found for session", map[string]any{"hostID": request.HostID})
 		return nil, false, nil
 	}
 
 	if request.TransientHost == nil {
 		if err := m.loadHostCredentials(&selectedHost); err != nil {
+			m.logger.error("sessions", "load credentials failed", map[string]any{"hostID": selectedHost.ID, "error": err.Error()})
 			return nil, true, err
 		}
 	}
@@ -439,6 +464,11 @@ func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSessi
 	m.mu.Lock()
 	m.sessions[session.record.ID] = session
 	m.mu.Unlock()
+	m.logger.info("sessions", "session created", map[string]any{
+		"sessionID": session.record.ID,
+		"hostID":    selectedHost.ID,
+		"hostName":  selectedHost.Name,
+	})
 
 	if selectedHost.ID == "local-demo" {
 		go session.runDemo()
@@ -644,6 +674,7 @@ func New(port string) *http.Server {
 
 func newServer(port string, manager *sessionManager) *http.Server {
 	mux := http.NewServeMux()
+	logger := manager.logger
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -666,6 +697,29 @@ func newServer(port string, manager *sessionManager) *http.Server {
 
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/health", healthHandler)
+	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, map[string][]logEntry{"logs": logger.list(parseLogLimit(r))})
+	})
+	mux.HandleFunc("/api/logs/settings", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, logger.settings())
+		case http.MethodPut:
+			var request logSettingsRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			logger.setLevel(request.Level)
+			writeJSON(w, logger.settings())
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -796,7 +850,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 
 	return &http.Server{
 		Addr:              fmt.Sprintf("127.0.0.1:%s", port),
-		Handler:           mux,
+		Handler:           logger.middleware(withCORS(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 }

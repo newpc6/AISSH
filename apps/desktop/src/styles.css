@@ -335,12 +335,14 @@ button {
   font-size: 12px;
 }
 
-.host-modal {
+.host-modal,
+.log-modal {
   display: grid;
   gap: 10px;
 }
 
-.host-modal label {
+.host-modal label,
+.log-toolbar label {
   display: grid;
   gap: 6px;
 }
@@ -354,7 +356,8 @@ button {
 
 .host-modal input,
 .host-modal select,
-.host-modal textarea {
+.host-modal textarea,
+.log-toolbar select {
   width: 100%;
   min-height: 36px;
   border-radius: 7px;
@@ -373,7 +376,8 @@ button {
 
 .host-modal input:focus,
 .host-modal select:focus,
-.host-modal textarea:focus {
+.host-modal textarea:focus,
+.log-toolbar select:focus {
   border-color: rgba(79, 140, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }
@@ -483,7 +487,8 @@ code {
   background: rgba(3, 7, 12, 0.68);
 }
 
-.host-modal {
+.host-modal,
+.log-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
@@ -492,6 +497,10 @@ code {
   background: #101821;
   padding: 18px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.log-modal {
+  width: min(860px, 100%);
 }
 
 .modal-header,
@@ -503,7 +512,8 @@ code {
 }
 
 .modal-header button,
-.modal-actions button {
+.modal-actions button,
+.log-toolbar button {
   min-height: 34px;
   border-radius: 7px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -516,6 +526,70 @@ code {
 .modal-actions button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.log-toolbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.log-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(560px, 62vh);
+  overflow: auto;
+}
+
+.log-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.log-row header {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.log-row strong {
+  text-transform: uppercase;
+}
+
+.log-row p {
+  margin: 0;
+  color: #e8edf4;
+}
+
+.log-row code {
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.24);
+  overflow-wrap: anywhere;
+}
+
+.log-debug strong {
+  color: #93c5fd;
+}
+
+.log-info strong {
+  color: #86efac;
+}
+
+.log-warn strong {
+  color: #fcd34d;
+}
+
+.log-error strong {
+  color: #fca5a5;
 }
 
 .secret-area {
