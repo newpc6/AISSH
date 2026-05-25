@@ -33,6 +33,15 @@ type openAIChatResponse struct {
 
 var numberedCommandPattern = regexp.MustCompile(`^\s*(?:[-*]|\d+[.)])\s*`)
 
+const (
+	aiDefaultPredictionCount = 3
+	aiMaxPredictionCount     = 8
+	aiTerminalContextLimit   = 6000
+	aiCommandHistoryLimit    = 20
+	aiRequestTimeout         = 18 * time.Second
+	aiMaxTokens              = 260
+)
+
 func predictCommands(ctx context.Context, request aiPredictionRequest) (aiPredictionResponse, error) {
 	normalized, err := normalizeAIRequest(request)
 	if err != nil {
@@ -47,7 +56,7 @@ func predictCommands(ctx context.Context, request aiPredictionRequest) (aiPredic
 	body, err := json.Marshal(openAIChatRequest{
 		Model:       normalized.Model,
 		Temperature: 0.2,
-		MaxTokens:   260,
+		MaxTokens:   aiMaxTokens,
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
@@ -72,7 +81,7 @@ func predictCommands(ctx context.Context, request aiPredictionRequest) (aiPredic
 		httpRequest.Header.Set("Authorization", "Bearer "+normalized.APIKey)
 	}
 
-	client := &http.Client{Timeout: 18 * time.Second}
+	client := &http.Client{Timeout: aiRequestTimeout}
 	response, err := client.Do(httpRequest)
 	if err != nil {
 		return aiPredictionResponse{}, err
@@ -109,16 +118,16 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 		return request, errors.New("ai model is required")
 	}
 	if request.PredictionCount <= 0 {
-		request.PredictionCount = 3
+		request.PredictionCount = aiDefaultPredictionCount
 	}
-	if request.PredictionCount > 8 {
-		request.PredictionCount = 8
+	if request.PredictionCount > aiMaxPredictionCount {
+		request.PredictionCount = aiMaxPredictionCount
 	}
-	if len(request.TerminalContext) > 6000 {
-		request.TerminalContext = request.TerminalContext[len(request.TerminalContext)-6000:]
+	if len(request.TerminalContext) > aiTerminalContextLimit {
+		request.TerminalContext = request.TerminalContext[len(request.TerminalContext)-aiTerminalContextLimit:]
 	}
-	if len(request.CommandHistory) > 20 {
-		request.CommandHistory = request.CommandHistory[:20]
+	if len(request.CommandHistory) > aiCommandHistoryLimit {
+		request.CommandHistory = request.CommandHistory[:aiCommandHistoryLimit]
 	}
 	return request, nil
 }

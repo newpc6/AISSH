@@ -804,29 +804,27 @@ button {
 
 .terminal-ghost-prediction {
   position: absolute;
-  left: 16px;
-  bottom: 10px;
-  max-width: calc(100% - 32px);
-  min-height: 26px;
-  padding: 0 8px;
+  z-index: 5;
+  min-height: 18px;
+  padding: 0 2px;
   border: 0;
-  border-radius: 6px;
-  background: rgba(8, 13, 20, 0.72);
-  color: rgba(203, 213, 225, 0.58);
+  border-radius: 3px;
+  background: transparent;
+  color: rgba(203, 213, 225, 0.48);
   display: flex;
   align-items: center;
-  gap: 8px;
   font-family: Consolas, "Cascadia Code", monospace;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: auto;
 }
 
 .terminal-ghost-prediction:hover {
-  color: rgba(226, 232, 240, 0.82);
-  background: rgba(15, 23, 32, 0.88);
+  color: rgba(226, 232, 240, 0.74);
+  background: rgba(15, 23, 32, 0.7);
 }
 
 .terminal-ghost-prediction span {

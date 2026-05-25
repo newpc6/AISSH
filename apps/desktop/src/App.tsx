@@ -53,6 +53,13 @@ type MetricHover = {
   y: number
 } | null
 
+type PredictionGhostPosition = {
+  left: number
+  top: number
+  maxWidth: number
+  height: number
+}
+
 type SessionReconnectResponse = {
   previousSessionId: string
   session: SessionRecord
@@ -102,6 +109,8 @@ type WindowWithSaveFilePicker = Window & {
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
+const AI_TERMINAL_CONTEXT_LIMIT = 5000
+const AI_COMMAND_HISTORY_LIMIT = 20
 
 const textFileExtensions = new Set([
   'bash',
@@ -370,7 +379,7 @@ function stripTerminalControlSequences(data: string) {
 }
 
 function terminalContextTail(cache: TerminalCache | undefined) {
-  return stripTerminalControlSequences(cache?.chunks.join('') ?? '').slice(-5000)
+  return stripTerminalControlSequences(cache?.chunks.join('') ?? '').slice(-AI_TERMINAL_CONTEXT_LIMIT)
 }
 
 function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
@@ -558,6 +567,7 @@ export function App() {
   const [aiPredictionIndex, setAiPredictionIndex] = useState(0)
   const [aiPredictionState, setAiPredictionState] = useState<LoadState>('idle')
   const [aiPredictionError, setAiPredictionError] = useState('')
+  const [predictionGhostPosition, setPredictionGhostPosition] = useState<PredictionGhostPosition | null>(null)
   const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
   const [filePreviewTabs, setFilePreviewTabs] = useState<FilePreviewTab[]>([])
   const [activeViewId, setActiveViewId] = useState('')
@@ -598,6 +608,8 @@ export function App() {
   const aiPredictionRequestRef = useRef(0)
   const aiPredictionCursorRef = useRef(0)
   const aiPredictionCycleStartedRef = useRef(false)
+  const predictionPositionFrameRef = useRef<number | undefined>(undefined)
+  const predictionGhostVisibleRef = useRef(false)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
@@ -640,8 +652,53 @@ export function App() {
     setAiPredictionIndex(0)
     setAiPredictionState('idle')
     setAiPredictionError('')
+    predictionGhostVisibleRef.current = false
+    setPredictionGhostPosition(null)
     aiPredictionCursorRef.current = 0
     aiPredictionCycleStartedRef.current = false
+  }
+
+  const updatePredictionGhostPositionNow = () => {
+    const terminal = xtermRef.current
+    const surface = terminalRef.current
+    if (!predictionGhostVisibleRef.current || !terminal || !surface) {
+      setPredictionGhostPosition(null)
+      return
+    }
+
+    const viewport = surface.querySelector('.xterm-viewport') as HTMLElement | null
+    const screen = surface.querySelector('.xterm-screen') as HTMLElement | null
+    const xtermRows = surface.querySelector('.xterm-rows') as HTMLElement | null
+    const firstRow = xtermRows?.querySelector('div') as HTMLElement | null
+    const viewportRect = viewport?.getBoundingClientRect() ?? surface.getBoundingClientRect()
+    const surfaceRect = surface.getBoundingClientRect()
+    const screenRect = screen?.getBoundingClientRect() ?? viewportRect
+    const cellWidth = firstRow ? firstRow.getBoundingClientRect().width / Math.max(terminal.cols, 1) : viewportRect.width / Math.max(terminal.cols, 1)
+    const cellHeight = firstRow?.getBoundingClientRect().height || viewportRect.height / Math.max(terminal.rows, 1)
+    const cursorX = Math.min(terminal.buffer.active.cursorX + 1, Math.max(terminal.cols - 1, 0))
+    const cursorY = terminal.buffer.active.cursorY
+    const left = Math.min(
+      Math.max(8, screenRect.left - surfaceRect.left + cursorX * cellWidth + 2),
+      Math.max(8, surfaceRect.width - 80),
+    )
+    const top = Math.min(
+      Math.max(8, screenRect.top - surfaceRect.top + cursorY * cellHeight),
+      Math.max(8, surfaceRect.height - cellHeight - 8),
+    )
+    setPredictionGhostPosition({
+      left,
+      top,
+      maxWidth: Math.max(120, surfaceRect.width - left - 12),
+      height: Math.max(18, cellHeight),
+    })
+  }
+
+  const schedulePredictionGhostPositionUpdate = () => {
+    window.cancelAnimationFrame(predictionPositionFrameRef.current ?? 0)
+    predictionPositionFrameRef.current = window.requestAnimationFrame(() => {
+      predictionPositionFrameRef.current = undefined
+      updatePredictionGhostPositionNow()
+    })
   }
 
   const queueSessionInput = (sessionId: string, data: string) => {
@@ -715,6 +772,7 @@ export function App() {
 
     if (activeSessionIdRef.current === sessionId) {
       xtermRef.current?.write(data)
+      schedulePredictionGhostPositionUpdate()
       if (
         pendingAIPredictionCommandRef.current &&
         sessionSettingsRef.current.aiPredictionEnabled &&
@@ -836,6 +894,7 @@ export function App() {
     const onResize = () => {
       fitAddon.fit()
       syncTerminalSize()
+      schedulePredictionGhostPositionUpdate()
     }
     window.addEventListener('resize', onResize)
     const resizeObserver = terminalRef.current
@@ -847,11 +906,16 @@ export function App() {
       resizeObserver.observe(terminalRef.current)
     }
     const resizeDisposable = terminal.onResize(() => syncTerminalSize())
+    const cursorDisposable = terminal.onCursorMove(schedulePredictionGhostPositionUpdate)
+    const renderDisposable = terminal.onRender(schedulePredictionGhostPositionUpdate)
 
     return () => {
       window.removeEventListener('resize', onResize)
       resizeObserver?.disconnect()
       resizeDisposable.dispose()
+      cursorDisposable.dispose()
+      renderDisposable.dispose()
+      window.cancelAnimationFrame(predictionPositionFrameRef.current ?? 0)
       Object.values(eventSourcesRef.current).forEach((source) => source.close())
       eventSourcesRef.current = {}
       terminal.dispose()
@@ -1725,7 +1789,7 @@ export function App() {
       model: normalized.aiModel,
       predictionCount: normalized.aiPredictionCount,
       terminalContext: terminalContextTail(terminalCachesRef.current[session.id]),
-      commandHistory: history.slice(0, 20),
+      commandHistory: history.slice(0, AI_COMMAND_HISTORY_LIMIT),
       currentCommand: commandBufferRef.current,
       hostName: session.hostName,
       hostAddress: host.address,
@@ -1754,6 +1818,7 @@ export function App() {
       setAiPredictionState('success')
       setAiPredictionError('')
       pendingAIPredictionCommandRef.current = ''
+      schedulePredictionGhostPositionUpdate()
     } catch (error) {
       if (aiPredictionRequestRef.current !== requestID) {
         return
@@ -1841,6 +1906,7 @@ export function App() {
     aiPredictionCycleStartedRef.current = true
     aiPredictionCursorRef.current = nextIndex
     setAiPredictionIndex(nextIndex)
+    schedulePredictionGhostPositionUpdate()
   }
 
   useEffect(() => {
@@ -1882,6 +1948,16 @@ export function App() {
       void refreshFilesFromSessionPath()
     }
   }, [leftMode, activeSessionId, trackTerminalPath])
+
+  useEffect(() => {
+    if (primaryPrediction && activeSession && !isFilePreviewActive) {
+      predictionGhostVisibleRef.current = true
+      schedulePredictionGhostPositionUpdate()
+    } else {
+      predictionGhostVisibleRef.current = false
+      setPredictionGhostPosition(null)
+    }
+  }, [primaryPrediction, activeSession?.id, isFilePreviewActive])
 
   useEffect(() => {
     void loadServerMetrics()
@@ -2005,6 +2081,7 @@ export function App() {
     }
     fitAddonRef.current?.fit()
     syncTerminalSize(session.id)
+    schedulePredictionGhostPositionUpdate()
   }
 
   const createSession = async (hostId = selectedHostId) => {
@@ -2791,8 +2868,19 @@ export function App() {
             ) : null}
             <div className={`terminal-wrap ${isFilePreviewActive ? 'terminal-hidden' : ''}`}>
               <div ref={terminalRef} className="terminal-surface" />
-              {activeSession && primaryPrediction ? (
-                <button className="terminal-ghost-prediction" type="button" title="应用 AI 预测命令" onClick={applyPrediction}>
+              {activeSession && primaryPrediction && predictionGhostPosition ? (
+                <button
+                  className="terminal-ghost-prediction"
+                  style={{
+                    left: predictionGhostPosition.left,
+                    top: predictionGhostPosition.top,
+                    maxWidth: predictionGhostPosition.maxWidth,
+                    height: predictionGhostPosition.height,
+                  }}
+                  type="button"
+                  title="应用 AI 预测命令"
+                  onClick={applyPrediction}
+                >
                   {primaryPrediction}
                 </button>
               ) : null}
