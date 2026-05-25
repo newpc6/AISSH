@@ -22,7 +22,7 @@
 - Rust / Cargo 环境已可用
 - Tauri 桌面壳已接入现有前端工程，并完成 `cargo check` 与 `tauri info` 验证
 - 当前已完成 React + TypeScript 前端骨架、Go core health server、共享契约包与本地联调配置
-- 当前已开始 Milestone 1，已实现主机列表、会话接口、SSE 输出流、input 写入接口、`local-demo` 终端演示链路，以及临时密码认证 SSH 连接
+- 当前已开始 Milestone 1，已实现主机列表、会话接口、SSE 输出流、input 写入接口、`local-demo` 终端演示链路、临时密码认证 SSH 连接，并完成工作台主布局重构
 
 ## 3. 交付策略
 
@@ -191,7 +191,8 @@
 8. 完成主机列表、会话接口与终端容器首版
 9. 完成 SSE 输出流和 input 写入接口
 10. 完成临时密码认证 SSH 登录
-11. 接入私钥 / agent 认证与 known_hosts 校验
+11. 完成顶部菜单、左侧 SSH/文件模式、中间终端 tabs、右侧 AI/历史命令工作台布局
+12. 接入私钥 / agent 认证与 known_hosts 校验
 
 ## 6. 工程规则
 
@@ -238,6 +239,7 @@
 - [x] 完成终端容器首版
 - [x] 完成会话事件流与终端输入写入链路
 - [x] 接入临时密码认证 SSH 登录
+- [x] 完成工作台主布局重构
 - [ ] 接入私钥 / agent 认证
 - [ ] 接入 known_hosts 严格校验
 

@@ -14,22 +14,45 @@ import {
 } from '@ai-ssh/shared-contracts'
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
+type LeftMode = 'servers' | 'files'
+type RightTool = 'ai' | 'history'
 
-const priorities = [
-  '主机管理与连接配置',
-  '终端多标签与会话状态',
-  '远程文件浏览与上传下载',
-  'AI 命令解释与建议面板',
+const commandHistory = [
+  'pwd',
+  'ls -lah',
+  'df -h',
+  'free -m',
+  'tail -f /var/log/syslog',
+  'docker ps',
 ]
 
-const milestones = [
+const aiSuggestions = [
   {
-    title: '当前切片',
-    body: '主机列表、创建会话接口、终端容器与会话状态联动',
+    title: '检查当前目录',
+    command: 'pwd && ls -lah',
   },
   {
-    title: '下一步',
-    body: '接入真实 SSH 会话流和 xterm 输入输出桥接',
+    title: '查看资源占用',
+    command: 'top',
+  },
+  {
+    title: '定位磁盘压力',
+    command: 'df -h && du -sh * | sort -h',
+  },
+]
+
+const serverGroups = [
+  {
+    name: '演示',
+    match: (host: HostRecord) => host.id === 'local-demo',
+  },
+  {
+    name: '开发环境',
+    match: (host: HostRecord) => host.name.toLowerCase().includes('dev'),
+  },
+  {
+    name: '生产环境',
+    match: (host: HostRecord) => host.name.toLowerCase().includes('prod'),
   },
 ]
 
@@ -47,7 +70,11 @@ export function App() {
   const [hosts, setHosts] = useState<HostRecord[]>([])
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [selectedHostId, setSelectedHostId] = useState<string>('')
+  const [activeSessionId, setActiveSessionId] = useState<string>('')
   const [sessionState, setSessionState] = useState<LoadState>('idle')
+  const [leftMode, setLeftMode] = useState<LeftMode>('servers')
+  const [rightTool, setRightTool] = useState<RightTool>('ai')
+  const [aiEnabled, setAiEnabled] = useState(true)
   const [transientHost, setTransientHost] = useState<TransientHostConfig>({
     address: '',
     port: 22,
@@ -94,8 +121,8 @@ export function App() {
     if (terminalRef.current) {
       terminal.open(terminalRef.current)
       fitAddon.fit()
-      terminal.writeln('AI SSH terminal workspace ready.')
-      terminal.writeln('等待创建 SSH 会话...')
+      terminal.writeln('AI SSH workspace ready.')
+      terminal.writeln('选择左侧服务器或填写右侧临时连接信息。')
     }
 
     const onResize = () => fitAddon.fit()
@@ -151,8 +178,7 @@ export function App() {
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
   )
-
-  const activeSession = sessions[0] ?? null
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
 
   useEffect(() => {
     if (!activeSession || !xtermRef.current) {
@@ -189,7 +215,9 @@ export function App() {
       if (payload.type === 'status') {
         setSessions((current) =>
           current.map((item) =>
-            item.id === session.id ? { ...item, status: payload.data === 'connected' ? 'connected' : item.status } : item,
+            item.id === session.id
+              ? { ...item, status: payload.data === 'connected' ? 'connected' : item.status }
+              : item,
           ),
         )
       }
@@ -257,7 +285,8 @@ export function App() {
       }
 
       const data = (await response.json()) as SessionOpenResponse
-      setSessions([data.session])
+      setSessions((current) => [data.session, ...current])
+      setActiveSessionId(data.session.id)
       setSessionState('success')
 
       xtermRef.current?.writeln('')
@@ -275,241 +304,303 @@ export function App() {
     }
   }
 
+  const writeCommand = (command: string) => {
+    xtermRef.current?.focus()
+    xtermRef.current?.write(command)
+    if (activeSession) {
+      void fetch(`${CORE_API_BASE}/sessions/${activeSession.id}/input`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ data: command }),
+      })
+    }
+  }
+
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <div className="brand-mark">A</div>
-          <div>
-            <p className="eyebrow">AI SSH</p>
-            <h1>桌面优先的智能 SSH 工作台</h1>
-          </div>
+    <div className="workbench-shell">
+      <header className="top-menu">
+        <div className="app-title">
+          <strong>AI SSH</strong>
+          <span>{statusToLabel(healthState)}</span>
         </div>
+        <nav className="menu-groups">
+          <button type="button">文件</button>
+          <button type="button">编辑</button>
+          <button type="button">会话</button>
+          <button type="button">传输</button>
+          <button type="button">工具</button>
+          <button type="button">设置</button>
+        </nav>
+        <div className="top-actions">
+          <button type="button">导入</button>
+          <button type="button">导出</button>
+          <button type="button">保存凭据</button>
+          <span className={`status-dot status-${healthState}`} />
+        </div>
+      </header>
 
-        <section className="sidebar-section">
-          <p className="section-label">当前重点</p>
-          <ul className="priority-list">
-            {priorities.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="sidebar-section">
-          <p className="section-label">主机列表</p>
-          <div className="host-list">
-            {hosts.map((host) => (
-              <button
-                key={host.id}
-                className={`host-item ${selectedHostId === host.id ? 'host-item-active' : ''}`}
-                onClick={() => setSelectedHostId(host.id)}
-                type="button"
-              >
-                <strong>{host.name}</strong>
-                <span>
-                  {host.username}@{host.address}:{host.port}
-                </span>
-              </button>
-            ))}
+      <div className="workbench-grid">
+        <aside className="left-rail">
+          <div className="rail-tabs">
+            <button
+              className={leftMode === 'servers' ? 'active' : ''}
+              type="button"
+              onClick={() => setLeftMode('servers')}
+            >
+              SSH
+            </button>
+            <button
+              className={leftMode === 'files' ? 'active' : ''}
+              type="button"
+              onClick={() => setLeftMode('files')}
+            >
+              文件
+            </button>
           </div>
-        </section>
 
-        <section className="sidebar-section">
-          <p className="section-label">系统状态</p>
-          <div className="status-panel">
-            <span className={`status-dot status-${healthState}`} />
-            <div>
-              <strong>{statusToLabel(healthState)}</strong>
-              <p>当前通过 Vite 代理访问本地 Go core。</p>
+          {leftMode === 'servers' ? (
+            <div className="left-content">
+              <div className="panel-toolbar">
+                <strong>服务器</strong>
+                <div>
+                  <button type="button">+</button>
+                  <button type="button">⇅</button>
+                </div>
+              </div>
+
+              {serverGroups.map((group) => {
+                const groupHosts = hosts.filter(group.match)
+                if (groupHosts.length === 0) return null
+
+                return (
+                  <section className="server-group" key={group.name}>
+                    <p>{group.name}</p>
+                    {groupHosts.map((host) => (
+                      <button
+                        key={host.id}
+                        className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
+                        onClick={() => setSelectedHostId(host.id)}
+                        type="button"
+                      >
+                        <span>{host.name}</span>
+                        <small>
+                          {host.username}@{host.address}:{host.port}
+                        </small>
+                      </button>
+                    ))}
+                  </section>
+                )
+              })}
+
+              <div className="credential-box">
+                <strong>凭据</strong>
+                <button type="button">密码库</button>
+                <button type="button">SSH Key</button>
+              </div>
             </div>
-          </div>
-        </section>
-      </aside>
+          ) : (
+            <div className="left-content">
+              <div className="panel-toolbar">
+                <strong>远程文件</strong>
+                <div>
+                  <button type="button">↑</button>
+                  <button type="button">↓</button>
+                </div>
+              </div>
+              <div className="file-tree">
+                <button type="button">/home</button>
+                <button type="button">/var/log</button>
+                <button type="button">/etc</button>
+                <button type="button">/data</button>
+              </div>
+            </div>
+          )}
+        </aside>
 
-      <main className="main-panel">
-        <section className="hero-band">
-          <div className="hero-copy">
-            <p className="section-label">Milestone 1</p>
-            <h2>我们已经开始从“工程骨架”走向“真正可交互的 SSH 会话流程”。</h2>
-            <p className="hero-text">
-              这一版先完成主机列表、创建会话接口和终端容器，确保前端、Tauri 和 Go core
-              对同一条会话链路达成一致。
-            </p>
-
-            <div className="action-row">
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => void createSession('saved')}
-                disabled={!selectedHostId || sessionState === 'loading'}
-              >
-                {sessionState === 'loading' ? '创建中...' : '创建会话'}
+        <main className="center-workspace">
+          <div className="session-tabs">
+            {sessions.length === 0 ? (
+              <button className="session-tab active" type="button">
+                未连接
               </button>
-              <div className="context-block">
-                <strong>{currentHost?.name ?? '未选择主机'}</strong>
+            ) : (
+              sessions.map((session) => (
+                <button
+                  key={session.id}
+                  className={`session-tab ${activeSession?.id === session.id ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveSessionId(session.id)}
+                >
+                  <span>{session.hostName}</span>
+                  <small>{session.status}</small>
+                </button>
+              ))
+            )}
+            <button className="session-new" type="button" onClick={() => void createSession('saved')}>
+              +
+            </button>
+          </div>
+
+          <section className="terminal-stage">
+            <div className="terminal-header">
+              <div>
+                <strong>{activeSession ? activeSession.hostName : currentHost?.name ?? '请选择服务器'}</strong>
                 <span>
                   {currentHost
                     ? `${currentHost.username}@${currentHost.address}:${currentHost.port}`
-                    : '请先选择一个主机'}
+                    : '可以使用 Local Demo 或右侧临时连接'}
                 </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="health-card">
-            <div className="health-header">
-              <span>Core Health</span>
-              <strong>{statusToLabel(healthState)}</strong>
-            </div>
-
-            {health ? (
-              <dl className="health-grid">
-                <div>
-                  <dt>服务名</dt>
-                  <dd>{health.service}</dd>
-                </div>
-                <div>
-                  <dt>版本</dt>
-                  <dd>{health.version}</dd>
-                </div>
-                <div>
-                  <dt>状态</dt>
-                  <dd>{health.status}</dd>
-                </div>
-                <div>
-                  <dt>能力</dt>
-                  <dd>{health.capabilities.join(', ')}</dd>
-                </div>
-              </dl>
-            ) : null}
-
-            {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
-          </div>
-        </section>
-
-        <section className="workspace-band">
-          <article className="terminal-panel">
-            <div className="panel-header">
-              <div>
-                <p className="section-label">终端容器</p>
-                <h3>{activeSession ? activeSession.hostName : '尚未创建会话'}</h3>
               </div>
               <span className={`session-pill session-${activeSession?.status ?? 'idle'}`}>
                 {activeSession?.status ?? 'idle'}
               </span>
             </div>
             <div ref={terminalRef} className="terminal-surface" />
-          </article>
+          </section>
+        </main>
 
-          <aside className="session-panel">
-            <div className="connect-panel">
+        <aside className="right-rail">
+          <section className="info-panel">
+            <p className="section-label">当前服务器</p>
+            <h3>{activeSession?.hostName ?? currentHost?.name ?? '未连接'}</h3>
+            <dl>
               <div>
-                <p className="section-label">临时连接</p>
-                <h3>真实 SSH</h3>
+                <dt>地址</dt>
+                <dd>{currentHost ? `${currentHost.address}:${currentHost.port}` : '-'}</dd>
               </div>
+              <div>
+                <dt>用户</dt>
+                <dd>{currentHost?.username ?? '-'}</dd>
+              </div>
+              <div>
+                <dt>认证</dt>
+                <dd>{currentHost?.authType ?? '-'}</dd>
+              </div>
+            </dl>
+          </section>
 
+          <section className="connect-panel compact">
+            <div>
+              <p className="section-label">临时连接</p>
+              <h3>真实 SSH</h3>
+            </div>
+            <label>
+              <span>地址</span>
+              <input
+                value={transientHost.address}
+                onChange={(event) =>
+                  setTransientHost((current) => ({ ...current, address: event.target.value }))
+                }
+                placeholder="192.168.1.10"
+              />
+            </label>
+            <div className="form-row">
               <label>
-                <span>地址</span>
+                <span>端口</span>
                 <input
-                  value={transientHost.address}
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value={transientHost.port}
                   onChange={(event) =>
-                    setTransientHost((current) => ({ ...current, address: event.target.value }))
+                    setTransientHost((current) => ({
+                      ...current,
+                      port: Number(event.target.value) || 22,
+                    }))
                   }
-                  placeholder="192.168.1.10"
                 />
               </label>
-
-              <div className="form-row">
-                <label>
-                  <span>端口</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="65535"
-                    value={transientHost.port}
-                    onChange={(event) =>
-                      setTransientHost((current) => ({
-                        ...current,
-                        port: Number(event.target.value) || 22,
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>用户</span>
-                  <input
-                    value={transientHost.username}
-                    onChange={(event) =>
-                      setTransientHost((current) => ({ ...current, username: event.target.value }))
-                    }
-                    placeholder="root"
-                  />
-                </label>
-              </div>
-
               <label>
-                <span>密码</span>
+                <span>用户</span>
                 <input
-                  type="password"
-                  value={transientHost.password ?? ''}
+                  value={transientHost.username}
                   onChange={(event) =>
-                    setTransientHost((current) => ({ ...current, password: event.target.value }))
+                    setTransientHost((current) => ({ ...current, username: event.target.value }))
                   }
-                  placeholder="仅本次连接使用"
+                  placeholder="root"
                 />
               </label>
+            </div>
+            <label>
+              <span>密码</span>
+              <input
+                type="password"
+                value={transientHost.password ?? ''}
+                onChange={(event) =>
+                  setTransientHost((current) => ({ ...current, password: event.target.value }))
+                }
+                placeholder="仅本次连接使用"
+              />
+            </label>
+            <button
+              className="primary-button full-width"
+              type="button"
+              onClick={() => void createSession('transient')}
+              disabled={sessionState === 'loading'}
+            >
+              连接临时主机
+            </button>
+          </section>
 
+          <section className="tool-panel">
+            <div className="tool-tabs">
               <button
-                className="primary-button full-width"
+                className={rightTool === 'ai' ? 'active' : ''}
                 type="button"
-                onClick={() => void createSession('transient')}
-                disabled={sessionState === 'loading'}
+                onClick={() => setRightTool('ai')}
               >
-                连接临时主机
+                AI
+              </button>
+              <button
+                className={rightTool === 'history' ? 'active' : ''}
+                type="button"
+                onClick={() => setRightTool('history')}
+              >
+                历史
               </button>
             </div>
 
-            <div className="panel-header">
-              <div>
-                <p className="section-label">会话状态</p>
-                <h3>当前会话</h3>
+            {rightTool === 'ai' ? (
+              <div className="ai-box">
+                <label className="toggle-row">
+                  <input
+                    checked={aiEnabled}
+                    onChange={(event) => setAiEnabled(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>预测下一步命令</span>
+                </label>
+                {aiSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.command}
+                    className="suggestion-row"
+                    type="button"
+                    onClick={() => writeCommand(suggestion.command)}
+                    disabled={!aiEnabled}
+                  >
+                    <strong>{suggestion.title}</strong>
+                    <code>{suggestion.command}</code>
+                  </button>
+                ))}
+                <p className="hint-text">后续会读取终端上下文，支持 Tab 应用建议。</p>
               </div>
-            </div>
-
-            {activeSession ? (
-              <dl className="session-grid">
-                <div>
-                  <dt>会话 ID</dt>
-                  <dd>{activeSession.id}</dd>
-                </div>
-                <div>
-                  <dt>主机</dt>
-                  <dd>{activeSession.hostName}</dd>
-                </div>
-                <div>
-                  <dt>状态</dt>
-                  <dd>{activeSession.status}</dd>
-                </div>
-                <div>
-                  <dt>创建时间</dt>
-                  <dd>{new Date(activeSession.createdAt).toLocaleString('zh-CN')}</dd>
-                </div>
-              </dl>
             ) : (
-              <p className="empty-text">创建会话后，这里会显示会话状态和连接摘要。</p>
+              <div className="history-list">
+                {commandHistory.map((command) => (
+                  <button key={command} type="button" onClick={() => writeCommand(command)}>
+                    {command}
+                  </button>
+                ))}
+              </div>
             )}
+          </section>
 
-            <div className="roadmap-band roadmap-compact">
-              {milestones.map((item) => (
-                <article key={item.title} className="milestone-item">
-                  <p className="section-label">{item.title}</p>
-                  <h3>{item.body}</h3>
-                </article>
-              ))}
-            </div>
-          </aside>
-        </section>
-      </main>
+          {errorMessage ? <p className="error-text side-error">{errorMessage}</p> : null}
+          {health ? <p className="core-line">{health.service} · {health.version}</p> : null}
+        </aside>
+      </div>
     </div>
   )
 }
