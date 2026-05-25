@@ -523,6 +523,30 @@ func TestOutputTail(t *testing.T) {
 	}
 }
 
+func TestSessionCWDEndpoint(t *testing.T) {
+	sessionID := "session-test-cwd"
+	sessionManager := newSessionManagerWithStores(&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")}, newMemoryCredentialStore(), newAppLogger())
+	session := &terminalSession{
+		record: sessionRecord{ID: sessionID, HostID: "local-demo", HostName: "Local Demo", Status: "connected"},
+		input:  make(chan string, 1),
+		output: make(chan terminalEvent, 1),
+		done:   make(chan struct{}),
+	}
+	session.setCWD("/egova_apps")
+	sessionManager.sessions[sessionID] = session
+	cwdServer := newServer("18555", sessionManager)
+
+	cwdReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+sessionID+"/cwd", nil)
+	cwdRecorder := httptest.NewRecorder()
+	cwdServer.Handler.ServeHTTP(cwdRecorder, cwdReq)
+	if cwdRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", cwdRecorder.Code)
+	}
+	if !strings.Contains(cwdRecorder.Body.String(), "/egova_apps") {
+		t.Fatalf("expected cwd response, got %q", cwdRecorder.Body.String())
+	}
+}
+
 func TestParsePercent(t *testing.T) {
 	if parsePercent("88") != 88 {
 		t.Fatal("expected percent 88")
@@ -536,13 +560,49 @@ func TestParsePercent(t *testing.T) {
 }
 
 func TestParseCPUStat(t *testing.T) {
-	total, idle, ok := parseCPUStat("1200 900")
+	total, idle, ok := parseCPUStat("100 20 30 900 10 5 5 0")
 
 	if !ok {
 		t.Fatal("expected cpu stat parse to succeed")
 	}
-	if total != 1200 || idle != 900 {
-		t.Fatalf("expected total 1200 and idle 900, got %d %d", total, idle)
+	if total != 1070 || idle != 910 {
+		t.Fatalf("expected total 1070 and idle 910, got %d %d", total, idle)
+	}
+}
+
+func TestParseServerMetricsSections(t *testing.T) {
+	output := `cpu  100 0 100 800 0 0 0 0
+
+__AI_SSH_STAT2__
+cpu  120 0 120 840 0 0 0 0
+
+__AI_SSH_MEMINFO__
+MemTotal:       1000 kB
+MemAvailable:   250 kB
+
+__AI_SSH_DF__
+Filesystem 1024-blocks Used Available Capacity Mounted on
+/dev/sda1 100 58 42 58% /egova_data
+tmpfs 10 1 9 10% /run
+
+__AI_SSH_NETDEV__
+Inter-| Receive | Transmit
+  eth0: 4294967296 0 0 0 0 0 0 0 2147483648 0 0 0 0 0 0 0
+    lo: 100 0 0 0 0 0 0 0 200 0 0 0 0 0 0 0`
+
+	if parseCPUPercent(output) != 50 {
+		t.Fatalf("expected cpu percent 50, got %d", parseCPUPercent(output))
+	}
+	if parseMemoryPercent(output) != 75 {
+		t.Fatalf("expected memory percent 75, got %d", parseMemoryPercent(output))
+	}
+	disks, diskPercent := parseDiskMetrics(output)
+	if diskPercent != 58 || len(disks) != 1 || disks[0].Mount != "/egova_data" {
+		t.Fatalf("expected egova_data disk metric, got percent=%d disks=%v", diskPercent, disks)
+	}
+	rx, tx := parseNetworkTotals(output)
+	if rx != 4294967396 || tx != 2147483848 {
+		t.Fatalf("expected 64-bit network totals, got rx=%d tx=%d", rx, tx)
 	}
 }
 

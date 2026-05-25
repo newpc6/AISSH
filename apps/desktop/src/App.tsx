@@ -18,6 +18,7 @@ import {
   type LogsResponse,
   type LogSettings,
   type ServerMetrics,
+  type SessionCwdResponse,
   type HostUpsertRequest,
   type SessionOpenRequest,
   type SessionOpenResponse,
@@ -123,11 +124,18 @@ function shouldRecordCommand(command: string) {
   if (!command) return false
   if (command.includes('__AI_SSH_CWD__')) return false
   if (command.startsWith('printf ') && command.includes('$PWD')) return false
+  if (/^\[\>?[0-9;]*[a-zA-Z]$/.test(command)) return false
+  if (/^(?:\]|\^]).*(?:\\|\u0007)?$/.test(command)) return false
+  if (/^[0-9;?=><\\[\]()#;:\s]*$/.test(command)) return false
   return true
 }
 
 function stripTerminalControlSequences(data: string) {
-  return data.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+  return data
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\|\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b[()][A-Za-z0-9]/g, '')
+    .replace(/\x1b[@-Z\\-_]/g, '')
 }
 
 function sessionStatusLabel(status: SessionRecord['status']) {
@@ -181,6 +189,7 @@ export function App() {
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [aiPrediction, setAiPrediction] = useState('')
+  const [settingsSavedMessage, setSettingsSavedMessage] = useState('')
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
   const [fileError, setFileError] = useState('')
@@ -638,7 +647,24 @@ export function App() {
 
   const openSettingsDialog = () => {
     setOpenTopMenu('')
+    setSettingsSavedMessage('')
     setIsSettingsDialogOpen(true)
+  }
+
+  const saveSettings = () => {
+    setSettings((current) => ({
+      ...current,
+      metricsRefreshIntervalSeconds: Math.max(1, Number(current.metricsRefreshIntervalSeconds) || 2),
+      metricsHistoryWindowMinutes: Math.max(1, Number(current.metricsHistoryWindowMinutes) || 5),
+    }))
+    setSettingsSavedMessage('偏好设置已保存')
+    setErrorMessage('')
+    appendLog('info', 'ui.settings', 'settings saved', {
+      metricsRefreshIntervalSeconds: settings.metricsRefreshIntervalSeconds,
+      metricsHistoryWindowMinutes: settings.metricsHistoryWindowMinutes,
+      aiPredictionEnabled: settings.aiPredictionEnabled,
+    })
+    window.setTimeout(() => setSettingsSavedMessage(''), 2200)
   }
 
   const updateLogLevel = async (level: LogLevel) => {
@@ -681,6 +707,33 @@ export function App() {
     } finally {
       setIsLoadingFiles(false)
     }
+  }
+
+  const refreshFilesFromSessionPath = async () => {
+    if (!activeSession || activeSession.hostId === 'local-demo') {
+      await loadFiles(filePath)
+      return
+    }
+
+    if (!trackTerminalPath) {
+      await loadFiles(filePath, activeSession.hostId)
+      return
+    }
+
+    try {
+      const response = await apiFetch(`/sessions/${activeSession.id}/cwd`)
+      if (response.ok) {
+        const data = (await response.json()) as SessionCwdResponse
+        if (data.path) {
+          await loadFiles(data.path, activeSession.hostId)
+          return
+        }
+      }
+    } catch {
+      // SSE 路径事件已经是主通道，这里只是切换文件页时的兜底刷新。
+    }
+
+    await loadFiles(filePath, activeSession.hostId)
   }
 
   const downloadFile = async (entry: FileEntry) => {
@@ -775,6 +828,12 @@ export function App() {
     }
     const response = await apiFetch(`/metrics/${hostId}`)
     if (!response.ok) {
+      const detail = await response.text()
+      appendLog('warn', 'ui.metrics', 'metrics load failed', {
+        hostID: hostId,
+        status: response.status,
+        detail: detail.trim(),
+      })
       return
     }
     const metrics = (await response.json()) as ServerMetrics
@@ -802,18 +861,21 @@ export function App() {
   }
 
   const recordCommand = (command: string) => {
-    const normalized = command.trim()
+    const normalized = stripTerminalControlSequences(command).trim()
     if (!shouldRecordCommand(normalized)) {
       return
     }
 
-    setCommandHistory((history) => [normalized, ...history.filter((item) => item !== normalized)].slice(0, 80))
+    setCommandHistory((history) => [normalized, ...history.filter((item) => item !== normalized)].slice(0, 200))
     if (settings.aiPredictionEnabled && aiEnabled) {
       setAiPrediction(normalized.startsWith('cd ') ? 'ls -lah' : 'pwd')
     }
   }
 
   const observeTypedInput = (data: string) => {
+    if (/^\x1b\[[0-9;?]*[ -/]*[@-~]$/.test(data) || /^\x1b\][\s\S]*(?:\x07|\x1b\\|\\)$/.test(data)) {
+      return
+    }
     const visibleInput = stripTerminalControlSequences(data)
     let next = commandBufferRef.current
 
@@ -825,6 +887,12 @@ export function App() {
         next = ''
       } else if (char === '\u007f' || char === '\b') {
         next = next.slice(0, -1)
+      } else if (char === '\u0015') {
+        next = ''
+      } else if (char === '\t') {
+        next += ' '
+      } else if (char < ' ') {
+        continue
       } else if (char >= ' ' && char !== '\u001b') {
         next += char
       }
@@ -861,9 +929,9 @@ export function App() {
 
   useEffect(() => {
     if (leftMode === 'files') {
-      void loadFiles(filePath)
+      void refreshFilesFromSessionPath()
     }
-  }, [leftMode, activeSessionId])
+  }, [leftMode, activeSessionId, trackTerminalPath])
 
   useEffect(() => {
     void loadServerMetrics()
@@ -1240,7 +1308,7 @@ export function App() {
               <div className="panel-toolbar">
                 <strong>远程文件</strong>
                 <div>
-                  <button type="button" onClick={() => void loadFiles(parentPath(filePath))}>↑</button>
+                  <button type="button" onClick={() => void loadFiles(parentPath(filePath))}>上级</button>
                   <button type="button" onClick={() => uploadFileRef.current?.click()}>上传</button>
                 </div>
               </div>
@@ -1361,12 +1429,7 @@ export function App() {
 
         <main className="center-workspace">
           <div className="session-tabs">
-            {sessions.length === 0 ? (
-              <button className="session-tab active" type="button">
-                未连接
-              </button>
-            ) : (
-              sessions.map((session) => (
+            {sessions.map((session) => (
                 <div
                   key={session.id}
                   className={`session-tab ${activeSession?.id === session.id ? 'active' : ''}`}
@@ -1393,27 +1456,28 @@ export function App() {
                     x
                   </button>
                 </div>
-              ))
-            )}
+              ))}
             <button className="session-new" type="button" onClick={() => void createSession()}>
               +
             </button>
           </div>
 
           <section className="terminal-stage">
-            <div className="terminal-header">
-              <div>
-                <strong>{activeSession ? activeSession.hostName : currentHost?.name ?? '请选择服务器'}</strong>
-                <span>
-                  {currentHost
-                    ? `${currentHost.username}@${currentHost.address}:${currentHost.port}`
-                    : '可以使用 Local Demo 或左侧新增 SSH 连接'}
+            {activeSession ? (
+              <div className="terminal-header">
+                <div>
+                  <strong>{activeSession.hostName}</strong>
+                  <span>
+                    {activeHost
+                      ? `${activeHost.username}@${activeHost.address}:${activeHost.port}`
+                      : activeSession.hostId}
+                  </span>
+                </div>
+                <span className={`session-pill session-${activeSession.status}`}>
+                  {sessionStatusLabel(activeSession.status)}
                 </span>
               </div>
-              <span className={`session-pill session-${activeSession?.status ?? 'idle'}`}>
-                {activeSession?.status ?? 'idle'}
-              </span>
-            </div>
+            ) : null}
             <div ref={terminalRef} className="terminal-surface" />
             {!activeSession ? (
               <div className="terminal-empty">
@@ -1563,11 +1627,15 @@ export function App() {
               </div>
             ) : (
               <div className="history-list">
-                {commandHistory.map((command) => (
-                  <button key={command} type="button" onClick={() => writeCommand(command)}>
-                    {command}
-                  </button>
-                ))}
+                {commandHistory.length === 0 ? (
+                  <p className="hint-text">暂无历史命令</p>
+                ) : (
+                  commandHistory.map((command) => (
+                    <button key={command} type="button" onClick={() => writeCommand(command)}>
+                      {command}
+                    </button>
+                  ))
+                )}
               </div>
             )}
           </section>
@@ -1835,6 +1903,7 @@ export function App() {
               />
               <span>开启 AI 命令预测</span>
             </label>
+            {settingsSavedMessage ? <p className="success-text">{settingsSavedMessage}</p> : null}
             <label>
               <span>大模型地址</span>
               <input
@@ -1862,6 +1931,7 @@ export function App() {
             </label>
             <div className="modal-actions">
               <button type="button" onClick={() => setIsSettingsDialogOpen(false)}>关闭</button>
+              <button className="primary-button" type="button" onClick={saveSettings}>保存</button>
             </div>
           </section>
         </div>

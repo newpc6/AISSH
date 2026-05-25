@@ -132,6 +132,8 @@ type terminalSession struct {
 	output chan terminalEvent
 	done   chan struct{}
 	once   sync.Once
+	mu     sync.RWMutex
+	cwd    string
 }
 
 type sessionManager struct {
@@ -706,6 +708,21 @@ func (s *terminalSession) snapshot() sessionRecord {
 	return s.record
 }
 
+func (s *terminalSession) currentCWD() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cwd
+}
+
+func (s *terminalSession) setCWD(cwd string) {
+	if cwd == "" {
+		return
+	}
+	s.mu.Lock()
+	s.cwd = cwd
+	s.mu.Unlock()
+}
+
 func (s *terminalSession) send(event terminalEvent) {
 	select {
 	case s.output <- event:
@@ -855,6 +872,7 @@ func copyOutput(session *terminalSession, reader io.Reader) {
 			combined := tail + data
 			cwd := extractPromptCWD(combined)
 			if cwd != "" {
+				session.setCWD(cwd)
 				session.send(terminalEvent{Type: "cwd", Data: cwd})
 			}
 			tail = outputTail(combined)

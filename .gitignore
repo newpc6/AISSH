@@ -15,6 +15,9 @@ coverage.out
 # Logs
 *.log
 
+# Local runtime data
+data/
+
 # OS / editor
 .DS_Store
 Thumbs.db

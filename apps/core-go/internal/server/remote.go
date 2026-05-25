@@ -164,65 +164,164 @@ func collectServerMetrics(host hostRecord) (serverMetrics, error) {
 	}
 	defer client.Close()
 
-	output, err := runSSHCommand(client, "printf 'cpu1='; awk 'NR==1 {print $2+$3+$4+$5+$6+$7+$8, $5}' /proc/stat; sleep 0.2; printf 'cpu2='; awk 'NR==1 {print $2+$3+$4+$5+$6+$7+$8, $5}' /proc/stat; printf 'mem='; free | awk '/Mem:/ {printf \"%d\\n\", $3*100/$2}'; df -P | awk 'NR>1 && $6 !~ /^\\/(dev|run|sys|proc)(\\/|$)/ {gsub(\"%\", \"\", $5); printf \"disk=%s|%s|%s\\n\", $6, $1, $5}'; printf 'net='; awk 'NR>2 {rx+=$2; tx+=$10} END {printf \"%d %d\\n\", rx, tx}' /proc/net/dev")
+	output, err := runSSHCommand(client, "cat /proc/stat; printf '\\n__AI_SSH_STAT2__\\n'; sleep 0.25; cat /proc/stat; printf '\\n__AI_SSH_MEMINFO__\\n'; cat /proc/meminfo; printf '\\n__AI_SSH_DF__\\n'; df -P; printf '\\n__AI_SSH_NETDEV__\\n'; cat /proc/net/dev")
 	if err != nil {
 		return metrics, err
 	}
 
-	var cpuTotal1, cpuIdle1, cpuTotal2, cpuIdle2 int64
-	for _, line := range strings.Split(output, "\n") {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if !ok {
-			continue
-		}
-		switch key {
-		case "cpu1":
-			cpuTotal1, cpuIdle1, _ = parseCPUStat(value)
-		case "cpu2":
-			cpuTotal2, cpuIdle2, _ = parseCPUStat(value)
-		case "mem":
-			metrics.MemoryPercent = parsePercent(value)
-		case "disk":
-			fields := strings.Split(value, "|")
-			if len(fields) == 3 {
-				metric := diskMetric{
-					Mount:       fields[0],
-					Filesystem:  fields[1],
-					UsedPercent: parsePercent(fields[2]),
-				}
-				metrics.Disks = append(metrics.Disks, metric)
-				if metric.Mount == "/" || metric.UsedPercent > metrics.DiskPercent {
-					metrics.DiskPercent = metric.UsedPercent
-				}
-			}
-		case "net":
-			fields := strings.Fields(value)
-			if len(fields) == 2 {
-				metrics.NetworkRxBytes, _ = strconv.ParseInt(fields[0], 10, 64)
-				metrics.NetworkTxBytes, _ = strconv.ParseInt(fields[1], 10, 64)
-			}
-		}
-	}
-	if cpuTotal2 > cpuTotal1 {
-		totalDelta := cpuTotal2 - cpuTotal1
-		idleDelta := cpuIdle2 - cpuIdle1
-		metrics.CPUPercent = parsePercent(strconv.FormatInt((totalDelta-idleDelta)*100/totalDelta, 10))
-	}
-	if metrics.Disks == nil {
-		metrics.Disks = []diskMetric{}
-	}
-
+	metrics.CPUPercent = parseCPUPercent(output)
+	metrics.MemoryPercent = parseMemoryPercent(output)
+	metrics.Disks, metrics.DiskPercent = parseDiskMetrics(output)
+	metrics.NetworkRxBytes, metrics.NetworkTxBytes = parseNetworkTotals(output)
 	return metrics, nil
+}
+
+func parseCPUPercent(output string) int {
+	firstTotal, firstIdle, firstOK := parseFirstCPUStat(metricSection(output, "", "__AI_SSH_STAT2__"))
+	secondTotal, secondIdle, secondOK := parseFirstCPUStat(metricSection(output, "__AI_SSH_STAT2__", "__AI_SSH_MEMINFO__"))
+	if firstOK && secondOK && secondTotal > firstTotal {
+		totalDelta := secondTotal - firstTotal
+		idleDelta := secondIdle - firstIdle
+		return parsePercent(strconv.FormatInt((totalDelta-idleDelta)*100/totalDelta, 10))
+	}
+	return 0
+}
+
+func parseFirstCPUStat(section string) (int64, int64, bool) {
+	for _, line := range strings.Split(section, "\n") {
+		if strings.HasPrefix(line, "cpu ") {
+			return parseCPUStat(strings.TrimPrefix(line, "cpu "))
+		}
+	}
+	return 0, 0, false
 }
 
 func parseCPUStat(value string) (int64, int64, bool) {
 	fields := strings.Fields(value)
-	if len(fields) != 2 {
+	if len(fields) < 4 {
 		return 0, 0, false
 	}
-	total, totalErr := strconv.ParseInt(fields[0], 10, 64)
-	idle, idleErr := strconv.ParseInt(fields[1], 10, 64)
-	return total, idle, totalErr == nil && idleErr == nil
+	var total int64
+	for _, field := range fields {
+		value, err := strconv.ParseInt(field, 10, 64)
+		if err != nil {
+			return 0, 0, false
+		}
+		total += value
+	}
+	idle, idleErr := strconv.ParseInt(fields[3], 10, 64)
+	if len(fields) > 4 {
+		iowait, err := strconv.ParseInt(fields[4], 10, 64)
+		if err == nil {
+			idle += iowait
+		}
+	}
+	return total, idle, idleErr == nil
+}
+
+func parseMemoryPercent(output string) int {
+	section := metricSection(output, "__AI_SSH_MEMINFO__", "__AI_SSH_DF__")
+	values := map[string]int64{}
+	for _, line := range strings.Split(section, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		key := strings.TrimSuffix(fields[0], ":")
+		value, err := strconv.ParseInt(fields[1], 10, 64)
+		if err == nil {
+			values[key] = value
+		}
+	}
+	total := values["MemTotal"]
+	available := values["MemAvailable"]
+	if available == 0 {
+		available = values["MemFree"] + values["Buffers"] + values["Cached"]
+	}
+	if total <= 0 {
+		return 0
+	}
+	return parsePercent(strconv.FormatInt((total-available)*100/total, 10))
+}
+
+func parseDiskMetrics(output string) ([]diskMetric, int) {
+	section := metricSection(output, "__AI_SSH_DF__", "__AI_SSH_NETDEV__")
+	disks := []diskMetric{}
+	diskPercent := 0
+	for _, line := range strings.Split(section, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 6 || fields[0] == "Filesystem" {
+			continue
+		}
+		mount := fields[len(fields)-1]
+		if shouldSkipMount(mount) {
+			continue
+		}
+		metric := diskMetric{
+			Mount:       mount,
+			Filesystem:  fields[0],
+			UsedPercent: parsePercent(strings.TrimSuffix(fields[4], "%")),
+		}
+		disks = append(disks, metric)
+		if metric.Mount == "/" || metric.UsedPercent > diskPercent {
+			diskPercent = metric.UsedPercent
+		}
+	}
+	return disks, diskPercent
+}
+
+func shouldSkipMount(mount string) bool {
+	return mount == "/dev" ||
+		mount == "/run" ||
+		mount == "/sys" ||
+		mount == "/proc" ||
+		strings.HasPrefix(mount, "/dev/") ||
+		strings.HasPrefix(mount, "/run/") ||
+		strings.HasPrefix(mount, "/sys/") ||
+		strings.HasPrefix(mount, "/proc/")
+}
+
+func parseNetworkTotals(output string) (int64, int64) {
+	section := metricSection(output, "__AI_SSH_NETDEV__", "")
+	var rx int64
+	var tx int64
+	for _, line := range strings.Split(section, "\n") {
+		if !strings.Contains(line, ":") {
+			continue
+		}
+		_, value, _ := strings.Cut(line, ":")
+		fields := strings.Fields(value)
+		if len(fields) < 16 {
+			continue
+		}
+		rxValue, rxErr := strconv.ParseInt(fields[0], 10, 64)
+		txValue, txErr := strconv.ParseInt(fields[8], 10, 64)
+		if rxErr == nil {
+			rx += rxValue
+		}
+		if txErr == nil {
+			tx += txValue
+		}
+	}
+	return rx, tx
+}
+
+func metricSection(output string, startMarker string, endMarker string) string {
+	start := 0
+	if startMarker != "" {
+		index := strings.Index(output, startMarker)
+		if index < 0 {
+			return ""
+		}
+		start = index + len(startMarker)
+	}
+	section := output[start:]
+	if endMarker != "" {
+		if index := strings.Index(section, endMarker); index >= 0 {
+			section = section[:index]
+		}
+	}
+	return section
 }
 
 func parsePercent(value string) int {

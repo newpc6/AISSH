@@ -120,6 +120,10 @@ export interface ServerMetrics {
   collectedAt: string
 }
 
+export interface SessionCwdResponse {
+  path: string
+}
+
 export interface DiskMetric {
   mount: string
   filesystem: string

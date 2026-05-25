@@ -259,6 +259,12 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				return
 			}
 			writeSessionInput(w, r, session)
+		case "cwd":
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			writeJSON(w, map[string]string{"path": session.currentCWD()})
 		case "close":
 			if r.Method != http.MethodPost {
 				w.WriteHeader(http.StatusMethodNotAllowed)
