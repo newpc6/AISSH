@@ -51,7 +51,7 @@ func predictCommands(ctx context.Context, request aiPredictionRequest) (aiPredic
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: "You are an SSH terminal command prediction assistant. Return strict JSON only, never Markdown. Predict the most likely next shell commands from the current terminal context. Do not explain, do not execute anything, and do not return destructive commands. The response format must be {\"commands\":[\"cmd1\",\"cmd2\"]}.",
+				Content: "你是 SSH 终端命令预测助手。你只能返回严格 JSON，不能返回 Markdown。请根据当前终端上下文预测用户最可能执行的下一步 shell 命令。不要解释，不要执行任何操作，不要返回危险或破坏性命令。响应格式必须是 {\"commands\":[\"命令1\",\"命令2\"]}。",
 			},
 			{
 				Role:    "user",
@@ -140,16 +140,16 @@ func chatCompletionsURL(baseURL string) (string, error) {
 
 func buildPredictionPrompt(request aiPredictionRequest) string {
 	history, _ := json.Marshal(request.CommandHistory)
-	return fmt.Sprintf(`Current host: %s
-Connection: %s@%s
-Current command draft before Enter: %s
-Prediction count: %d
-Recent command history JSON: %s
+	return fmt.Sprintf(`当前主机：%s
+连接信息：%s@%s
+回车前当前命令草稿：%s
+需要预测的命令数量：%d
+最近命令历史 JSON：%s
 
-Terminal context:
+终端上下文：
 %s
 
-Return strict JSON: {"commands":["command1","command2"]}`,
+请只返回严格 JSON：{"commands":["命令1","命令2"]}`,
 		emptyAsDash(request.HostName),
 		emptyAsDash(request.Username),
 		emptyAsDash(request.HostAddress),

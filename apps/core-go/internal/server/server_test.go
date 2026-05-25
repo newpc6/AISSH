@@ -80,6 +80,19 @@ func TestAIPredictEndpointUsesOpenAICompatibleProvider(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Fatalf("expected bearer token, got %q", r.Header.Get("Authorization"))
 		}
+		var providerRequest openAIChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&providerRequest); err != nil {
+			t.Fatalf("expected valid provider request, got error: %v", err)
+		}
+		if len(providerRequest.Messages) != 2 {
+			t.Fatalf("expected system and user messages, got %#v", providerRequest.Messages)
+		}
+		if !strings.Contains(providerRequest.Messages[0].Content, "你是 SSH 终端命令预测助手") {
+			t.Fatalf("expected Chinese system prompt, got %q", providerRequest.Messages[0].Content)
+		}
+		if !strings.Contains(providerRequest.Messages[1].Content, "当前主机") || !strings.Contains(providerRequest.Messages[1].Content, "终端上下文") {
+			t.Fatalf("expected Chinese user prompt, got %q", providerRequest.Messages[1].Content)
+		}
 		writeJSON(w, map[string]any{
 			"choices": []map[string]any{
 				{
