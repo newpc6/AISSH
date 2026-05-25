@@ -732,8 +732,14 @@ button {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.metric-card > div:first-child,
 .metric-chart-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-card > div:first-child:not(.metric-chart) {
   display: flex;
   align-items: center;
   justify-content: space-between;
