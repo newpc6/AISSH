@@ -2247,7 +2247,7 @@ export function App() {
                 <span>跟踪终端路径</span>
               </label>
               <div
-                className="file-browser"
+                className={`file-browser ${fileError ? 'has-status' : ''}`}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
                   event.preventDefault()
@@ -2257,15 +2257,21 @@ export function App() {
                 }}
               >
                 <div className="file-path-row">
-                  <span>{filePath}</span>
-                  <button type="button" title="刷新当前目录" onClick={() => void loadFiles(filePath)}>
-                    刷新
-                  </button>
+                  <span className="file-path-text">{filePath}</span>
+                  <div className="file-path-actions">
+                    {isLoadingFiles ? (
+                      <span className="file-loading-spinner" role="status" aria-label="远程文件加载中" title="远程文件加载中" />
+                    ) : null}
+                    <button type="button" title="刷新当前目录" onClick={() => void loadFiles(filePath)}>
+                      刷新
+                    </button>
+                  </div>
                 </div>
-                <div className="file-browser-status">
-                  {fileError ? <p className="error-text">{fileError}</p> : null}
-                  {isLoadingFiles ? <p className="hint-text">加载中...</p> : null}
-                </div>
+                {fileError ? (
+                  <div className="file-browser-status">
+                    <p className="error-text">{fileError}</p>
+                  </div>
+                ) : null}
                 <div className="file-table">
                   <div className="file-table-head">
                     <span>名称</span>

@@ -359,8 +359,12 @@ button {
 
 .file-browser {
   min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+.file-browser.has-status {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .file-browser-status {
@@ -389,6 +393,22 @@ button {
   font-size: 12px;
 }
 
+.file-path-actions {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.file-loading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(148, 163, 184, 0.28);
+  border-top-color: #60a5fa;
+  border-radius: 999px;
+  animation: file-loading-spin 0.8s linear infinite;
+}
+
 .file-path-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -411,7 +431,7 @@ button {
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }
 
-.file-path-row span {
+.file-path-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -429,6 +449,12 @@ button {
   cursor: pointer;
   padding: 0 8px;
   text-align: left;
+}
+
+@keyframes file-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .file-table {
