@@ -765,24 +765,56 @@ button {
 }
 
 .metric-zoom {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+  position: absolute;
+  z-index: 3;
+  top: 2px;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
   padding: 0;
-  border: 1px solid rgba(103, 232, 249, 0.28);
-  border-radius: 999px;
-  background: rgba(103, 232, 249, 0.08);
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   color: #67e8f9;
-  font-size: 18px;
-  line-height: 1;
   display: inline-grid;
   place-items: center;
   cursor: pointer;
 }
 
 .metric-zoom:hover {
-  border-color: rgba(103, 232, 249, 0.68);
-  background: rgba(103, 232, 249, 0.16);
+  background: rgba(103, 232, 249, 0.12);
+  color: #e0f2fe;
+}
+
+.metric-zoom span {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  display: block;
+}
+
+.metric-zoom span::before,
+.metric-zoom span::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-color: currentColor;
+}
+
+.metric-zoom span::before {
+  top: 0;
+  right: 0;
+  border-top: 2px solid;
+  border-right: 2px solid;
+}
+
+.metric-zoom span::after {
+  left: 0;
+  bottom: 0;
+  border-left: 2px solid;
+  border-bottom: 2px solid;
 }
 
 .metric-plot {

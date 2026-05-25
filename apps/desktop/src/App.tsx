@@ -1553,6 +1553,8 @@ export function App() {
         <div className="metric-chart-top">
           <span>{label}</span>
           <strong>{chartTitle}</strong>
+        </div>
+        <div className="metric-plot">
           {compact ? (
             <button
               aria-label={`放大${label}趋势图`}
@@ -1561,11 +1563,9 @@ export function App() {
               type="button"
               onClick={() => setExpandedMetric(key)}
             >
-              +
+              <span />
             </button>
           ) : null}
-        </div>
-        <div className="metric-plot">
           <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
             <g transform="translate(36 8)">
               <line className="axis-line" x1="0" x2="0" y1="0" y2={chartHeight} />
