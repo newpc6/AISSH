@@ -26,7 +26,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -307,6 +309,7 @@ button {
 
 .info-panel,
 .connect-panel,
+.host-editor,
 .tool-panel {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
@@ -315,7 +318,8 @@ button {
 }
 
 .info-panel h3,
-.connect-panel h3 {
+.connect-panel h3,
+.host-editor h3 {
   margin: 6px 0 12px;
   font-size: 18px;
 }
@@ -338,17 +342,22 @@ button {
   font-size: 12px;
 }
 
-.connect-panel {
+.connect-panel,
+.host-editor {
   display: grid;
   gap: 10px;
 }
 
-.connect-panel label {
+.connect-panel label,
+.host-editor label {
   display: grid;
   gap: 6px;
 }
 
-.connect-panel input {
+.connect-panel input,
+.host-editor input,
+.host-editor select,
+.host-editor textarea {
   width: 100%;
   min-height: 36px;
   border-radius: 7px;
@@ -359,7 +368,16 @@ button {
   outline: none;
 }
 
-.connect-panel input:focus {
+.host-editor textarea {
+  min-height: 82px;
+  resize: vertical;
+  padding: 9px 10px;
+}
+
+.connect-panel input:focus,
+.host-editor input:focus,
+.host-editor select:focus,
+.host-editor textarea:focus {
   border-color: rgba(79, 140, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }
@@ -382,9 +400,24 @@ button {
 }
 
 .primary-button:disabled,
-.suggestion-row:disabled {
+.suggestion-row:disabled,
+.button-row button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.button-row button {
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
 }
 
 .full-width {

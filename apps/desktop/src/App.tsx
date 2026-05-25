@@ -5,7 +5,9 @@ import '@xterm/xterm/css/xterm.css'
 import {
   CORE_API_BASE,
   type HealthResponse,
+  type HostAuthType,
   type HostRecord,
+  type HostUpsertRequest,
   type SessionOpenRequest,
   type SessionOpenResponse,
   type SessionRecord,
@@ -41,20 +43,17 @@ const aiSuggestions = [
   },
 ]
 
-const serverGroups = [
-  {
-    name: '演示',
-    match: (host: HostRecord) => host.id === 'local-demo',
-  },
-  {
-    name: '开发环境',
-    match: (host: HostRecord) => host.name.toLowerCase().includes('dev'),
-  },
-  {
-    name: '生产环境',
-    match: (host: HostRecord) => host.name.toLowerCase().includes('prod'),
-  },
-]
+const emptyHostForm: HostUpsertRequest = {
+  name: '',
+  address: '',
+  port: 22,
+  username: '',
+  authType: 'password',
+  group: '默认',
+  description: '',
+  password: '',
+  privateKey: '',
+}
 
 function statusToLabel(state: LoadState) {
   if (state === 'loading') return '连接 core 中'
@@ -75,6 +74,8 @@ export function App() {
   const [leftMode, setLeftMode] = useState<LeftMode>('servers')
   const [rightTool, setRightTool] = useState<RightTool>('ai')
   const [aiEnabled, setAiEnabled] = useState(true)
+  const [editingHostId, setEditingHostId] = useState<string>('')
+  const [hostForm, setHostForm] = useState<HostUpsertRequest>(emptyHostForm)
   const [transientHost, setTransientHost] = useState<TransientHostConfig>({
     address: '',
     port: 22,
@@ -155,30 +156,139 @@ export function App() {
       }
     }
 
-    const loadHosts = async () => {
-      const response = await fetch(`${CORE_API_BASE}/hosts`)
-      if (!response.ok) {
-        throw new Error(`主机列表加载失败：${response.status}`)
-      }
-      const data = (await response.json()) as HostRecord[]
-      setHosts(data)
-      if (!selectedHostId && data.length > 0) {
-        setSelectedHostId(data[0].id)
-      }
-    }
-
     void loadHealth()
-    void loadHosts().catch((error) => {
-      const message = error instanceof Error ? error.message : '主机加载失败'
-      setErrorMessage(message)
-    })
-  }, [selectedHostId])
+    void loadHosts()
+  }, [])
 
   const currentHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
   )
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
+  const groupedHosts = useMemo(() => {
+    const groups = new Map<string, HostRecord[]>()
+    for (const host of hosts) {
+      const group = host.group || '默认'
+      groups.set(group, [...(groups.get(group) ?? []), host])
+    }
+    return Array.from(groups.entries()).map(([name, items]) => ({ name, hosts: items }))
+  }, [hosts])
+
+  const loadHosts = async () => {
+    const response = await fetch(`${CORE_API_BASE}/hosts`)
+    if (!response.ok) {
+      throw new Error(`主机列表加载失败：${response.status}`)
+    }
+    const data = (await response.json()) as HostRecord[]
+    setHosts(data)
+    if (!selectedHostId && data.length > 0) {
+      setSelectedHostId(data[0].id)
+    }
+  }
+
+  const editHost = (host: HostRecord) => {
+    setEditingHostId(host.id)
+    setHostForm({
+      name: host.name,
+      address: host.address,
+      port: host.port || 22,
+      username: host.username,
+      authType: host.authType,
+      group: host.group || '默认',
+      description: host.description ?? '',
+      password: '',
+      privateKey: '',
+    })
+  }
+
+  const resetHostForm = () => {
+    setEditingHostId('')
+    setHostForm(emptyHostForm)
+  }
+
+  const saveHost = async () => {
+    if (!hostForm.name || !hostForm.address || !hostForm.username) {
+      setErrorMessage('请填写主机名称、地址和用户名')
+      return
+    }
+
+    const url = editingHostId ? `${CORE_API_BASE}/hosts/${editingHostId}` : `${CORE_API_BASE}/hosts`
+    const response = await fetch(url, {
+      method: editingHostId ? 'PUT' : 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...hostForm,
+        port: Number(hostForm.port) || 22,
+      }),
+    })
+
+    if (!response.ok) {
+      setErrorMessage(`保存主机失败：${response.status}`)
+      return
+    }
+
+    resetHostForm()
+    await loadHosts()
+  }
+
+  const deleteHost = async () => {
+    if (!editingHostId || editingHostId === 'local-demo') {
+      return
+    }
+
+    const response = await fetch(`${CORE_API_BASE}/hosts/${editingHostId}`, {
+      method: 'DELETE',
+    })
+
+    if (!response.ok) {
+      setErrorMessage(`删除主机失败：${response.status}`)
+      return
+    }
+
+    resetHostForm()
+    await loadHosts()
+  }
+
+  const exportHosts = async () => {
+    const response = await fetch(`${CORE_API_BASE}/hosts/export`)
+    if (!response.ok) {
+      setErrorMessage(`导出失败：${response.status}`)
+      return
+    }
+    const text = JSON.stringify(await response.json(), null, 2)
+    await navigator.clipboard.writeText(text)
+  }
+
+  const importSampleHost = async () => {
+    const response = await fetch(`${CORE_API_BASE}/hosts/import`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        hosts: [
+          {
+            name: 'Imported Demo',
+            address: '192.168.56.10',
+            port: 22,
+            username: 'ubuntu',
+            authType: 'password',
+            group: '导入',
+            description: '导入示例主机',
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      setErrorMessage(`导入失败：${response.status}`)
+      return
+    }
+
+    await loadHosts()
+  }
 
   useEffect(() => {
     if (!activeSession || !xtermRef.current) {
@@ -334,9 +444,9 @@ export function App() {
           <button type="button">设置</button>
         </nav>
         <div className="top-actions">
-          <button type="button">导入</button>
-          <button type="button">导出</button>
-          <button type="button">保存凭据</button>
+          <button type="button" onClick={() => void importSampleHost()}>导入</button>
+          <button type="button" onClick={() => void exportHosts()}>导出</button>
+          <button type="button" onClick={() => void saveHost()}>保存凭据</button>
           <span className={`status-dot status-${healthState}`} />
         </div>
       </header>
@@ -365,23 +475,22 @@ export function App() {
               <div className="panel-toolbar">
                 <strong>服务器</strong>
                 <div>
-                  <button type="button">+</button>
-                  <button type="button">⇅</button>
+                  <button type="button" onClick={resetHostForm}>+</button>
+                  <button type="button" onClick={() => void exportHosts()}>⇅</button>
                 </div>
               </div>
 
-              {serverGroups.map((group) => {
-                const groupHosts = hosts.filter(group.match)
-                if (groupHosts.length === 0) return null
-
-                return (
-                  <section className="server-group" key={group.name}>
-                    <p>{group.name}</p>
-                    {groupHosts.map((host) => (
+              {groupedHosts.map((group) => (
+                <section className="server-group" key={group.name}>
+                  <p>{group.name}</p>
+                  {group.hosts.map((host) => (
                       <button
                         key={host.id}
                         className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
-                        onClick={() => setSelectedHostId(host.id)}
+                        onClick={() => {
+                          setSelectedHostId(host.id)
+                          editHost(host)
+                        }}
                         type="button"
                       >
                         <span>{host.name}</span>
@@ -389,15 +498,14 @@ export function App() {
                           {host.username}@{host.address}:{host.port}
                         </small>
                       </button>
-                    ))}
-                  </section>
-                )
-              })}
+                  ))}
+                </section>
+              ))}
 
               <div className="credential-box">
                 <strong>凭据</strong>
-                <button type="button">密码库</button>
-                <button type="button">SSH Key</button>
+                <button type="button" onClick={() => setHostForm((current) => ({ ...current, authType: 'password' }))}>密码库</button>
+                <button type="button" onClick={() => setHostForm((current) => ({ ...current, authType: 'privateKey' }))}>SSH Key</button>
               </div>
             </div>
           ) : (
@@ -479,6 +587,100 @@ export function App() {
                 <dd>{currentHost?.authType ?? '-'}</dd>
               </div>
             </dl>
+          </section>
+
+          <section className="host-editor">
+            <div>
+              <p className="section-label">服务器管理</p>
+              <h3>{editingHostId ? '编辑主机' : '新增主机'}</h3>
+            </div>
+            <label>
+              <span>名称</span>
+              <input
+                value={hostForm.name}
+                onChange={(event) => setHostForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="服务器名称"
+              />
+            </label>
+            <div className="form-row">
+              <label>
+                <span>分组</span>
+                <input
+                  value={hostForm.group ?? ''}
+                  onChange={(event) => setHostForm((current) => ({ ...current, group: event.target.value }))}
+                  placeholder="默认"
+                />
+              </label>
+              <label>
+                <span>认证</span>
+                <select
+                  value={hostForm.authType}
+                  onChange={(event) =>
+                    setHostForm((current) => ({ ...current, authType: event.target.value as HostAuthType }))
+                  }
+                >
+                  <option value="password">密码</option>
+                  <option value="privateKey">SSH Key</option>
+                  <option value="agent">Agent</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              <span>地址</span>
+              <input
+                value={hostForm.address}
+                onChange={(event) => setHostForm((current) => ({ ...current, address: event.target.value }))}
+                placeholder="192.168.1.10"
+              />
+            </label>
+            <div className="form-row">
+              <label>
+                <span>端口</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value={hostForm.port}
+                  onChange={(event) =>
+                    setHostForm((current) => ({ ...current, port: Number(event.target.value) || 22 }))
+                  }
+                />
+              </label>
+              <label>
+                <span>用户</span>
+                <input
+                  value={hostForm.username}
+                  onChange={(event) => setHostForm((current) => ({ ...current, username: event.target.value }))}
+                  placeholder="root"
+                />
+              </label>
+            </div>
+            {hostForm.authType === 'password' ? (
+              <label>
+                <span>密码</span>
+                <input
+                  type="password"
+                  value={hostForm.password ?? ''}
+                  onChange={(event) => setHostForm((current) => ({ ...current, password: event.target.value }))}
+                  placeholder="留空则保留原密码"
+                />
+              </label>
+            ) : null}
+            {hostForm.authType === 'privateKey' ? (
+              <label>
+                <span>SSH Key</span>
+                <textarea
+                  value={hostForm.privateKey ?? ''}
+                  onChange={(event) => setHostForm((current) => ({ ...current, privateKey: event.target.value }))}
+                  placeholder="粘贴私钥，当前仅内存保存"
+                />
+              </label>
+            ) : null}
+            <div className="button-row">
+              <button className="primary-button" type="button" onClick={() => void saveHost()}>保存</button>
+              <button type="button" onClick={resetHostForm}>清空</button>
+              <button type="button" onClick={() => void deleteHost()} disabled={!editingHostId || editingHostId === 'local-demo'}>删除</button>
+            </div>
           </section>
 
           <section className="connect-panel compact">

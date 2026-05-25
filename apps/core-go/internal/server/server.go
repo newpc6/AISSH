@@ -23,14 +23,34 @@ type healthResponse struct {
 }
 
 type hostRecord struct {
-	ID          string `json:"id"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Address       string `json:"address"`
+	Port          int    `json:"port"`
+	Username      string `json:"username"`
+	AuthType      string `json:"authType"`
+	Group         string `json:"group,omitempty"`
+	Password      string `json:"password,omitempty"`
+	PrivateKey    string `json:"privateKey,omitempty"`
+	Description   string `json:"description,omitempty"`
+	HasPassword   bool   `json:"hasPassword,omitempty"`
+	HasPrivateKey bool   `json:"hasPrivateKey,omitempty"`
+}
+
+type hostUpsertRequest struct {
 	Name        string `json:"name"`
 	Address     string `json:"address"`
 	Port        int    `json:"port"`
 	Username    string `json:"username"`
 	AuthType    string `json:"authType"`
-	Password    string `json:"-"`
+	Group       string `json:"group,omitempty"`
+	Password    string `json:"password,omitempty"`
+	PrivateKey  string `json:"privateKey,omitempty"`
 	Description string `json:"description,omitempty"`
+}
+
+type hostsImportRequest struct {
+	Hosts []hostUpsertRequest `json:"hosts"`
 }
 
 type sessionRecord struct {
@@ -84,6 +104,7 @@ func newSessionManager() *sessionManager {
 				Port:        0,
 				Username:    "demo",
 				AuthType:    "agent",
+				Group:       "演示",
 				Description: "本地演示会话，用于验证终端输入输出链路",
 			},
 			{
@@ -93,6 +114,7 @@ func newSessionManager() *sessionManager {
 				Port:        22,
 				Username:    "ubuntu",
 				AuthType:    "privateKey",
+				Group:       "开发环境",
 				Description: "AI 训练与实验环境",
 			},
 			{
@@ -102,6 +124,7 @@ func newSessionManager() *sessionManager {
 				Port:        22,
 				Username:    "deploy",
 				AuthType:    "agent",
+				Group:       "生产环境",
 				Description: "线上 API 节点",
 			},
 		},
@@ -114,8 +137,100 @@ func (m *sessionManager) listHosts() []hostRecord {
 	defer m.mu.RUnlock()
 
 	hosts := make([]hostRecord, len(m.hosts))
-	copy(hosts, m.hosts)
+	for i, host := range m.hosts {
+		hosts[i] = host.sanitized()
+	}
 	return hosts
+}
+
+func (m *sessionManager) createHost(request hostUpsertRequest) hostRecord {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	host := hostFromRequest(request)
+	host.ID = "host-" + uuid.NewString()
+	m.hosts = append(m.hosts, host)
+	return host.sanitized()
+}
+
+func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (hostRecord, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for i := range m.hosts {
+		if m.hosts[i].ID == hostID {
+			next := hostFromRequest(request)
+			next.ID = hostID
+			if next.Password == "" {
+				next.Password = m.hosts[i].Password
+			}
+			if next.PrivateKey == "" {
+				next.PrivateKey = m.hosts[i].PrivateKey
+			}
+			m.hosts[i] = next
+			return next.sanitized(), true
+		}
+	}
+
+	return hostRecord{}, false
+}
+
+func (m *sessionManager) deleteHost(hostID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for i := range m.hosts {
+		if m.hosts[i].ID == hostID {
+			m.hosts = append(m.hosts[:i], m.hosts[i+1:]...)
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m *sessionManager) importHosts(requests []hostUpsertRequest) []hostRecord {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	created := make([]hostRecord, 0, len(requests))
+	for _, request := range requests {
+		host := hostFromRequest(request)
+		host.ID = "host-" + uuid.NewString()
+		m.hosts = append(m.hosts, host)
+		created = append(created, host.sanitized())
+	}
+	return created
+}
+
+func hostFromRequest(request hostUpsertRequest) hostRecord {
+	port := request.Port
+	if port == 0 {
+		port = 22
+	}
+	authType := request.AuthType
+	if authType == "" {
+		authType = "password"
+	}
+	return hostRecord{
+		Name:        request.Name,
+		Address:     request.Address,
+		Port:        port,
+		Username:    request.Username,
+		AuthType:    authType,
+		Group:       request.Group,
+		Password:    request.Password,
+		PrivateKey:  request.PrivateKey,
+		Description: request.Description,
+	}
+}
+
+func (h hostRecord) sanitized() hostRecord {
+	h.HasPassword = h.Password != ""
+	h.HasPrivateKey = h.PrivateKey != ""
+	h.Password = ""
+	h.PrivateKey = ""
+	return h
 }
 
 func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSession, bool) {
@@ -239,6 +354,16 @@ func (s *terminalSession) runSSH(host hostRecord) {
 	authMethods := []ssh.AuthMethod{}
 	if host.AuthType == "password" && host.Password != "" {
 		authMethods = append(authMethods, ssh.Password(host.Password))
+	}
+	if host.AuthType == "privateKey" && host.PrivateKey != "" {
+		signer, err := ssh.ParsePrivateKey([]byte(host.PrivateKey))
+		if err != nil {
+			s.record.Status = "error"
+			s.record.LastError = err.Error()
+			s.send(terminalEvent{Type: "error", Data: err.Error()})
+			return
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 
 	config := &ssh.ClientConfig{
@@ -375,12 +500,68 @@ func New(port string) *http.Server {
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, manager.listHosts())
+		case http.MethodPost:
+			var request hostUpsertRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, manager.createHost(request))
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/hosts/export", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		writeJSON(w, map[string][]hostRecord{"hosts": manager.listHosts()})
+	})
+	mux.HandleFunc("/api/hosts/import", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var request hostsImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string][]hostRecord{"hosts": manager.importHosts(request.Hosts)})
+	})
+	mux.HandleFunc("/api/hosts/", func(w http.ResponseWriter, r *http.Request) {
+		hostID := r.URL.Path[len("/api/hosts/"):]
+		if hostID == "" {
+			http.NotFound(w, r)
+			return
+		}
 
-		writeJSON(w, manager.listHosts())
+		switch r.Method {
+		case http.MethodPut:
+			var request hostUpsertRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			host, ok := manager.updateHost(hostID, request)
+			if !ok {
+				http.Error(w, "host not found", http.StatusNotFound)
+				return
+			}
+			writeJSON(w, host)
+		case http.MethodDelete:
+			if !manager.deleteHost(hostID) {
+				http.Error(w, "host not found", http.StatusNotFound)
+				return
+			}
+			writeJSON(w, map[string]string{"status": "ok"})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	})
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

@@ -50,6 +50,65 @@ func TestHostsEndpoint(t *testing.T) {
 	}
 }
 
+func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
+	srv := New("18555")
+	createBody := []byte(`{
+		"name":"Test Host",
+		"address":"192.168.1.20",
+		"port":22,
+		"username":"root",
+		"authType":"password",
+		"group":"测试",
+		"password":"secret"
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewBuffer(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(createRecorder, createReq)
+
+	if createRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", createRecorder.Code)
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(createRecorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+
+	if _, ok := created["password"]; ok {
+		t.Fatal("expected password to be omitted from host response")
+	}
+
+	hostID := created["id"].(string)
+	updateBody := []byte(`{
+		"name":"Updated Host",
+		"address":"192.168.1.21",
+		"port":2222,
+		"username":"deploy",
+		"authType":"password",
+		"group":"测试"
+	}`)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/hosts/"+hostID, bytes.NewBuffer(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(updateRecorder, updateReq)
+
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", updateRecorder.Code)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/hosts/"+hostID, nil)
+	deleteRecorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(deleteRecorder, deleteReq)
+
+	if deleteRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", deleteRecorder.Code)
+	}
+}
+
 func TestCreateSessionEndpoint(t *testing.T) {
 	srv := New("18555")
 	body := []byte(`{"hostId":"local-demo"}`)

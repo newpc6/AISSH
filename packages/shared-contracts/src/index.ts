@@ -20,7 +20,26 @@ export interface HostRecord {
   port: number
   username: string
   authType: HostAuthType
+  group?: string
   description?: string
+  hasPassword?: boolean
+  hasPrivateKey?: boolean
+}
+
+export interface HostUpsertRequest {
+  name: string
+  address: string
+  port: number
+  username: string
+  authType: HostAuthType
+  group?: string
+  description?: string
+  password?: string
+  privateKey?: string
+}
+
+export interface HostsImportRequest {
+  hosts: HostUpsertRequest[]
 }
 
 export interface SessionRecord {
@@ -47,6 +66,7 @@ export interface TransientHostConfig {
   port: number
   username: string
   password?: string
+  privateKey?: string
   authType: HostAuthType
 }
 
