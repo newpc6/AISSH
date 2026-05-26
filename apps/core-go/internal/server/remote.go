@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	pathpkg "path"
 	"path/filepath"
 	"sort"
@@ -73,13 +74,14 @@ func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, erro
 
 		entries := make([]fileEntry, 0, len(infos))
 		for _, info := range infos {
+			entryPath := pathpkg.Join(listPath, info.Name())
 			entryType := "file"
-			if info.IsDir() {
+			if remoteInfoIsDirectory(client, entryPath, info) {
 				entryType = "directory"
 			}
 			entries = append(entries, fileEntry{
 				Name:       info.Name(),
-				Path:       pathpkg.Join(listPath, info.Name()),
+				Path:       entryPath,
 				Type:       entryType,
 				Size:       info.Size(),
 				ModifiedAt: info.ModTime().UTC().Format(time.RFC3339),
@@ -98,6 +100,17 @@ func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, erro
 	})
 
 	return response, err
+}
+
+func remoteInfoIsDirectory(client *sftp.Client, remotePath string, info os.FileInfo) bool {
+	if info.IsDir() {
+		return true
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	targetInfo, err := client.Stat(remotePath)
+	return err == nil && targetInfo.IsDir()
 }
 
 func normalizeRemotePathForRequest(remotePath string) string {

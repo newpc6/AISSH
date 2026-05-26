@@ -18,6 +18,7 @@ import {
   undo,
 } from '@codemirror/commands'
 import { indentOnInput, syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from '@codemirror/language'
+import { openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
 import { css } from '@codemirror/lang-css'
@@ -774,8 +775,9 @@ const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEditorProp
             lineNumbers(),
             editorHistory(),
             indentOnInput(),
+            search({ top: true }),
             syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-            keymap.of([...defaultKeymap, ...historyKeymap]),
+            keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
             language,
             EditorView.lineWrapping,
             EditorView.editable.of(!readOnly),
@@ -1739,6 +1741,23 @@ export function App() {
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
   const activeFilePreview = filePreviewTabs.find((tab) => `file:${tab.id}` === activeViewId) ?? null
   const isFilePreviewActive = Boolean(activeFilePreview)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') {
+        return
+      }
+      if (activeFilePreview?.kind !== 'text' || activeFilePreview.status !== 'ready') {
+        return
+      }
+      event.preventDefault()
+      codeMirrorRef.current?.runCommand(openSearchPanel)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeFilePreview?.id, activeFilePreview?.kind, activeFilePreview?.status])
+
   const activeHost = useMemo(
     () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
     [hosts, activeSession, currentHost],
@@ -4337,6 +4356,13 @@ export function App() {
                         onClick={() => setFilePreviewEditMode(activeFilePreview.id, false)}
                       >
                         预览
+                      </button>
+                      <button
+                        type="button"
+                        title={`搜索 ${activeFilePreview.name} 内容`}
+                        onClick={() => codeMirrorRef.current?.runCommand(openSearchPanel)}
+                      >
+                        搜索
                       </button>
                       <button
                         className={activeFilePreview.isEditing ? 'active' : ''}

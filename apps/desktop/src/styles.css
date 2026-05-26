@@ -1143,6 +1143,33 @@ button {
   caret-color: #dbeafe;
 }
 
+.codemirror-host .cm-panels {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: #0d1520;
+  color: #d9e2ec;
+}
+
+.codemirror-host .cm-search {
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.codemirror-host .cm-search input {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.86);
+  color: #edf2f7;
+  outline: none;
+  padding: 4px 7px;
+}
+
+.codemirror-host .cm-search button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+}
+
 .file-media-preview,
 .file-preview-empty {
   width: 100%;
