@@ -36,7 +36,7 @@ import {
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error'
 type LeftMode = 'servers' | 'files'
-type RightTool = 'ai' | 'history'
+type RightTool = 'ai' | 'history' | 'favorites'
 type HostDialogMode = 'create' | 'edit'
 type TopMenu = 'file' | 'edit' | 'session' | 'transfer' | 'tools' | 'settings' | ''
 type SettingsSection = 'general' | 'metrics' | 'ai'
@@ -109,6 +109,7 @@ type WindowWithSaveFilePicker = Window & {
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
+const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
 
 const textFileExtensions = new Set([
   'bash',
@@ -421,6 +422,26 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
   }
 }
 
+function normalizeFavoriteCommands(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const seen = new Set<string>()
+  const commands: string[] = []
+  for (const item of value) {
+    const command = stripTerminalControlSequences(String(item)).trim()
+    if (!command || seen.has(command)) {
+      continue
+    }
+    seen.add(command)
+    commands.push(command)
+    if (commands.length >= 200) {
+      break
+    }
+  }
+  return commands
+}
+
 function emptyTerminalCache(): TerminalCache {
   return {
     chunks: [],
@@ -571,6 +592,7 @@ export function App() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
+  const [favoriteCommands, setFavoriteCommands] = useState<string[]>([])
   const [aiPredictions, setAiPredictions] = useState<string[]>([])
   const [aiPredictionIndex, setAiPredictionIndex] = useState(0)
   const [aiPredictionState, setAiPredictionState] = useState<LoadState>('idle')
@@ -899,6 +921,25 @@ export function App() {
     }
   }
 
+  const persistFavoriteCommands = (commands: string[]) => {
+    const normalized = normalizeFavoriteCommands(commands)
+    setFavoriteCommands(normalized)
+    window.localStorage.setItem(FAVORITE_COMMANDS_STORAGE_KEY, JSON.stringify(normalized))
+  }
+
+  const toggleFavoriteCommand = (command: string) => {
+    const normalized = stripTerminalControlSequences(command).trim()
+    if (!normalized) {
+      return
+    }
+    const next = favoriteCommands.includes(normalized)
+      ? favoriteCommands.filter((item) => item !== normalized)
+      : [normalized, ...favoriteCommands.filter((item) => item !== normalized)]
+    persistFavoriteCommands(next)
+  }
+
+  const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
+
   useEffect(() => {
     const rawSettings = window.localStorage.getItem('ai-ssh-settings')
     if (rawSettings) {
@@ -908,6 +949,16 @@ export function App() {
         sessionSettingsRef.current = normalized
       } catch (error) {
         appendLog('warn', 'ui.settings', 'settings load failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    const rawFavorites = window.localStorage.getItem(FAVORITE_COMMANDS_STORAGE_KEY)
+    if (rawFavorites) {
+      try {
+        setFavoriteCommands(normalizeFavoriteCommands(JSON.parse(rawFavorites)))
+      } catch (error) {
+        appendLog('warn', 'ui.favorites', 'favorite commands load failed', {
           error: error instanceof Error ? error.message : String(error),
         })
       }
@@ -1351,6 +1402,7 @@ export function App() {
       settings: normalizeAppSettings(settings),
       leftRailWidth,
       hostGroups,
+      favoriteCommands: normalizeFavoriteCommands(favoriteCommands),
       exportedAt: new Date().toISOString(),
       version: 1,
     }
@@ -1363,7 +1415,7 @@ export function App() {
       return
     }
     try {
-      const parsed = JSON.parse(text) as { settings?: Partial<AppSettings>; leftRailWidth?: number }
+      const parsed = JSON.parse(text) as { settings?: Partial<AppSettings>; leftRailWidth?: number; favoriteCommands?: unknown }
       if (parsed.settings) {
         setSettings((current) => normalizeAppSettings({ ...current, ...parsed.settings }))
       }
@@ -1372,6 +1424,9 @@ export function App() {
       }
       if (Array.isArray((parsed as { hostGroups?: HostGroup[] }).hostGroups)) {
         setHostGroups(normalizeHostGroups((parsed as { hostGroups: HostGroup[] }).hostGroups, hosts))
+      }
+      if (Array.isArray(parsed.favoriteCommands)) {
+        persistFavoriteCommands(parsed.favoriteCommands)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '配置 JSON 解析失败'
@@ -3135,6 +3190,14 @@ export function App() {
               >
                 历史
               </button>
+              <button
+                className={rightTool === 'favorites' ? 'active' : ''}
+                title="切换到收藏命令"
+                type="button"
+                onClick={() => setRightTool('favorites')}
+              >
+                收藏
+              </button>
             </div>
 
             {rightTool === 'ai' ? (
@@ -3157,35 +3220,95 @@ export function App() {
                   <p className="hint-text">请先在设置里填写大模型地址和模型，保存后才会调用 AI 预测。</p>
                 ) : null}
                 {aiPredictionError ? <p className="error-text">{aiPredictionError}</p> : null}
-                {aiPredictions.map((command, index) => (
-                  <button
-                    className={`prediction-row ${index === aiPredictionIndex ? 'primary' : ''}`}
-                    key={command}
-                    type="button"
-                    title={`切换到第 ${index + 1} 条 AI 预测命令`}
-                    onClick={() => {
-                      aiPredictionCursorRef.current = index
-                      aiPredictionCycleStartedRef.current = true
-                      setAiPredictionIndex(index)
-                    }}
-                  >
-                    <strong>{index === aiPredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
-                    <code>{command}</code>
-                  </button>
-                ))}
+                {aiPredictions.map((command, index) => {
+                  const favorited = isFavoriteCommand(command)
+                  return (
+                    <div
+                      className={`command-row prediction-row ${index === aiPredictionIndex ? 'primary' : ''}`}
+                      key={command}
+                    >
+                      <button
+                        className="command-main"
+                        type="button"
+                        title={`切换到第 ${index + 1} 条 AI 预测命令`}
+                        onClick={() => {
+                          aiPredictionCursorRef.current = index
+                          aiPredictionCycleStartedRef.current = true
+                          setAiPredictionIndex(index)
+                        }}
+                      >
+                        <strong>{index === aiPredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
+                        <code>{command}</code>
+                      </button>
+                      <button
+                        className={`favorite-command-button ${favorited ? 'active' : ''}`}
+                        type="button"
+                        title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                        onClick={() => toggleFavoriteCommand(command)}
+                      >
+                        {favorited ? '★' : '☆'}
+                      </button>
+                    </div>
+                  )
+                })}
                 {aiPredictions.length > 0 ? (
                   <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
                 ) : null}
               </div>
-            ) : (
+            ) : rightTool === 'history' ? (
               <div className="history-list">
                 {commandHistory.length === 0 ? (
                   <p className="hint-text">暂无历史命令</p>
                 ) : (
-                  commandHistory.map((command, index) => (
-                    <button key={`${index}-${command}`} type="button" title={`输入历史命令：${command}`} onClick={() => writeCommand(command)}>
-                      {command}
-                    </button>
+                  commandHistory.map((command, index) => {
+                    const favorited = isFavoriteCommand(command)
+                    return (
+                      <div className="command-row compact" key={`${index}-${command}`}>
+                        <button
+                          className="command-main"
+                          type="button"
+                          title={`输入历史命令：${command}`}
+                          onClick={() => writeCommand(command)}
+                        >
+                          {command}
+                        </button>
+                        <button
+                          className={`favorite-command-button ${favorited ? 'active' : ''}`}
+                          type="button"
+                          title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                          onClick={() => toggleFavoriteCommand(command)}
+                        >
+                          {favorited ? '★' : '☆'}
+                        </button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            ) : (
+              <div className="favorite-list">
+                {favoriteCommands.length === 0 ? (
+                  <p className="hint-text">暂无收藏命令</p>
+                ) : (
+                  favoriteCommands.map((command) => (
+                    <div className="command-row compact" key={command}>
+                      <button
+                        className="command-main"
+                        type="button"
+                        title={`输入收藏命令：${command}`}
+                        onClick={() => writeCommand(command)}
+                      >
+                        {command}
+                      </button>
+                      <button
+                        className="favorite-command-button active"
+                        type="button"
+                        title={`取消收藏：${command}`}
+                        onClick={() => toggleFavoriteCommand(command)}
+                      >
+                        ★
+                      </button>
+                    </div>
                   ))
                 )}
               </div>

@@ -198,6 +198,10 @@ button {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.tool-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .left-content {
   min-height: 0;
   padding: 12px;
@@ -247,7 +251,7 @@ button {
 }
 
 .file-tree button,
-.history-list button,
+.command-row,
 .prediction-row {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -352,6 +356,7 @@ button {
 .file-browser,
 .file-tree,
 .history-list,
+.favorite-list,
 .ai-box {
   display: grid;
   gap: 8px;
@@ -373,9 +378,8 @@ button {
 }
 
 .file-tree button,
-.history-list button {
+.command-row.compact {
   min-height: 34px;
-  padding: 0 10px;
 }
 
 .file-path-row,
@@ -1307,7 +1311,8 @@ button {
 }
 
 .ai-box,
-.history-list {
+.history-list,
+.favorite-list {
   height: 100%;
   min-height: 0;
   padding: 12px;
@@ -1315,11 +1320,33 @@ button {
   align-content: start;
 }
 
-.history-list button {
+.command-row.compact {
   height: 36px;
   min-height: 36px;
+}
+
+.command-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  overflow: hidden;
+}
+
+.command-main {
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 10px;
   white-space: nowrap;
   word-break: normal;
+}
+
+.command-main:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .toggle-row {
@@ -1332,14 +1359,16 @@ button {
 
 .prediction-row {
   height: 58px;
+}
+
+.prediction-row .command-main {
   display: grid;
   gap: 6px;
-  padding: 10px;
   align-content: center;
 }
 
 .prediction-row code,
-.history-list button {
+.command-main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1351,6 +1380,24 @@ button {
 
 .prediction-row small {
   color: #67e8f9;
+}
+
+.favorite-command-button {
+  width: 32px;
+  height: 100%;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #8ca0b8;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.favorite-command-button:hover,
+.favorite-command-button.active {
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.1);
 }
 
 code {
