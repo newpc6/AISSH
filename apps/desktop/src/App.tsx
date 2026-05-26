@@ -789,6 +789,9 @@ export function App() {
   const [desktopLoginRequired, setDesktopLoginRequired] = useState(false)
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: '' })
   const [setupForm, setSetupForm] = useState(emptySetupForm)
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
+  const [showSetupPassword, setShowSetupPassword] = useState(false)
+  const [showSetupConfirmPassword, setShowSetupConfirmPassword] = useState(false)
   const [loginError, setLoginError] = useState('')
   const [errorNotice, setErrorNotice] = useState<AppErrorNotice | null>(null)
   const [hosts, setHosts] = useState<HostRecord[]>([])
@@ -1265,20 +1268,11 @@ export function App() {
         password: setupForm.password,
         desktopLoginRequired: setupForm.desktopLoginRequired,
       }
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      }
-      let endpoint = '/auth/setup'
-      if (isTauriRuntime) {
-        const token = await invoke<string>('desktop_login_token')
-        if (token) {
-          endpoint = '/auth/desktop-setup'
-          headers['X-AI-SSH-Desktop-Token'] = token
-        }
-      }
-      const response = await apiFetch(endpoint, {
+      const response = await apiFetch('/auth/setup', {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
@@ -1292,6 +1286,8 @@ export function App() {
       setAuthState(status.enabled && !status.authenticated ? 'idle' : 'success')
       setLoginForm((current) => ({ ...current, username: payload.username, password: '' }))
       setSetupForm({ ...emptySetupForm, username: payload.username, desktopLoginRequired: Boolean(status.desktopLoginRequired) })
+      setShowSetupPassword(false)
+      setShowSetupConfirmPassword(false)
       await Promise.all([checkHealth(), loadHosts(), loadHostGroups()])
     } catch (error) {
       setAuthRequired(true)
@@ -1319,6 +1315,7 @@ export function App() {
       setAuthRequired(false)
       setAuthState('success')
       setLoginForm((current) => ({ ...current, password: '' }))
+      setShowLoginPassword(false)
       await Promise.all([checkHealth(), loadHosts(), loadHostGroups()])
     } catch (error) {
       setAuthRequired(true)
@@ -3379,21 +3376,43 @@ export function App() {
             </label>
             <label>
               <span>密码</span>
-              <input
-                autoComplete="new-password"
-                type="password"
-                value={setupForm.password}
-                onChange={(event) => setSetupForm((current) => ({ ...current, password: event.target.value }))}
-              />
+              <div className="password-field">
+                <input
+                  autoComplete="new-password"
+                  type={showSetupPassword ? 'text' : 'password'}
+                  value={setupForm.password}
+                  onChange={(event) => setSetupForm((current) => ({ ...current, password: event.target.value }))}
+                />
+                <button
+                  aria-label={showSetupPassword ? '隐藏密码' : '显示密码'}
+                  className="password-toggle"
+                  title={showSetupPassword ? '隐藏密码' : '显示密码'}
+                  type="button"
+                  onClick={() => setShowSetupPassword((current) => !current)}
+                >
+                  <span aria-hidden="true" className={`eye-icon ${showSetupPassword ? '' : 'hidden'}`} />
+                </button>
+              </div>
             </label>
             <label>
               <span>确认密码</span>
-              <input
-                autoComplete="new-password"
-                type="password"
-                value={setupForm.confirmPassword}
-                onChange={(event) => setSetupForm((current) => ({ ...current, confirmPassword: event.target.value }))}
-              />
+              <div className="password-field">
+                <input
+                  autoComplete="new-password"
+                  type={showSetupConfirmPassword ? 'text' : 'password'}
+                  value={setupForm.confirmPassword}
+                  onChange={(event) => setSetupForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                />
+                <button
+                  aria-label={showSetupConfirmPassword ? '隐藏确认密码' : '显示确认密码'}
+                  className="password-toggle"
+                  title={showSetupConfirmPassword ? '隐藏确认密码' : '显示确认密码'}
+                  type="button"
+                  onClick={() => setShowSetupConfirmPassword((current) => !current)}
+                >
+                  <span aria-hidden="true" className={`eye-icon ${showSetupConfirmPassword ? '' : 'hidden'}`} />
+                </button>
+              </div>
             </label>
             {isTauriRuntime ? (
               <label className="checkbox-row login-checkbox-row">
@@ -3433,12 +3452,23 @@ export function App() {
           </label>
           <label>
             <span>密码</span>
-            <input
-              autoComplete="current-password"
-              type="password"
-              value={loginForm.password}
-              onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
-            />
+            <div className="password-field">
+              <input
+                autoComplete="current-password"
+                type={showLoginPassword ? 'text' : 'password'}
+                value={loginForm.password}
+                onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+              />
+              <button
+                aria-label={showLoginPassword ? '隐藏密码' : '显示密码'}
+                className="password-toggle"
+                title={showLoginPassword ? '隐藏密码' : '显示密码'}
+                type="button"
+                onClick={() => setShowLoginPassword((current) => !current)}
+              >
+                <span aria-hidden="true" className={`eye-icon ${showLoginPassword ? '' : 'hidden'}`} />
+              </button>
+            </div>
           </label>
           {loginError ? <div className="login-error">{loginError}</div> : null}
           <button disabled={authState === 'loading'} type="submit">

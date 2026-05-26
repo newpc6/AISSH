@@ -94,6 +94,67 @@ button {
   padding: 0 12px;
 }
 
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.login-panel .password-toggle {
+  position: absolute;
+  right: 6px;
+  width: 30px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8ca0b8;
+  padding: 0;
+}
+
+.login-panel .password-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8edf4;
+}
+
+.eye-icon {
+  position: relative;
+  width: 17px;
+  height: 11px;
+  display: inline-block;
+  border: 1.5px solid currentColor;
+  border-radius: 50% / 60%;
+}
+
+.eye-icon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.eye-icon.hidden::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 4px;
+  width: 20px;
+  border-top: 1.5px solid currentColor;
+  transform: rotate(-38deg);
+}
+
 .login-panel .login-checkbox-row input {
   height: 15px;
   padding: 0;
