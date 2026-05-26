@@ -5,6 +5,7 @@ dist/
 
 # Tauri / desktop build
 src-tauri/target/
+release/
 
 # Go
 bin/
