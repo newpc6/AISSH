@@ -1245,6 +1245,153 @@ button {
   padding: 0 12px;
 }
 
+.ai-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ai-mode-tabs button,
+.agent-actions button,
+.ai-assistant-panel button,
+.agent-step button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.ai-mode-tabs button.active,
+.ai-assistant-panel .primary-button,
+.agent-actions .primary-button {
+  border-color: rgba(79, 140, 255, 0.6);
+  background: rgba(79, 140, 255, 0.16);
+  color: #dbeafe;
+}
+
+.ai-assistant-panel,
+.agent-panel {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.ai-assistant-panel select,
+.ai-assistant-panel textarea,
+.agent-panel textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(8, 12, 18, 0.72);
+  color: #edf2f7;
+  outline: none;
+  padding: 8px 10px;
+}
+
+.ai-assistant-panel textarea,
+.agent-panel textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.ai-response-card,
+.agent-step {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ai-response-card p,
+.agent-step p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-response-card small,
+.agent-step small {
+  color: #8ca0b8;
+  font-size: 11px;
+}
+
+.risk-badge,
+.agent-step header span {
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.risk-low {
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.risk-low .risk-badge,
+.risk-badge.risk-low,
+.agent-step.risk-low header span {
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+
+.risk-medium {
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.risk-medium .risk-badge,
+.risk-badge.risk-medium,
+.agent-step.risk-medium header span {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fcd34d;
+}
+
+.risk-high {
+  border-color: rgba(239, 68, 68, 0.34);
+}
+
+.risk-high .risk-badge,
+.risk-badge.risk-high,
+.agent-step.risk-high header span {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+}
+
+.agent-mode-row,
+.agent-actions,
+.agent-step header,
+.agent-step div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-mode-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.agent-step-list {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+
+.agent-step code,
+.ai-response-card code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .terminal-ghost-prediction {
   position: absolute;
   z-index: 5;

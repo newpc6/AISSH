@@ -188,6 +188,26 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		logger.info("ai", "prediction completed", map[string]any{"count": len(response.Commands), "model": request.Model})
 		writeJSON(w, response)
 	})
+	mux.HandleFunc("/api/ai/assist", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var request aiAssistRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		response, err := assistWithAI(r.Context(), request, logger)
+		if err != nil {
+			logger.error("ai", "assist failed", map[string]any{"task": request.Task, "error": err.Error()})
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, response)
+	})
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

@@ -46,8 +46,12 @@ const (
 	aiMaxPredictionCount     = 8
 	aiTerminalContextLimit   = 50000
 	aiCommandHistoryLimit    = 200
+	aiAssistContextLimit     = 50000
+	aiAssistPromptLimit      = 12000
+	aiAssistStepsLimit       = 30
 	aiRequestTimeout         = 18 * time.Second
 	aiMaxTokens              = 1024
+	aiAssistMaxTokens        = 1600
 	aiProviderBodyReadLimit  = 1024 * 1024
 	aiLogSnippetLimit        = 2000
 )
@@ -222,6 +226,184 @@ func predictCommands(ctx context.Context, request aiPredictionRequest, logger *a
 	return aiPredictionResponse{Commands: commands}, nil
 }
 
+func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogger) (aiAssistResponse, error) {
+	normalized, err := normalizeAIAssistRequest(request)
+	if err != nil {
+		return aiAssistResponse{}, err
+	}
+
+	endpoint, err := chatCompletionsURL(normalized.BaseURL)
+	if err != nil {
+		return aiAssistResponse{}, err
+	}
+
+	body, err := json.Marshal(openAIChatRequest{
+		Model:          normalized.Model,
+		Temperature:    0,
+		MaxTokens:      aiAssistMaxTokens,
+		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
+		Messages: []openAIChatMessage{
+			{
+				Role:    "system",
+				Content: buildAssistSystemPrompt(normalized.Task),
+			},
+			{
+				Role:    "user",
+				Content: buildAssistPrompt(normalized),
+			},
+		},
+	})
+	if err != nil {
+		return aiAssistResponse{}, err
+	}
+
+	started := time.Now()
+	if logger != nil {
+		logger.debug("ai", "assist request prepared", map[string]any{
+			"task":                 normalized.Task,
+			"endpoint":             endpoint,
+			"model":                normalized.Model,
+			"terminalContextChars": len(normalized.TerminalContext),
+			"commandHistoryCount":  len(normalized.CommandHistory),
+			"agentMode":            normalized.AgentMode,
+			"agentStepCount":       len(normalized.AgentSteps),
+			"hasAPIKey":            normalized.APIKey != "",
+		})
+	}
+
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return aiAssistResponse{}, err
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	if normalized.APIKey != "" {
+		httpRequest.Header.Set("Authorization", "Bearer "+normalized.APIKey)
+	}
+
+	client := &http.Client{Timeout: aiRequestTimeout}
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "assist provider request failed", map[string]any{
+				"task":       normalized.Task,
+				"endpoint":   endpoint,
+				"model":      normalized.Model,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
+		return aiAssistResponse{}, err
+	}
+	defer response.Body.Close()
+
+	responseBody, bodyTruncated, err := readLimitedAIResponseBody(response.Body)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "assist provider response read failed", map[string]any{
+				"task":       normalized.Task,
+				"endpoint":   endpoint,
+				"model":      normalized.Model,
+				"status":     response.StatusCode,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
+		return aiAssistResponse{}, err
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		bodySnippet := logTextSnippet(string(responseBody))
+		if logger != nil {
+			logger.error("ai", "assist provider returned non-success status", map[string]any{
+				"task":          normalized.Task,
+				"endpoint":      endpoint,
+				"model":         normalized.Model,
+				"status":        response.StatusCode,
+				"bodySnippet":   bodySnippet,
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		if bodySnippet != "" {
+			return aiAssistResponse{}, fmt.Errorf("ai provider returned status %d: %s", response.StatusCode, bodySnippet)
+		}
+		return aiAssistResponse{}, fmt.Errorf("ai provider returned status %d", response.StatusCode)
+	}
+
+	var chatResponse openAIChatResponse
+	if err := json.Unmarshal(responseBody, &chatResponse); err != nil {
+		if logger != nil {
+			logger.error("ai", "assist provider response decode failed", map[string]any{
+				"task":          normalized.Task,
+				"endpoint":      endpoint,
+				"model":         normalized.Model,
+				"status":        response.StatusCode,
+				"error":         err.Error(),
+				"bodySnippet":   logTextSnippet(string(responseBody)),
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		return aiAssistResponse{}, err
+	}
+	if len(chatResponse.Choices) == 0 {
+		return aiAssistResponse{}, errors.New("ai provider returned no choices; see run logs for provider response")
+	}
+
+	choice := chatResponse.Choices[0]
+	result, err := parseAssistResponse(choice.Message.Content)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "assist provider returned invalid content", map[string]any{
+				"task":                  normalized.Task,
+				"endpoint":              endpoint,
+				"model":                 normalized.Model,
+				"status":                response.StatusCode,
+				"finishReason":          choice.FinishReason,
+				"contentChars":          len(choice.Message.Content),
+				"contentSnippet":        logTextSnippet(choice.Message.Content),
+				"reasoningContentChars": len(choice.Message.ReasoningContent),
+				"reasoningSnippet":      logTextSnippet(choice.Message.ReasoningContent),
+				"bodySnippet":           logTextSnippet(string(responseBody)),
+				"bodyTruncated":         bodyTruncated,
+				"durationMs":            time.Since(started).Milliseconds(),
+			})
+		}
+		if choice.FinishReason == "length" {
+			return aiAssistResponse{}, errors.New("ai provider output was truncated before final answer; see run logs")
+		}
+		return aiAssistResponse{}, err
+	}
+	if normalized.Task == "agent_next" {
+		result = normalizeAgentAssistResponse(result)
+	}
+	result.Commands = cleanPredictedCommands(result.Commands, 8)
+	result.Warnings = cleanStringList(result.Warnings, 8)
+	if result.Answer == "" && result.Summary != "" {
+		result.Answer = result.Summary
+	}
+	if result.Answer == "" && result.AgentReason != "" {
+		result.Answer = result.AgentReason
+	}
+	if result.RiskLevel == "" {
+		result.RiskLevel = classifyCommandRisk(firstNonEmpty(result.AgentCommand, firstString(result.Commands)))
+	}
+	if result.RiskReason == "" && result.RiskLevel == "high" {
+		result.RiskReason = "命令可能修改系统、安装软件、删除文件或影响服务，需要人工确认。"
+	}
+	if logger != nil {
+		logger.info("ai", "assist completed", map[string]any{
+			"task":         normalized.Task,
+			"model":        normalized.Model,
+			"agentStatus":  result.AgentStatus,
+			"commandCount": len(result.Commands),
+			"riskLevel":    result.RiskLevel,
+			"durationMs":   time.Since(started).Milliseconds(),
+		})
+	}
+	return result, nil
+}
+
 func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error) {
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
@@ -244,6 +426,257 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 		request.CommandHistory = request.CommandHistory[:aiCommandHistoryLimit]
 	}
 	return request, nil
+}
+
+func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) {
+	request.BaseURL = strings.TrimSpace(request.BaseURL)
+	request.Model = strings.TrimSpace(request.Model)
+	request.Task = strings.TrimSpace(request.Task)
+	request.Prompt = trimToLastRunes(strings.TrimSpace(request.Prompt), aiAssistPromptLimit)
+	if request.BaseURL == "" {
+		return request, errors.New("ai base url is required")
+	}
+	if request.Model == "" {
+		return request, errors.New("ai model is required")
+	}
+	if request.Task == "" {
+		request.Task = "ops_qa"
+	}
+	if !validAssistTask(request.Task) {
+		return request, fmt.Errorf("unsupported ai assist task: %s", request.Task)
+	}
+	if request.Prompt == "" && request.AgentGoal == "" && request.SelectedText == "" && request.TerminalContext == "" {
+		return request, errors.New("ai prompt or context is required")
+	}
+	request.TerminalContext = redactSensitiveText(trimToLastRunes(request.TerminalContext, aiAssistContextLimit))
+	request.SelectedText = redactSensitiveText(trimToLastRunes(request.SelectedText, aiAssistPromptLimit))
+	request.CurrentCommand = redactSensitiveText(trimToLastRunes(request.CurrentCommand, 2000))
+	if len(request.CommandHistory) > aiCommandHistoryLimit {
+		request.CommandHistory = request.CommandHistory[:aiCommandHistoryLimit]
+	}
+	for index, command := range request.CommandHistory {
+		request.CommandHistory[index] = redactSensitiveText(trimToLastRunes(command, 2000))
+	}
+	if len(request.AgentSteps) > aiAssistStepsLimit {
+		request.AgentSteps = request.AgentSteps[len(request.AgentSteps)-aiAssistStepsLimit:]
+	}
+	for index, step := range request.AgentSteps {
+		step.Command = redactSensitiveText(trimToLastRunes(step.Command, 2000))
+		step.Output = redactSensitiveText(trimToLastRunes(step.Output, 8000))
+		request.AgentSteps[index] = step
+	}
+	request.AgentGoal = trimToLastRunes(strings.TrimSpace(request.AgentGoal), aiAssistPromptLimit)
+	if request.AgentMode == "" {
+		request.AgentMode = "review"
+	}
+	return request, nil
+}
+
+func validAssistTask(task string) bool {
+	switch task {
+	case "explain_error", "generate_command", "summarize_logs", "ops_qa", "agent_next":
+		return true
+	default:
+		return false
+	}
+}
+
+func trimToLastRunes(value string, limit int) string {
+	if limit <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[len(runes)-limit:])
+}
+
+func redactSensitiveText(value string) string {
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)(password|passwd|pwd|token|api[_-]?key|secret|authorization)\s*[:=]\s*['"]?[^'"\s]+`),
+		regexp.MustCompile(`(?i)bearer\s+[a-z0-9._\-]+`),
+		regexp.MustCompile(`sk-[A-Za-z0-9_\-]{16,}`),
+	}
+	redacted := value
+	for _, pattern := range patterns {
+		redacted = pattern.ReplaceAllString(redacted, "$1=<已脱敏>")
+	}
+	return redacted
+}
+
+func buildAssistSystemPrompt(task string) string {
+	base := `你是 AI SSH 的运维助手。所有回答必须使用中文。你会看到终端上下文、历史命令、当前目录、主机信息和用户目标。不要泄露或复述疑似密码、Token、密钥等敏感信息。必须只返回严格 JSON，不要 Markdown，不要把推理过程放进 content。`
+	switch task {
+	case "explain_error":
+		return base + `任务是解释错误。返回 {"answer":"易懂解释","summary":"一句话摘要","warnings":["风险或注意事项"],"commands":["可选排查命令"]}。`
+	case "generate_command":
+		return base + `任务是把自然语言转换成 shell 命令草稿。生成的命令不能自动执行。返回 {"answer":"说明","commands":["命令1"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因"}。危险命令必须标 high。`
+	case "summarize_logs":
+		return base + `任务是总结日志。返回 {"answer":"总结","summary":"一句话结论","warnings":["异常点"],"commands":["可选排查命令"]}。`
+	case "agent_next":
+		return base + `任务是驱动终端完成用户目标。每次只给一个下一步命令，或者判断目标已完成，或者提出需要用户补充的问题。不要输出交互式编辑器命令，不要输出需要长时间阻塞的命令。优先用可验证、可回滚、保守的命令推进。返回 {"agentStatus":"command|done|question","agentCommand":"下一步命令","agentReason":"为什么执行这一步","answer":"给用户看的说明","riskLevel":"low|medium|high","riskReason":"风险原因","warnings":["注意事项"]}。安装、删除、重启、改配置、开放端口、sudo、rm、chmod 777、curl|sh、dd、mkfs 等必须标 high。`
+	default:
+		return base + `任务是围绕当前 SSH 会话做运维问答。返回 {"answer":"回答","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因"}。`
+	}
+}
+
+func buildAssistPrompt(request aiAssistRequest) string {
+	history, _ := json.Marshal(request.CommandHistory)
+	steps, _ := json.Marshal(request.AgentSteps)
+	return fmt.Sprintf(`任务类型：%s
+用户输入：%s
+Agent 模式：%s
+Agent 目标：%s
+Agent 已执行步骤 JSON：%s
+当前主机：%s
+连接信息：%s@%s
+当前目录：%s
+当前命令草稿：%s
+最近命令历史 JSON：%s
+
+用户选中文本：
+%s
+
+终端上下文：
+%s
+
+请严格按系统要求返回 JSON。`,
+		request.Task,
+		emptyAsDash(request.Prompt),
+		emptyAsDash(request.AgentMode),
+		emptyAsDash(request.AgentGoal),
+		string(steps),
+		emptyAsDash(request.HostName),
+		emptyAsDash(request.Username),
+		emptyAsDash(request.HostAddress),
+		emptyAsDash(request.CWD),
+		request.CurrentCommand,
+		string(history),
+		request.SelectedText,
+		request.TerminalContext,
+	)
+}
+
+func parseAssistResponse(content string) (aiAssistResponse, error) {
+	content = strings.TrimSpace(content)
+	var response aiAssistResponse
+	if err := json.Unmarshal([]byte(content), &response); err == nil {
+		return cleanupAssistResponse(response), nil
+	}
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start >= 0 && end > start {
+		if err := json.Unmarshal([]byte(content[start:end+1]), &response); err == nil {
+			return cleanupAssistResponse(response), nil
+		}
+	}
+	if looksLikeBrokenStructuredPrediction(content) {
+		return aiAssistResponse{}, errors.New("ai provider returned broken structured response")
+	}
+	return aiAssistResponse{Answer: content}, nil
+}
+
+func cleanupAssistResponse(response aiAssistResponse) aiAssistResponse {
+	response.Answer = strings.TrimSpace(response.Answer)
+	response.Summary = strings.TrimSpace(response.Summary)
+	response.RiskLevel = normalizeRiskLevel(response.RiskLevel)
+	response.RiskReason = strings.TrimSpace(response.RiskReason)
+	response.AgentStatus = strings.TrimSpace(response.AgentStatus)
+	response.AgentCommand = strings.TrimSpace(response.AgentCommand)
+	response.AgentReason = strings.TrimSpace(response.AgentReason)
+	return response
+}
+
+func normalizeAgentAssistResponse(response aiAssistResponse) aiAssistResponse {
+	switch response.AgentStatus {
+	case "done", "question":
+	default:
+		response.AgentStatus = "command"
+	}
+	response.AgentCommand = firstNonEmpty(response.AgentCommand, firstString(response.Commands))
+	response.AgentCommand = strings.TrimSpace(response.AgentCommand)
+	if response.AgentStatus == "command" && response.AgentCommand == "" {
+		response.AgentStatus = "question"
+		if response.Answer == "" {
+			response.Answer = "我还需要更多上下文才能决定下一步命令。"
+		}
+	}
+	if response.AgentCommand != "" {
+		response.Commands = []string{response.AgentCommand}
+	}
+	if response.AgentReason == "" {
+		response.AgentReason = response.Answer
+	}
+	return response
+}
+
+func cleanStringList(values []string, limit int) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, limit)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+		if len(result) >= limit {
+			break
+		}
+	}
+	return result
+}
+
+func normalizeRiskLevel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "low", "medium", "high":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func classifyCommandRisk(command string) string {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	if lower == "" {
+		return "low"
+	}
+	highPatterns := []string{
+		"sudo ", "su -", "rm ", "mv /", "chmod 777", "chown ", "mkfs", "dd if=", "shutdown", "reboot",
+		"systemctl restart", "systemctl stop", "service ", "apt install", "apt-get install", "yum install",
+		"dnf install", "docker rm", "docker system prune", "iptables", "ufw ", "firewall-cmd", "curl ", "wget ",
+	}
+	for _, pattern := range highPatterns {
+		if strings.Contains(lower, pattern) {
+			return "high"
+		}
+	}
+	mediumPatterns := []string{"systemctl status", "docker run", "docker compose", "npm install", "pip install", "cp "}
+	for _, pattern := range mediumPatterns {
+		if strings.Contains(lower, pattern) {
+			return "medium"
+		}
+	}
+	return "low"
+}
+
+func firstString(values []string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func readLimitedAIResponseBody(reader io.Reader) ([]byte, bool, error) {

@@ -65,6 +65,7 @@ export interface AppSettings {
   metricsCompactPointLimit: number
   metricsExpandedPointLimit: number
   terminalRetainedLines: number
+  aiEnabled: boolean
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string
@@ -223,6 +224,53 @@ export interface AIPredictionRequest {
 
 export interface AIPredictionResponse {
   commands: string[]
+}
+
+export type AIAssistTask = 'explain_error' | 'generate_command' | 'summarize_logs' | 'ops_qa' | 'agent_next'
+export type AIAgentMode = 'review' | 'auto'
+export type AIRiskLevel = 'low' | 'medium' | 'high'
+export type AIAgentStatus = 'command' | 'done' | 'question'
+export type AIAgentStepStatus = 'pending' | 'approved' | 'executed' | 'skipped' | 'failed'
+
+export interface AIAgentStep {
+  command: string
+  status: AIAgentStepStatus
+  explanation?: string
+  riskLevel?: AIRiskLevel
+  riskReason?: string
+  output?: string
+  createdAt?: string
+}
+
+export interface AIAssistRequest {
+  baseUrl: string
+  apiKey?: string
+  model: string
+  task: AIAssistTask
+  prompt: string
+  terminalContext?: string
+  selectedText?: string
+  commandHistory?: string[]
+  currentCommand?: string
+  cwd?: string
+  hostName?: string
+  hostAddress?: string
+  username?: string
+  agentMode?: AIAgentMode
+  agentGoal?: string
+  agentSteps?: AIAgentStep[]
+}
+
+export interface AIAssistResponse {
+  answer: string
+  commands?: string[]
+  warnings?: string[]
+  riskLevel?: AIRiskLevel
+  riskReason?: string
+  agentStatus?: AIAgentStatus
+  agentCommand?: string
+  agentReason?: string
+  summary?: string
 }
 
 export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd' | 'command'

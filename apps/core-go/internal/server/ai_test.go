@@ -32,3 +32,24 @@ func TestParsePredictedCommandsKeepsPlainTextFallback(t *testing.T) {
 		t.Fatalf("expected commands from plain text fallback, got %#v", commands)
 	}
 }
+
+func TestParseAssistResponseAcceptsAgentJSON(t *testing.T) {
+	response, err := parseAssistResponse(`{"agentStatus":"command","agentCommand":"sudo apt update","agentReason":"更新软件源","answer":"先更新软件源","riskLevel":"high"}`)
+	if err != nil {
+		t.Fatalf("expected assist response to parse: %v", err)
+	}
+	response = normalizeAgentAssistResponse(response)
+	if response.AgentStatus != "command" || response.AgentCommand != "sudo apt update" || response.RiskLevel != "high" {
+		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
+func TestRedactSensitiveText(t *testing.T) {
+	redacted := redactSensitiveText(`password=secret token: abc123 Authorization: Bearer very-secret`)
+	if redacted == "" || redacted == `password=secret token: abc123 Authorization: Bearer very-secret` {
+		t.Fatalf("expected sensitive text to be redacted, got %q", redacted)
+	}
+	if redacted == "password=secret" || redacted == "token: abc123" {
+		t.Fatalf("redaction did not apply: %q", redacted)
+	}
+}

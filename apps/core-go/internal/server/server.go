@@ -128,6 +128,47 @@ type aiPredictionResponse struct {
 	Commands []string `json:"commands"`
 }
 
+type aiAssistRequest struct {
+	BaseURL         string        `json:"baseUrl"`
+	APIKey          string        `json:"apiKey,omitempty"`
+	Model           string        `json:"model"`
+	Task            string        `json:"task"`
+	Prompt          string        `json:"prompt"`
+	TerminalContext string        `json:"terminalContext,omitempty"`
+	SelectedText    string        `json:"selectedText,omitempty"`
+	CommandHistory  []string      `json:"commandHistory,omitempty"`
+	CurrentCommand  string        `json:"currentCommand,omitempty"`
+	CWD             string        `json:"cwd,omitempty"`
+	HostName        string        `json:"hostName,omitempty"`
+	HostAddress     string        `json:"hostAddress,omitempty"`
+	Username        string        `json:"username,omitempty"`
+	AgentMode       string        `json:"agentMode,omitempty"`
+	AgentGoal       string        `json:"agentGoal,omitempty"`
+	AgentSteps      []aiAgentStep `json:"agentSteps,omitempty"`
+}
+
+type aiAgentStep struct {
+	Command     string `json:"command"`
+	Status      string `json:"status"`
+	Explanation string `json:"explanation,omitempty"`
+	RiskLevel   string `json:"riskLevel,omitempty"`
+	RiskReason  string `json:"riskReason,omitempty"`
+	Output      string `json:"output,omitempty"`
+	CreatedAt   string `json:"createdAt,omitempty"`
+}
+
+type aiAssistResponse struct {
+	Answer       string   `json:"answer"`
+	Commands     []string `json:"commands,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
+	RiskLevel    string   `json:"riskLevel,omitempty"`
+	RiskReason   string   `json:"riskReason,omitempty"`
+	AgentStatus  string   `json:"agentStatus,omitempty"`
+	AgentCommand string   `json:"agentCommand,omitempty"`
+	AgentReason  string   `json:"agentReason,omitempty"`
+	Summary      string   `json:"summary,omitempty"`
+}
+
 type sessionReconnectResponse struct {
 	PreviousSessionID string        `json:"previousSessionId"`
 	Session           sessionRecord `json:"session"`

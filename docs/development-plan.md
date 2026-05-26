@@ -253,6 +253,7 @@
 70. 打包流程增加桌面绿色便携版，包含桌面 exe、Go core、Web 资源、启动脚本和便携 data 目录
 71. 打包脚本增加 `-SkipDesktopInstaller` 参数，可在安装包文件被占用时只生成 Web 包和绿色便携版
 72. 增加 Windows 双击绿色版打包入口 `build-portable.bat`
+73. 补齐 AI 通用助手和 Agent 任务执行 MVP，支持错误解释、命令生成、日志总结、运维问答、审核 / 自动模式和高风险确认
 
 ## 6. 工程规则
 
@@ -281,7 +282,7 @@
 - Milestone 0：已完成
 - Milestone 1：进行中
 - Milestone 2：进行中
-- Milestone 3：进行中（已接入 OpenAI 兼容命令预测，解释/审计等能力待完善）
+- Milestone 3：进行中（已接入 OpenAI 兼容命令预测、通用 AI 助手和 Agent 任务执行 MVP，命令级审计、长任务完成检测仍需增强）
 - Milestone 4：未开始
 - Milestone 5：未开始
 
@@ -413,9 +414,14 @@
 - [x] 打包流程新增 `release/portable` 和便携版 zip，双击 `AI SSH Portable.bat` 可启动，运行数据默认保存在便携目录 `data`
 - [x] 打包脚本支持 `-SkipDesktopInstaller`，用于跳过 Tauri 安装包 bundler，仅生成可拷贝运行的绿色版 exe 包
 - [x] 增加根目录 `build-portable.bat`，双击即可生成 Web 包和绿色便携版，避免安装包文件占用影响绿色版打包
+- [x] Go core 新增 `/api/ai/assist` 通用 AI 助手接口，复用 OpenAI 兼容配置，支持错误解释、命令生成、日志总结、运维问答和 Agent 下一步规划
+- [x] 右侧 AI 面板新增助手和 Agent 模式，Agent 支持审核 / 自动执行，执行步骤展示命令、解释、风险、状态和输出摘要
+- [x] AI 助手和 Agent 会发送终端上下文、选中文本、历史命令、当前路径和主机元数据，并在发送前进行基础敏感信息脱敏
+- [x] AI 生成的高风险命令执行前需要二次确认；Agent 自动模式遇到高风险命令会暂停等待人工确认
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验
+- [ ] 增强 Agent 长任务等待、命令完成检测、超时控制、流式观察和命令级审计日志
 
 ## 8. Git 提交约定
 

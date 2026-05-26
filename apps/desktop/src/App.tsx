@@ -35,6 +35,12 @@ import '@xterm/xterm/css/xterm.css'
 import {
   type AIPredictionRequest,
   type AIPredictionResponse,
+  type AIAgentMode,
+  type AIAgentStep,
+  type AIAssistRequest,
+  type AIAssistResponse,
+  type AIAssistTask,
+  type AIRiskLevel,
   type AuthSettingsResponse,
   type AuthSettingsUpdateRequest,
   type AuthSetupRequest,
@@ -173,6 +179,12 @@ type LocalDownloadFile = {
   data: number[]
 }
 
+type AIPanelMode = 'predict' | 'assistant' | 'agent'
+
+type AIAgentPlanStep = AIAgentStep & {
+  id: string
+}
+
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
@@ -238,6 +250,7 @@ const defaultSettings: AppSettings = {
   metricsCompactPointLimit: 5,
   metricsExpandedPointLimit: 20,
   terminalRetainedLines: 1000,
+  aiEnabled: true,
   aiBaseUrl: '',
   aiApiKey: '',
   aiModel: '',
@@ -581,6 +594,7 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
       100,
       Number(value.terminalRetainedLines ?? defaultSettings.terminalRetainedLines) || 1000,
     ),
+    aiEnabled: value.aiEnabled ?? defaultSettings.aiEnabled,
     aiPredictionCount: Math.max(
       1,
       Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3),
@@ -644,6 +658,50 @@ function normalizePredictedCommands(values: unknown, limit: number) {
     }
   }
   return commands
+}
+
+function classifyCommandRisk(command: string): AIRiskLevel {
+  const lower = stripTerminalControlSequences(command).trim().toLowerCase()
+  if (!lower) return 'low'
+  const highSignals = [
+    'sudo ',
+    'su -',
+    'rm ',
+    'chmod 777',
+    'chown ',
+    'mkfs',
+    'dd if=',
+    'shutdown',
+    'reboot',
+    'systemctl restart',
+    'systemctl stop',
+    'service ',
+    'apt install',
+    'apt-get install',
+    'yum install',
+    'dnf install',
+    'docker rm',
+    'docker system prune',
+    'iptables',
+    'ufw ',
+    'firewall-cmd',
+    'curl ',
+    'wget ',
+  ]
+  if (highSignals.some((signal) => lower.includes(signal))) return 'high'
+  const mediumSignals = ['docker run', 'docker compose', 'npm install', 'pip install', 'cp ', 'mv ']
+  if (mediumSignals.some((signal) => lower.includes(signal))) return 'medium'
+  return 'low'
+}
+
+function riskLabel(level?: AIRiskLevel) {
+  if (level === 'high') return '高风险'
+  if (level === 'medium') return '中风险'
+  return '低风险'
+}
+
+function normalizeAssistCommands(values: unknown, limit = 5) {
+  return normalizePredictedCommands(values, limit)
 }
 
 function emptyTerminalCache(): TerminalCache {
@@ -902,7 +960,6 @@ export function App() {
   const [rightTool, setRightTool] = useState<RightTool>('ai')
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [openTopMenu, setOpenTopMenu] = useState<TopMenu>('')
-  const [aiEnabled, setAiEnabled] = useState(true)
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [isServerInfoCollapsed, setIsServerInfoCollapsed] = useState(false)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
@@ -927,6 +984,18 @@ export function App() {
   const [aiPredictionIndex, setAiPredictionIndex] = useState(0)
   const [aiPredictionState, setAiPredictionState] = useState<LoadState>('idle')
   const [aiPredictionError, setAiPredictionError] = useState('')
+  const [aiPanelMode, setAiPanelMode] = useState<AIPanelMode>('predict')
+  const [aiAssistantTask, setAiAssistantTask] = useState<AIAssistTask>('ops_qa')
+  const [aiAssistantPrompt, setAiAssistantPrompt] = useState('')
+  const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
+  const [aiAssistantResponse, setAiAssistantResponse] = useState<AIAssistResponse | null>(null)
+  const [aiAssistantError, setAiAssistantError] = useState('')
+  const [agentGoal, setAgentGoal] = useState('')
+  const [agentMode, setAgentMode] = useState<AIAgentMode>('review')
+  const [agentState, setAgentState] = useState<LoadState>('idle')
+  const [agentMessage, setAgentMessage] = useState('')
+  const [agentSteps, setAgentSteps] = useState<AIAgentPlanStep[]>([])
+  const [pendingAgentStepId, setPendingAgentStepId] = useState('')
   const [predictionGhostPosition, setPredictionGhostPosition] = useState<PredictionGhostPosition | null>(null)
   const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
   const [filePreviewTabs, setFilePreviewTabs] = useState<FilePreviewTab[]>([])
@@ -974,6 +1043,10 @@ export function App() {
   const aiPredictionRequestRef = useRef(0)
   const aiPredictionCursorRef = useRef(0)
   const aiPredictionCycleStartedRef = useRef(false)
+  const agentRunningRef = useRef(false)
+  const agentStepsRef = useRef<AIAgentPlanStep[]>([])
+  const agentGoalRef = useRef('')
+  const agentModeRef = useRef<AIAgentMode>('review')
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
@@ -1198,6 +1271,7 @@ export function App() {
       schedulePredictionGhostPositionUpdate()
       if (
         pendingAIPredictionCommandRef.current &&
+        sessionSettingsRef.current.aiEnabled &&
         sessionSettingsRef.current.aiPredictionEnabled &&
         aiEnabledRef.current &&
         !alternateScreenSessionsRef.current.has(sessionId)
@@ -1748,8 +1822,8 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    aiEnabledRef.current = aiEnabled
-  }, [aiEnabled])
+    aiEnabledRef.current = normalizeAppSettings(settings).aiEnabled
+  }, [settings])
 
   useEffect(() => {
     const normalized = normalizeAppSettings(settings)
@@ -1759,6 +1833,18 @@ export function App() {
   useEffect(() => {
     commandHistoryRef.current = commandHistory
   }, [commandHistory])
+
+  useEffect(() => {
+    agentStepsRef.current = agentSteps
+  }, [agentSteps])
+
+  useEffect(() => {
+    agentGoalRef.current = agentGoal
+  }, [agentGoal])
+
+  useEffect(() => {
+    agentModeRef.current = agentMode
+  }, [agentMode])
 
   useEffect(() => {
     terminalCachesRef.current = terminalCaches
@@ -2210,7 +2296,7 @@ export function App() {
     const normalized = normalizeAppSettings(settings)
     setSettings(normalized)
     sessionSettingsRef.current = normalized
-    if (!normalized.aiPredictionEnabled) {
+    if (!normalized.aiEnabled || !normalized.aiPredictionEnabled) {
       clearAIPrediction()
     }
     window.localStorage.setItem('ai-ssh-settings', JSON.stringify(normalized))
@@ -2232,6 +2318,7 @@ export function App() {
       metricsCompactPointLimit: normalized.metricsCompactPointLimit,
       metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
       terminalRetainedLines: normalized.terminalRetainedLines,
+      aiEnabled: normalized.aiEnabled,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
@@ -3100,7 +3187,7 @@ export function App() {
     const nextHistory = [normalized, ...commandHistoryRef.current].slice(0, 200)
     commandHistoryRef.current = nextHistory
     setCommandHistory(nextHistory)
-    if (sessionSettingsRef.current.aiPredictionEnabled && aiEnabledRef.current) {
+    if (sessionSettingsRef.current.aiEnabled && sessionSettingsRef.current.aiPredictionEnabled && aiEnabledRef.current) {
       pendingAIPredictionCommandRef.current = normalized
       setAiPredictionState('loading')
       setAiPredictionError('')
@@ -3122,7 +3209,7 @@ export function App() {
     const normalized = normalizeAppSettings(sessionSettingsRef.current)
     const session = sessionsRef.current.find((item) => item.id === activeSessionIdRef.current)
     const host = hostsRef.current.find((item) => item.id === session?.hostId)
-    if (!aiEnabledRef.current || !normalized.aiPredictionEnabled || !session || !host) {
+    if (!normalized.aiEnabled || !aiEnabledRef.current || !normalized.aiPredictionEnabled || !session || !host) {
       clearAIPrediction()
       return
     }
@@ -3209,6 +3296,166 @@ export function App() {
         detail: failedDetail,
       })
     }
+  }
+
+  const buildAIContextPayload = () => {
+    const normalized = normalizeAppSettings(sessionSettingsRef.current)
+    const session = sessionsRef.current.find((item) => item.id === activeSessionIdRef.current)
+    const host = hostsRef.current.find((item) => item.id === session?.hostId)
+    return {
+      normalized,
+      session,
+      host,
+      terminalContext: session
+        ? terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit)
+        : '',
+      commandHistory: commandHistoryRef.current.slice(0, normalized.aiCommandHistoryLimit),
+    }
+  }
+
+  const requestAIAssist = async (task: AIAssistTask, prompt: string, options: Partial<AIAssistRequest> = {}) => {
+    const { normalized, session, host, terminalContext, commandHistory } = buildAIContextPayload()
+    if (!normalized.aiEnabled) {
+      throw new Error('AI 功能已关闭，请先在设置中开启')
+    }
+    if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
+      throw new Error('请先在设置中填写大模型地址和模型')
+    }
+    const payload: AIAssistRequest = {
+      baseUrl: normalized.aiBaseUrl,
+      apiKey: normalized.aiApiKey,
+      model: normalized.aiModel,
+      task,
+      prompt,
+      terminalContext,
+      selectedText: window.getSelection()?.toString() ?? '',
+      commandHistory,
+      currentCommand: commandBufferRef.current,
+      cwd: filePathRef.current,
+      hostName: session?.hostName,
+      hostAddress: host?.address,
+      username: host?.username,
+      ...options,
+    }
+    const response = await apiFetch('/ai/assist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) {
+      const detail = await readResponseErrorDetail(response)
+      throw new Error(detail || `AI 助手请求失败：${response.status}`)
+    }
+    return (await response.json()) as AIAssistResponse
+  }
+
+  const runAIAssistant = async () => {
+    const prompt = aiAssistantPrompt.trim()
+    const selectedText = window.getSelection()?.toString().trim() ?? ''
+    if (!prompt && !selectedText && aiAssistantTask !== 'explain_error' && aiAssistantTask !== 'summarize_logs') {
+      setAiAssistantError('请输入问题或目标')
+      return
+    }
+    setAiAssistantState('loading')
+    setAiAssistantError('')
+    setAiAssistantResponse(null)
+    try {
+      const response = await requestAIAssist(aiAssistantTask, prompt || selectedText || '请根据当前终端上下文处理这个请求')
+      response.commands = normalizeAssistCommands(response.commands)
+      setAiAssistantResponse(response)
+      setAiAssistantState('success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI 助手请求失败'
+      setAiAssistantError(message)
+      setAiAssistantState('error')
+      setErrorMessage(message, {
+        title: 'AI 助手请求失败',
+        method: 'POST',
+        path: '/ai/assist',
+        source: 'AI 大模型',
+        detail: '这是通过 Go core 调用大模型的通用 AI 助手接口失败，可在“工具 -> 日志”搜索 source=ai 查看详情。',
+      })
+    }
+  }
+
+  const requestAgentNextStep = async (steps = agentStepsRef.current) => {
+    const goal = agentGoalRef.current.trim()
+    if (!goal) {
+      setAgentMessage('请先输入任务目标')
+      return
+    }
+    if (!activeSession || activeSession.status !== 'connected') {
+      setAgentMessage('请先连接一个 SSH 会话')
+      return
+    }
+    setAgentState('loading')
+    setAgentMessage('正在让 Agent 规划下一步...')
+    try {
+      const response = await requestAIAssist('agent_next', goal, {
+        agentGoal: goal,
+        agentMode: agentModeRef.current,
+        agentSteps: steps,
+      })
+      if (response.agentStatus === 'done') {
+        setAgentState('success')
+        setAgentMessage(response.answer || response.agentReason || 'Agent 判断任务已完成')
+        agentRunningRef.current = false
+        return
+      }
+      if (response.agentStatus === 'question' || !response.agentCommand) {
+        setAgentState('idle')
+        setAgentMessage(response.answer || response.agentReason || 'Agent 需要更多信息')
+        agentRunningRef.current = false
+        return
+      }
+      const command = stripTerminalControlSequences(response.agentCommand).trim()
+      const riskLevel = response.riskLevel || classifyCommandRisk(command)
+      const step: AIAgentPlanStep = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command,
+        status: 'pending',
+        explanation: response.agentReason || response.answer,
+        riskLevel,
+        riskReason: response.riskReason,
+        createdAt: new Date().toISOString(),
+      }
+      const nextSteps = [step, ...steps].slice(0, 30)
+      setAgentSteps(nextSteps)
+      agentStepsRef.current = nextSteps
+      setAgentState('success')
+      setAgentMessage(response.answer || response.agentReason || 'Agent 已给出下一步命令')
+      if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
+        void executeAgentStep(step.id, true)
+      } else if (riskLevel === 'high') {
+        setPendingAgentStepId(step.id)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Agent 请求失败'
+      setAgentState('error')
+      setAgentMessage(message)
+      agentRunningRef.current = false
+      setErrorMessage(message, {
+        title: 'Agent 请求失败',
+        method: 'POST',
+        path: '/ai/assist',
+        source: 'AI Agent',
+      })
+    }
+  }
+
+  const startAgentTask = () => {
+    agentRunningRef.current = true
+    setAgentSteps([])
+    agentStepsRef.current = []
+    void requestAgentNextStep([])
+  }
+
+  const stopAgentTask = () => {
+    agentRunningRef.current = false
+    setAgentState('idle')
+    setAgentMessage('Agent 已停止')
   }
 
   const updateAlternateScreenMode = (sessionId: string, data: string) => {
@@ -3325,7 +3572,15 @@ export function App() {
     return () => {
       disposable.dispose()
     }
-  }, [activeSession, activeSession?.status, primaryPrediction, aiPredictions, aiPredictionIndex, settings.aiPredictionEnabled, aiEnabled])
+  }, [
+    activeSession,
+    activeSession?.status,
+    primaryPrediction,
+    aiPredictions,
+    aiPredictionIndex,
+    settings.aiEnabled,
+    settings.aiPredictionEnabled,
+  ])
 
   useEffect(() => {
     if (leftMode === 'files') {
@@ -3651,6 +3906,51 @@ export function App() {
     commandBufferRef.current = ''
     setSessionCommandDraft(activeSession.id, '')
     queueSessionInput(activeSession.id, input)
+  }
+
+  const executeAICommand = (command: string, riskLevel?: AIRiskLevel) => {
+    const normalized = stripTerminalControlSequences(command).trim()
+    const normalizedRisk = riskLevel || classifyCommandRisk(normalized)
+    if (normalizedRisk === 'high') {
+      const confirmed = window.confirm(`AI 生成的命令风险较高，确认执行吗？\n\n${normalized}`)
+      if (!confirmed) {
+        return
+      }
+    }
+    executeCommand(normalized)
+  }
+
+  const updateAgentStep = (stepId: string, patch: Partial<AIAgentPlanStep>) => {
+    setAgentSteps((current) => {
+      const next = current.map((step) => (step.id === stepId ? { ...step, ...patch } : step))
+      agentStepsRef.current = next
+      return next
+    })
+  }
+
+  const executeAgentStep = async (stepId: string, fromAuto = false, confirmed = false) => {
+    const step = agentStepsRef.current.find((item) => item.id === stepId)
+    if (!step || !activeSession || activeSession.status !== 'connected') {
+      setAgentMessage('当前 SSH 会话不可执行命令')
+      return
+    }
+    const riskLevel = step.riskLevel || classifyCommandRisk(step.command)
+    if (riskLevel === 'high' && !confirmed) {
+      setPendingAgentStepId(step.id)
+      setAgentMessage(fromAuto ? '检测到高风险命令，已暂停自动执行，请人工确认' : '检测到高风险命令，请确认后执行')
+      return
+    }
+    const beforeContext = terminalContextTail(terminalCachesRef.current[activeSession.id], 12000)
+    updateAgentStep(step.id, { status: 'executed', riskLevel })
+    executeCommand(step.command)
+    window.setTimeout(() => {
+      const latestContext = terminalContextTail(terminalCachesRef.current[activeSession.id], 16000)
+      const output = latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext
+      updateAgentStep(step.id, { output: output.trim().slice(-8000) })
+      if (agentRunningRef.current) {
+        void requestAgentNextStep(agentStepsRef.current)
+      }
+    }, 1800)
   }
 
   const applyPrediction = () => {
@@ -4743,71 +5043,201 @@ export function App() {
 
             {rightTool === 'ai' ? (
               <div className="ai-box">
-                <label className="toggle-row">
-                  <input
-                    checked={aiEnabled}
-                    onChange={(event) => {
-                      setAiEnabled(event.target.checked)
-                      if (!event.target.checked) {
-                        clearAIPrediction()
-                      }
-                    }}
-                    type="checkbox"
-                  />
-                  <span>预测下一步命令</span>
-                </label>
-                {aiPredictionState === 'loading' ? (
-                  <div className="prediction-loading">
-                    <span aria-hidden="true" className="file-loading-spinner" />
-                    <span>正在调用大模型预测...</span>
+                <div className="ai-mode-tabs">
+                  {[
+                    ['predict', '预测'],
+                    ['assistant', '助手'],
+                    ['agent', 'Agent'],
+                  ].map(([key, label]) => (
+                    <button
+                      className={aiPanelMode === key ? 'active' : ''}
+                      key={key}
+                      type="button"
+                      title={`切换到 AI ${label}`}
+                      onClick={() => setAiPanelMode(key as AIPanelMode)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {aiPanelMode === 'predict' ? (
+                  <>
+                    <label className="toggle-row">
+                      <input
+                        checked={settings.aiPredictionEnabled}
+                        disabled={!settings.aiEnabled}
+                        onChange={(event) => {
+                          setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
+                          if (!event.target.checked) {
+                            clearAIPrediction()
+                          }
+                        }}
+                        type="checkbox"
+                      />
+                      <span>预测下一步命令</span>
+                    </label>
+                    {aiPredictionState === 'loading' ? (
+                      <div className="prediction-loading">
+                        <span aria-hidden="true" className="file-loading-spinner" />
+                        <span>正在调用大模型预测...</span>
+                      </div>
+                    ) : null}
+                    {!settings.aiEnabled ? <p className="hint-text">AI 功能已关闭，可在设置中开启。</p> : null}
+                    {!isAIProviderConfigured && settings.aiEnabled && settings.aiPredictionEnabled ? (
+                      <p className="hint-text">请先在设置里填写大模型地址和模型，保存后才会调用 AI 预测。</p>
+                    ) : null}
+                    {aiPredictionError ? <p className="error-text">{aiPredictionError}</p> : null}
+                    {aiPredictions.map((command, index) => {
+                      const favorited = isFavoriteCommand(command)
+                      return (
+                        <div
+                          className={`command-row prediction-row ${index === aiPredictionIndex ? 'primary' : ''}`}
+                          key={command}
+                        >
+                          <button
+                            className="command-main"
+                            type="button"
+                            title={`切换到第 ${index + 1} 条 AI 预测命令`}
+                            onClick={() => {
+                              aiPredictionCursorRef.current = index
+                              aiPredictionCycleStartedRef.current = true
+                              setAiPredictionIndex(index)
+                            }}
+                          >
+                            <strong>{index === aiPredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
+                            <code>{command}</code>
+                          </button>
+                          <button
+                            className={`favorite-command-button ${favorited ? 'active' : ''}`}
+                            type="button"
+                            title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                            onClick={() => toggleFavoriteCommand(command)}
+                          >
+                            {favorited ? '★' : '☆'}
+                          </button>
+                          <button
+                            className="execute-command-button"
+                            disabled={!activeSession || activeSession.status !== 'connected'}
+                            type="button"
+                            title={`执行 AI 预测命令：${command}`}
+                            onClick={() => executeCommand(command)}
+                          >
+                            ↵
+                          </button>
+                        </div>
+                      )
+                    })}
+                    {aiPredictions.length > 0 ? (
+                      <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {aiPanelMode === 'assistant' ? (
+                  <div className="ai-assistant-panel">
+                    <select value={aiAssistantTask} onChange={(event) => setAiAssistantTask(event.target.value as AIAssistTask)}>
+                      <option value="ops_qa">运维问答</option>
+                      <option value="generate_command">命令生成</option>
+                      <option value="explain_error">错误解释</option>
+                      <option value="summarize_logs">日志总结</option>
+                    </select>
+                    <textarea
+                      placeholder="例如：帮我生成安装 nginx 的命令，或解释当前终端报错"
+                      value={aiAssistantPrompt}
+                      onChange={(event) => setAiAssistantPrompt(event.target.value)}
+                    />
+                    <button
+                      className="primary-button"
+                      disabled={aiAssistantState === 'loading'}
+                      type="button"
+                      title="调用 AI 助手"
+                      onClick={() => void runAIAssistant()}
+                    >
+                      {aiAssistantState === 'loading' ? '处理中...' : '发送'}
+                    </button>
+                    {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
+                    {aiAssistantResponse ? (
+                      <article className="ai-response-card">
+                        <p>{aiAssistantResponse.answer || aiAssistantResponse.summary}</p>
+                        {aiAssistantResponse.riskLevel ? (
+                          <span className={`risk-badge risk-${aiAssistantResponse.riskLevel}`}>
+                            {riskLabel(aiAssistantResponse.riskLevel)}
+                          </span>
+                        ) : null}
+                        {aiAssistantResponse.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
+                        {normalizeAssistCommands(aiAssistantResponse.commands).map((command) => (
+                          <div className="command-row compact" key={command}>
+                            <button className="command-main" type="button" title={`输入命令：${command}`} onClick={() => writeCommand(command)}>
+                              {command}
+                            </button>
+                            <button
+                              className="execute-command-button"
+                              type="button"
+                              title={`执行命令：${command}`}
+                              onClick={() => executeAICommand(command, aiAssistantResponse.riskLevel)}
+                            >
+                              ↵
+                            </button>
+                          </div>
+                        ))}
+                      </article>
+                    ) : null}
                   </div>
                 ) : null}
-                {!isAIProviderConfigured && aiEnabled && settings.aiPredictionEnabled ? (
-                  <p className="hint-text">请先在设置里填写大模型地址和模型，保存后才会调用 AI 预测。</p>
-                ) : null}
-                {aiPredictionError ? <p className="error-text">{aiPredictionError}</p> : null}
-                {aiPredictions.map((command, index) => {
-                  const favorited = isFavoriteCommand(command)
-                  return (
-                    <div
-                      className={`command-row prediction-row ${index === aiPredictionIndex ? 'primary' : ''}`}
-                      key={command}
-                    >
-                      <button
-                        className="command-main"
-                        type="button"
-                        title={`切换到第 ${index + 1} 条 AI 预测命令`}
-                        onClick={() => {
-                          aiPredictionCursorRef.current = index
-                          aiPredictionCycleStartedRef.current = true
-                          setAiPredictionIndex(index)
-                        }}
-                      >
-                        <strong>{index === aiPredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
-                        <code>{command}</code>
-                      </button>
-                      <button
-                        className={`favorite-command-button ${favorited ? 'active' : ''}`}
-                        type="button"
-                        title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
-                        onClick={() => toggleFavoriteCommand(command)}
-                      >
-                        {favorited ? '★' : '☆'}
-                      </button>
-                      <button
-                        className="execute-command-button"
-                        disabled={!activeSession || activeSession.status !== 'connected'}
-                        type="button"
-                        title={`执行 AI 预测命令：${command}`}
-                        onClick={() => executeCommand(command)}
-                      >
-                        ↵
-                      </button>
+
+                {aiPanelMode === 'agent' ? (
+                  <div className="agent-panel">
+                    <textarea
+                      placeholder="告诉 Agent 目标，例如：帮我安装 nginx 并确认服务启动"
+                      value={agentGoal}
+                      onChange={(event) => setAgentGoal(event.target.value)}
+                    />
+                    <div className="agent-mode-row">
+                      <label>
+                        <input checked={agentMode === 'review'} type="radio" onChange={() => setAgentMode('review')} />
+                        <span>审核模式</span>
+                      </label>
+                      <label>
+                        <input checked={agentMode === 'auto'} type="radio" onChange={() => setAgentMode('auto')} />
+                        <span>自动模式</span>
+                      </label>
                     </div>
-                  )
-                })}
-                {aiPredictions.length > 0 ? (
-                  <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
+                    <div className="agent-actions">
+                      <button className="primary-button" disabled={agentState === 'loading'} type="button" title="启动 Agent 任务" onClick={startAgentTask}>
+                        {agentState === 'loading' ? '规划中...' : '开始'}
+                      </button>
+                      <button type="button" title="停止 Agent 任务" onClick={stopAgentTask}>停止</button>
+                      <button type="button" title="让 Agent 继续规划下一步" onClick={() => void requestAgentNextStep()}>继续</button>
+                    </div>
+                    {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
+                    <div className="agent-step-list">
+                      {agentSteps.map((step) => (
+                        <article className={`agent-step risk-${step.riskLevel ?? 'low'}`} key={step.id}>
+                          <header>
+                            <span>{riskLabel(step.riskLevel)}</span>
+                            <small>{step.status}</small>
+                          </header>
+                          <code>{step.command}</code>
+                          {step.explanation ? <p>{step.explanation}</p> : null}
+                          {step.riskReason ? <small>{step.riskReason}</small> : null}
+                          <div>
+                            <button
+                              disabled={step.status === 'executed' || !activeSession || activeSession.status !== 'connected'}
+                              type="button"
+                              title={`执行 Agent 命令：${step.command}`}
+                              onClick={() => void executeAgentStep(step.id)}
+                            >
+                              执行
+                            </button>
+                            <button type="button" title="跳过这一步" onClick={() => updateAgentStep(step.id, { status: 'skipped' })}>
+                              跳过
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
               </div>
             ) : rightTool === 'history' ? (
@@ -5388,7 +5818,22 @@ export function App() {
                   <>
                     <label className="checkbox-row">
                       <input
+                        checked={settings.aiEnabled}
+                        type="checkbox"
+                        onChange={(event) => {
+                          const enabled = event.target.checked
+                          setSettings((current) => ({ ...current, aiEnabled: enabled }))
+                          if (!enabled) {
+                            clearAIPrediction()
+                          }
+                        }}
+                      />
+                      <span>开启 AI 功能</span>
+                    </label>
+                    <label className="checkbox-row">
+                      <input
                         checked={settings.aiPredictionEnabled}
+                        disabled={!settings.aiEnabled}
                         type="checkbox"
                         onChange={(event) =>
                           setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
@@ -5501,6 +5946,46 @@ export function App() {
                 删除
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingAgentStepId ? (
+        <div className="modal-backdrop">
+          <section className="confirm-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">AI Agent</p>
+                <h3>确认高风险命令</h3>
+              </div>
+              <button type="button" title="关闭确认" onClick={() => setPendingAgentStepId('')}>×</button>
+            </div>
+            {(() => {
+              const step = agentSteps.find((item) => item.id === pendingAgentStepId)
+              if (!step) return <p className="error-text">待确认命令不存在</p>
+              return (
+                <>
+                  <p className="confirm-copy">Agent 认为这一步风险较高，请确认后再执行。</p>
+                  <code className="confirm-command">{step.command}</code>
+                  {step.riskReason ? <p className="hint-text">{step.riskReason}</p> : null}
+                  <div className="modal-actions">
+                    <button type="button" title="取消执行" onClick={() => setPendingAgentStepId('')}>取消</button>
+                    <button
+                      className="danger-button"
+                      type="button"
+                      title="确认执行高风险命令"
+                      onClick={() => {
+                        const stepId = pendingAgentStepId
+                        setPendingAgentStepId('')
+                        void executeAgentStep(stepId, false, true)
+                      }}
+                    >
+                      确认执行
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </section>
         </div>
       ) : null}
