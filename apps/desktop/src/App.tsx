@@ -107,9 +107,22 @@ type WindowWithSaveFilePicker = Window & {
   showSaveFilePicker?: (options: { suggestedName?: string }) => Promise<SaveFilePickerHandle>
 }
 
+type AppErrorNotice = {
+  id: string
+  title: string
+  message: string
+  occurredAt: string
+  detail?: string
+  method?: string
+  path?: string
+  source?: string
+  status?: number
+}
+
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
+const ERROR_DETAIL_LIMIT = 1200
 const logLevelRank: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
@@ -567,10 +580,30 @@ function sessionStatusLabel(status: SessionRecord['status']) {
   return '空闲'
 }
 
+function truncateErrorDetail(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.length <= ERROR_DETAIL_LIMIT) {
+    return trimmed
+  }
+  return `${trimmed.slice(0, ERROR_DETAIL_LIMIT)}...(已截断)`
+}
+
+async function readResponseErrorDetail(response: Response) {
+  try {
+    return truncateErrorDetail(await response.clone().text())
+  } catch {
+    return ''
+  }
+}
+
+function normalizeRequestPath(path: string) {
+  return path.split('?')[0]
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
-  const [errorMessage, setErrorMessage] = useState('')
+  const [errorNotice, setErrorNotice] = useState<AppErrorNotice | null>(null)
   const [hosts, setHosts] = useState<HostRecord[]>([])
   const [hostGroups, setHostGroups] = useState<HostGroup[]>([{ name: '默认' }])
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
@@ -667,6 +700,40 @@ export function App() {
       fields,
     }
     setLogs((current) => [...current.slice(-199), entry])
+  }
+
+  const setErrorMessage = (
+    message: string,
+    options: Partial<Omit<AppErrorNotice, 'id' | 'message' | 'occurredAt'>> = {},
+  ) => {
+    if (!message) {
+      setErrorNotice(null)
+      return
+    }
+    setErrorNotice({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      title: options.title ?? '操作失败',
+      message,
+      occurredAt: new Date().toISOString(),
+      detail: options.detail,
+      method: options.method,
+      path: options.path,
+      source: options.source,
+      status: options.status,
+    })
+  }
+
+  const clearErrorForRequest = (path: string, method: string) => {
+    const normalizedPath = normalizeRequestPath(path)
+    setErrorNotice((current) => {
+      if (!current?.path || !current.method) {
+        return current
+      }
+      if (current.method === method && normalizeRequestPath(current.path) === normalizedPath) {
+        return null
+      }
+      return current
+    })
   }
 
   const setActiveSession = (sessionId: string) => {
@@ -921,6 +988,9 @@ export function App() {
         status: response.status,
         url: response.url,
       })
+      if (response.ok) {
+        clearErrorForRequest(requestPath, method)
+      }
       return response
     } catch (error) {
       appendLog('error', 'ui.api', 'request failed', {
@@ -1057,17 +1127,26 @@ export function App() {
   useEffect(() => {
     const loadHealth = async () => {
       setHealthState('loading')
+      let failedStatus: number | undefined
       try {
         const response = await apiFetch('/health')
         if (!response.ok) {
-          throw new Error(`请求失败：${response.status}`)
+          failedStatus = response.status
+          const detail = await readResponseErrorDetail(response)
+          throw new Error(detail || `请求失败：${response.status}`)
         }
         const data = (await response.json()) as HealthResponse
         setHealth(data)
         setHealthState('success')
       } catch (error) {
         const message = error instanceof Error ? error.message : '未知错误'
-        setErrorMessage(message)
+        setErrorMessage(message, {
+          title: 'Go core 健康检查失败',
+          method: 'GET',
+          path: '/health',
+          source: '核心服务',
+          status: failedStatus,
+        })
         setHealthState('error')
       }
     }
@@ -1089,10 +1168,13 @@ export function App() {
 
   useEffect(() => {
     const checkCoreHealth = async () => {
+      let failedStatus: number | undefined
       try {
         const response = await apiFetch('/health')
         if (!response.ok) {
-          throw new Error(`请求失败：${response.status}`)
+          failedStatus = response.status
+          const detail = await readResponseErrorDetail(response)
+          throw new Error(detail || `请求失败：${response.status}`)
         }
         const data = (await response.json()) as HealthResponse
         setHealth(data)
@@ -1100,7 +1182,13 @@ export function App() {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'core 不可用'
         setHealthState('error')
-        setErrorMessage(message)
+        setErrorMessage(message, {
+          title: 'Go core 健康检查失败',
+          method: 'GET',
+          path: '/health',
+          source: '核心服务',
+          status: failedStatus,
+        })
         sessionsRef.current
           .filter((session) => session.status === 'connected' || session.status === 'connecting')
           .forEach((session) => markSessionDisconnected(session.id, `Go core 连接中断：${message}`))
@@ -1962,6 +2050,7 @@ export function App() {
       username: host.username,
     }
 
+    let failedStatus: number | undefined
     try {
       const response = await apiFetch('/ai/predict', {
         method: 'POST',
@@ -1971,7 +2060,9 @@ export function App() {
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
-        throw new Error((await response.text()).trim() || `AI 预测失败：${response.status}`)
+        failedStatus = response.status
+        const detail = await readResponseErrorDetail(response)
+        throw new Error(detail || `AI 预测请求失败：${response.status}`)
       }
       const data = (await response.json()) as AIPredictionResponse
       if (aiPredictionRequestRef.current !== requestID) {
@@ -2000,6 +2091,14 @@ export function App() {
         predictionCount: normalized.aiPredictionCount,
         terminalContextChars: payload.terminalContext.length,
         commandHistoryCount: payload.commandHistory.length,
+      })
+      setErrorMessage(error instanceof Error ? error.message : 'AI 预测失败', {
+        title: 'AI 预测请求失败',
+        method: 'POST',
+        path: '/ai/predict',
+        source: 'AI 大模型',
+        status: failedStatus,
+        detail: '这是调用 Go core 的 /api/ai/predict 接口失败。通常表示 Go core 调用大模型 provider 失败、provider 返回内容无法解析，或模型没有返回有效 commands。可在“工具 -> 日志”里查看 source=ai 的详细响应片段。',
       })
     }
   }
@@ -3344,7 +3443,41 @@ export function App() {
             )}
           </section>
 
-          {errorMessage ? <p className="error-text side-error">{errorMessage}</p> : null}
+          {errorNotice ? (
+            <article className="side-error">
+              <header>
+                <div>
+                  <strong>{errorNotice.title}</strong>
+                  <span>{new Date(errorNotice.occurredAt).toLocaleTimeString()}</span>
+                </div>
+                <button type="button" title="关闭错误提示" onClick={() => setErrorNotice(null)}>
+                  ×
+                </button>
+              </header>
+              <p className="error-text">{errorNotice.message}</p>
+              <dl>
+                {errorNotice.source ? (
+                  <>
+                    <dt>来源</dt>
+                    <dd>{errorNotice.source}</dd>
+                  </>
+                ) : null}
+                {errorNotice.path ? (
+                  <>
+                    <dt>接口</dt>
+                    <dd>{`${errorNotice.method ?? 'GET'} ${errorNotice.path}`}</dd>
+                  </>
+                ) : null}
+                {errorNotice.status ? (
+                  <>
+                    <dt>状态</dt>
+                    <dd>{errorNotice.status}</dd>
+                  </>
+                ) : null}
+              </dl>
+              {errorNotice.detail ? <small>{errorNotice.detail}</small> : null}
+            </article>
+          ) : null}
           {health ? <p className="core-line">{health.service} · {health.version}</p> : null}
         </aside>
       </div>

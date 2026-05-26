@@ -1436,6 +1436,59 @@ code {
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  display: grid;
+  gap: 8px;
+}
+
+.side-error header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.side-error header div {
+  display: grid;
+  gap: 2px;
+}
+
+.side-error strong {
+  color: #fecaca;
+  font-size: 13px;
+}
+
+.side-error span,
+.side-error small,
+.side-error dt,
+.side-error dd {
+  color: #fca5a5;
+  font-size: 11px;
+}
+
+.side-error button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fecaca;
+}
+
+.side-error dl {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 4px 8px;
+  margin: 0;
+}
+
+.side-error dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.side-error small {
+  overflow-wrap: anywhere;
 }
 
 .modal-error {
