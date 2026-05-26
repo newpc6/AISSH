@@ -663,6 +663,7 @@ export function App() {
   const [logSearch, setLogSearch] = useState('')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [favoriteCommands, setFavoriteCommands] = useState<string[]>([])
+  const [favoriteCommandDraft, setFavoriteCommandDraft] = useState('')
   const [pendingFavoriteDelete, setPendingFavoriteDelete] = useState('')
   const [aiPredictions, setAiPredictions] = useState<string[]>([])
   const [aiPredictionIndex, setAiPredictionIndex] = useState(0)
@@ -1053,6 +1054,26 @@ export function App() {
     }
     persistFavoriteCommands(favoriteCommands.filter((item) => item !== normalized))
     setPendingFavoriteDelete('')
+  }
+
+  const addFavoriteCommand = () => {
+    const normalized = stripTerminalControlSequences(favoriteCommandDraft).trim()
+    if (!normalized) {
+      return
+    }
+    persistFavoriteCommands([...favoriteCommands.filter((item) => item !== normalized), normalized])
+    setFavoriteCommandDraft('')
+  }
+
+  const moveFavoriteCommand = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= favoriteCommands.length) {
+      return
+    }
+    const next = [...favoriteCommands]
+    const [item] = next.splice(index, 1)
+    next.splice(targetIndex, 0, item)
+    persistFavoriteCommands(next)
   }
 
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
@@ -3474,11 +3495,26 @@ export function App() {
               </div>
             ) : (
               <div className="favorite-list">
+                <form
+                  className="favorite-add-form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    addFavoriteCommand()
+                  }}
+                >
+                  <input
+                    placeholder="手动添加收藏命令"
+                    value={favoriteCommandDraft}
+                    onChange={(event) => setFavoriteCommandDraft(event.target.value)}
+                  />
+                  <button type="submit" title="添加收藏命令">添加</button>
+                </form>
                 {favoriteCommands.length === 0 ? (
                   <p className="hint-text">暂无收藏命令</p>
                 ) : (
-                  favoriteCommands.map((command) => (
+                  favoriteCommands.map((command, index) => (
                     <div className="command-row compact" key={command}>
+                      <span className="favorite-command-index">{index + 1}</span>
                       <button
                         className="command-main"
                         type="button"
@@ -3486,6 +3522,24 @@ export function App() {
                         onClick={() => writeCommand(command)}
                       >
                         {command}
+                      </button>
+                      <button
+                        className="favorite-command-button"
+                        disabled={index === 0}
+                        type="button"
+                        title={`上移收藏命令：${command}`}
+                        onClick={() => moveFavoriteCommand(index, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        className="favorite-command-button"
+                        disabled={index === favoriteCommands.length - 1}
+                        type="button"
+                        title={`下移收藏命令：${command}`}
+                        onClick={() => moveFavoriteCommand(index, 1)}
+                      >
+                        ↓
                       </button>
                       <button
                         className="favorite-command-button danger"
