@@ -189,6 +189,7 @@ type AgentCommandWaiter = {
   stepId: string
   sessionId: string
   beforeContext: string
+  marker: string
   timeoutId: number
 }
 
@@ -559,6 +560,7 @@ function downloadBlobInBrowser(blob: Blob, filename: string) {
 function shouldRecordCommand(command: string) {
   if (!command) return false
   if (command.includes('__AI_SSH_CWD__')) return false
+  if (command.includes('__AI_SSH_AGENT_DONE_')) return false
   if (command.startsWith('printf ') && command.includes('$PWD')) return false
   if (/^\[\>?[0-9;]*[a-zA-Z]$/.test(command)) return false
   if (/^(?:\]|\^]).*(?:\\|\u0007)?$/.test(command)) return false
@@ -714,6 +716,34 @@ function riskLabel(level?: AIRiskLevel) {
 
 function normalizeAssistCommands(values: unknown, limit = 5) {
   return normalizePredictedCommands(values, limit)
+}
+
+function agentExitMarker(stepId: string) {
+  return `__AI_SSH_AGENT_DONE_${stepId.replace(/[^A-Za-z0-9_]/g, '_')}__`
+}
+
+function wrapAgentCommand(command: string, marker: string) {
+  return `${command}\nprintf '\\n${marker}%s\\n' "$?"`
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function extractAgentExitCode(output: string, marker: string) {
+  const match = output.match(new RegExp(`${escapeRegExp(marker)}(\\d+)`))
+  if (!match) {
+    return undefined
+  }
+  const code = Number(match[1])
+  return Number.isFinite(code) ? code : undefined
+}
+
+function stripAgentMarker(output: string, marker: string) {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => !line.includes(marker))
+    .join('\n')
 }
 
 function emptyTerminalCache(): TerminalCache {
@@ -3466,6 +3496,11 @@ export function App() {
     void requestAgentNextStep([])
   }
 
+  const continueAgentTask = () => {
+    agentRunningRef.current = true
+    void requestAgentNextStep()
+  }
+
   const stopAgentTask = () => {
     agentRunningRef.current = false
     clearAgentWaiter()
@@ -3655,7 +3690,7 @@ export function App() {
       delete eventSourcesRef.current[session.id]
       if (agentWaiterRef.current?.sessionId === session.id) {
         const waiter = agentWaiterRef.current
-        finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true)
+        finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
       }
       markSessionDisconnected(session.id, messageText)
     }
@@ -3701,7 +3736,7 @@ export function App() {
         const messageText = payload.data ?? '会话发生错误'
         if (agentWaiterRef.current?.sessionId === session.id) {
           const waiter = agentWaiterRef.current
-          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true)
+          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
         }
         setErrorMessage(messageText)
         const nextSessions = sessionsRef.current.map((item) =>
@@ -3723,7 +3758,7 @@ export function App() {
       if (latestSession?.status === 'connected' || latestSession?.status === 'connecting') {
         if (agentWaiterRef.current?.sessionId === session.id) {
           const waiter = agentWaiterRef.current
-          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true)
+          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
         }
         markSessionDisconnected(session.id, '会话输出流已关闭，请重连当前 SSH 会话')
       }
@@ -3957,26 +3992,32 @@ export function App() {
     setAgentSteps(next)
   }
 
-  const finishAgentStep = (stepId: string, sessionId: string, beforeContext: string, timedOut = false) => {
+  const finishAgentStep = (stepId: string, sessionId: string, beforeContext: string, timedOut = false, marker = '') => {
     if (agentWaiterRef.current?.stepId === stepId) {
       window.clearTimeout(agentWaiterRef.current.timeoutId)
       agentWaiterRef.current = null
     }
     const latestContext = terminalContextTail(terminalCachesRef.current[sessionId], 20000)
-    const output = latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext
+    const rawOutput = latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext
+    const exitCode = marker ? extractAgentExitCode(rawOutput, marker) : undefined
+    const output = marker ? stripAgentMarker(rawOutput, marker) : rawOutput
+    const failed = timedOut || (exitCode !== undefined && exitCode !== 0)
     updateAgentStep(stepId, {
-      status: timedOut ? 'failed' : 'executed',
+      status: failed ? 'failed' : 'executed',
       output: output.trim().slice(-8000),
+      exitCode,
     })
-    appendLog(timedOut ? 'warn' : 'info', 'ui.agent', timedOut ? 'agent command wait timeout' : 'agent command completed', {
+    appendLog(failed ? 'warn' : 'info', 'ui.agent', failed ? 'agent command failed or timed out' : 'agent command completed', {
       stepID: stepId,
       sessionID: sessionId,
       outputChars: output.length,
+      exitCode,
+      timedOut,
     })
-    if (timedOut) {
+    if (failed) {
       agentRunningRef.current = false
       setAgentState('idle')
-      setAgentMessage('命令等待超时，Agent 已暂停。请确认终端状态后点击继续。')
+      setAgentMessage(timedOut ? '命令等待超时，Agent 已暂停。请确认终端状态后点击继续。' : `命令退出码 ${exitCode}，Agent 已暂停。请确认输出后点击继续。`)
       return
     }
     if (agentRunningRef.current) {
@@ -4000,7 +4041,7 @@ export function App() {
     if (!waiter || waiter.sessionId !== sessionId) {
       return
     }
-    finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext)
+    finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, false, waiter.marker)
   }
 
   const executeAgentStep = async (stepId: string, fromAuto = false, confirmed = false) => {
@@ -4017,6 +4058,7 @@ export function App() {
     }
     const beforeContext = terminalContextTail(terminalCachesRef.current[activeSession.id], 12000)
     const sessionId = activeSession.id
+    const marker = agentExitMarker(step.id)
     const timeoutMs = normalizeAppSettings(sessionSettingsRef.current).agentCommandTimeoutSeconds * 1000
     clearAgentWaiter()
     updateAgentStep(step.id, { status: 'running', riskLevel })
@@ -4030,11 +4072,11 @@ export function App() {
     })
     const timeoutId = window.setTimeout(() => {
       if (agentWaiterRef.current?.stepId === step.id) {
-        finishAgentStep(step.id, sessionId, beforeContext, true)
+        finishAgentStep(step.id, sessionId, beforeContext, true, marker)
       }
     }, timeoutMs)
-    agentWaiterRef.current = { stepId: step.id, sessionId, beforeContext, timeoutId }
-    executeCommand(step.command)
+    agentWaiterRef.current = { stepId: step.id, sessionId, beforeContext, marker, timeoutId }
+    executeCommand(wrapAgentCommand(step.command, marker))
   }
 
   const applyPrediction = () => {
@@ -5292,7 +5334,7 @@ export function App() {
                         {agentState === 'loading' ? '规划中...' : '开始'}
                       </button>
                       <button type="button" title="停止 Agent 任务" onClick={stopAgentTask}>停止</button>
-                      <button type="button" title="让 Agent 继续规划下一步" onClick={() => void requestAgentNextStep()}>继续</button>
+                      <button type="button" title="让 Agent 继续规划下一步" onClick={continueAgentTask}>继续</button>
                     </div>
                     {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
                     <div className="agent-step-list">
@@ -5305,6 +5347,7 @@ export function App() {
                           <code>{step.command}</code>
                           {step.explanation ? <p>{step.explanation}</p> : null}
                           {step.riskReason ? <small>{step.riskReason}</small> : null}
+                          {typeof step.exitCode === 'number' ? <small>退出码：{step.exitCode}</small> : null}
                           {step.output ? <pre className="agent-step-output">{step.output}</pre> : null}
                           <div>
                             <button

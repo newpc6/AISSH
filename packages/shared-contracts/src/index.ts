@@ -240,6 +240,7 @@ export interface AIAgentStep {
   riskLevel?: AIRiskLevel
   riskReason?: string
   output?: string
+  exitCode?: number
   createdAt?: string
 }
 

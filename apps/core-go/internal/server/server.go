@@ -1237,6 +1237,9 @@ func isRecordableEchoCommand(command string) bool {
 	if strings.Contains(command, "__AI_SSH_CWD__") {
 		return false
 	}
+	if strings.Contains(command, "__AI_SSH_AGENT_DONE_") {
+		return false
+	}
 	if strings.HasPrefix(command, "printf ") && strings.Contains(command, "$PWD") {
 		return false
 	}
