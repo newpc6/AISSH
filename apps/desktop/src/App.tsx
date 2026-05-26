@@ -938,6 +938,7 @@ export function App() {
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
   const lastSelectedFilePathRef = useRef('')
+  const sessionTabsRef = useRef<HTMLDivElement | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
   const desktopTokenRef = useRef('')
@@ -1724,6 +1725,12 @@ export function App() {
   useEffect(() => {
     trackTerminalPathRef.current = trackTerminalPath
   }, [trackTerminalPath])
+
+  useEffect(() => {
+    const container = sessionTabsRef.current
+    const activeTab = container?.querySelector<HTMLElement>('.session-tab.active')
+    activeTab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeViewId, sessions.length, filePreviewTabs.length])
 
   const currentHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
@@ -4173,7 +4180,15 @@ export function App() {
         />
 
         <main className="center-workspace">
-          <div className="session-tabs">
+          <div
+            ref={sessionTabsRef}
+            className="session-tabs"
+            onWheel={(event) => {
+              if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                event.currentTarget.scrollLeft += event.deltaY
+              }
+            }}
+          >
             {sessions.map((session) => (
                 <div
                   key={session.id}

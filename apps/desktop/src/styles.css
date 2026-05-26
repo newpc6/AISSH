@@ -768,16 +768,30 @@ button {
   gap: 6px;
   min-height: 44px;
   max-height: 44px;
-  padding: 7px 10px 0;
+  padding: 5px 10px 3px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
+  scrollbar-width: thin;
 }
 
 .session-tabs::-webkit-scrollbar {
-  display: none;
+  height: 6px;
+}
+
+.session-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.session-tabs::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.36);
+}
+
+.session-tabs::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.58);
 }
 
 .session-tab {
