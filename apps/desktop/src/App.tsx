@@ -105,6 +105,13 @@ type TerminalCache = {
 
 type FilePreviewKind = 'text' | 'image' | 'video' | 'binary'
 type FilePreviewStatus = 'loading' | 'ready' | 'error'
+type FileSortKey = 'name' | 'size' | 'modifiedAt'
+type FileSortDirection = 'asc' | 'desc'
+
+type FileSortState = {
+  key: FileSortKey
+  direction: FileSortDirection
+}
 
 type FilePreviewTab = {
   id: string
@@ -290,6 +297,37 @@ function formatBytes(size: number) {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
   return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+function fileSortLabel(key: FileSortKey) {
+  if (key === 'name') return '名称'
+  if (key === 'size') return '大小'
+  return '修改日期'
+}
+
+function normalizeFileSearchText(value: string) {
+  return value.trim().toLocaleLowerCase()
+}
+
+function compareFileEntryValue(a: FileEntry, b: FileEntry, key: FileSortKey) {
+  if (key === 'size') {
+    return a.size - b.size
+  }
+  if (key === 'modifiedAt') {
+    return Date.parse(a.modifiedAt) - Date.parse(b.modifiedAt)
+  }
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function compareFileEntries(a: FileEntry, b: FileEntry, sort: FileSortState) {
+  if (a.type !== b.type) {
+    return a.type === 'directory' ? -1 : 1
+  }
+  const value = compareFileEntryValue(a, b, sort.key)
+  if (value !== 0) {
+    return sort.direction === 'asc' ? value : -value
+  }
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
 }
 
 function formatRate(size: number) {
@@ -899,6 +937,8 @@ export function App() {
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
   const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([])
+  const [focusedFilePath, setFocusedFilePath] = useState('')
+  const [fileSort, setFileSort] = useState<FileSortState>({ key: 'name', direction: 'asc' })
   const [fileError, setFileError] = useState('')
   const [isFileDropActive, setIsFileDropActive] = useState(false)
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
@@ -940,6 +980,8 @@ export function App() {
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
   const lastSelectedFilePathRef = useRef('')
+  const fileTypeaheadRef = useRef('')
+  const fileTypeaheadTimerRef = useRef<number | undefined>(undefined)
   const sessionTabsRef = useRef<HTMLDivElement | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
@@ -1506,6 +1548,12 @@ export function App() {
       .catch(() => undefined)
   }, [])
 
+  useEffect(() => () => {
+    if (fileTypeaheadTimerRef.current) {
+      window.clearTimeout(fileTypeaheadTimerRef.current)
+    }
+  }, [])
+
   useEffect(() => {
     if (authRequired || !terminalRef.current || xtermRef.current) {
       return undefined
@@ -1762,10 +1810,14 @@ export function App() {
     () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
     [hosts, activeSession, currentHost],
   )
+  const sortedFileEntries = useMemo(
+    () => [...fileEntries].sort((a, b) => compareFileEntries(a, b, fileSort)),
+    [fileEntries, fileSort],
+  )
   const selectedFileEntries = useMemo(() => {
     const selected = new Set(selectedFilePaths)
-    return fileEntries.filter((entry) => entry.type === 'file' && selected.has(entry.path))
-  }, [fileEntries, selectedFilePaths])
+    return sortedFileEntries.filter((entry) => entry.type === 'file' && selected.has(entry.path))
+  }, [selectedFilePaths, sortedFileEntries])
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
@@ -2246,6 +2298,7 @@ export function App() {
     if (!hostId || hostId === 'local-demo') {
       setFileEntries([])
       setSelectedFilePaths([])
+      setFocusedFilePath('')
       lastSelectedFilePathRef.current = ''
       setFileError('请选择一个真实 SSH 会话后查看文件')
       return
@@ -2263,6 +2316,7 @@ export function App() {
       setTrackedFilePath(data.path)
       setFileEntries(data.entries)
       setSelectedFilePaths([])
+      setFocusedFilePath('')
       lastSelectedFilePathRef.current = ''
     } catch (error) {
       const message = error instanceof Error ? error.message : '文件列表加载失败'
@@ -2406,11 +2460,102 @@ export function App() {
     }
   }
 
+  const updateFileSort = (key: FileSortKey) => {
+    setFileSort((current) => (
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' }
+    ))
+  }
+
+  const focusFileEntryRow = (index: number) => {
+    window.requestAnimationFrame(() => {
+      const row = fileBrowserRef.current?.querySelector<HTMLButtonElement>(`[data-file-index="${index}"]`)
+      row?.scrollIntoView({ block: 'nearest' })
+      row?.focus({ preventScroll: true })
+    })
+  }
+
+  const locateFileEntryByText = (text: string) => {
+    const keyword = normalizeFileSearchText(text)
+    if (!keyword || sortedFileEntries.length === 0) {
+      return
+    }
+    const currentIndex = sortedFileEntries.findIndex((entry) => entry.path === focusedFilePath)
+    const startIndex = currentIndex >= 0 ? currentIndex + 1 : 0
+    const orderedEntries = [
+      ...sortedFileEntries.slice(startIndex),
+      ...sortedFileEntries.slice(0, startIndex),
+    ]
+    const match = (
+      orderedEntries.find((entry) => normalizeFileSearchText(entry.name).startsWith(keyword))
+      ?? orderedEntries.find((entry) => normalizeFileSearchText(entry.name).includes(keyword))
+    )
+    if (!match) {
+      return
+    }
+
+    const matchIndex = sortedFileEntries.findIndex((entry) => entry.path === match.path)
+    setFocusedFilePath(match.path)
+    if (match.type === 'file') {
+      setSelectedFilePaths([match.path])
+      lastSelectedFilePathRef.current = match.path
+    } else {
+      setSelectedFilePaths([])
+      lastSelectedFilePathRef.current = ''
+    }
+    if (matchIndex >= 0) {
+      focusFileEntryRow(matchIndex)
+    }
+  }
+
+  const queueFileTypeaheadReset = () => {
+    if (fileTypeaheadTimerRef.current) {
+      window.clearTimeout(fileTypeaheadTimerRef.current)
+    }
+    fileTypeaheadTimerRef.current = window.setTimeout(() => {
+      fileTypeaheadRef.current = ''
+    }, 900)
+  }
+
+  const applyFileTypeahead = (text: string) => {
+    fileTypeaheadRef.current = `${fileTypeaheadRef.current}${text}`
+    locateFileEntryByText(fileTypeaheadRef.current)
+    queueFileTypeaheadReset()
+  }
+
+  const handleFileBrowserKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null
+    const isEditableTarget = Boolean(
+      target?.closest('input, textarea, select') || target?.isContentEditable,
+    )
+    if (
+      isEditableTarget
+      || event.defaultPrevented
+      || event.ctrlKey
+      || event.metaKey
+      || event.altKey
+      || event.nativeEvent.isComposing
+      || event.key.length !== 1
+    ) {
+      return
+    }
+    event.preventDefault()
+    applyFileTypeahead(event.key)
+  }
+
+  const handleFileBrowserCompositionEnd = (event: React.CompositionEvent<HTMLDivElement>) => {
+    if (event.data) {
+      applyFileTypeahead(event.data)
+    }
+  }
+
   const selectFileEntry = (entry: FileEntry, event: React.MouseEvent<HTMLButtonElement>) => {
     if (entry.type !== 'file') {
       return
     }
-    const filePaths = fileEntries.filter((item) => item.type === 'file').map((item) => item.path)
+    setFocusedFilePath(entry.path)
+    const filePaths = sortedFileEntries.filter((item) => item.type === 'file').map((item) => item.path)
     const currentIndex = filePaths.indexOf(entry.path)
     if (currentIndex < 0) {
       return
@@ -4135,7 +4280,10 @@ export function App() {
               </label>
               <div
                 ref={fileBrowserRef}
+                aria-label="远程文件目录"
                 className={`file-browser ${fileError ? 'has-status' : ''} ${isFileDropActive ? 'drop-active' : ''}`}
+                tabIndex={0}
+                onCompositionEnd={handleFileBrowserCompositionEnd}
                 onDragEnter={(event) => {
                   event.preventDefault()
                   if (Array.from(event.dataTransfer.types).includes('Files')) {
@@ -4157,6 +4305,12 @@ export function App() {
                   setIsFileDropActive(false)
                   if (event.dataTransfer.files.length > 0) {
                     void uploadFiles(event.dataTransfer.files)
+                  }
+                }}
+                onKeyDown={handleFileBrowserKeyDown}
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) {
+                    event.currentTarget.focus()
                   }
                 }}
               >
@@ -4184,21 +4338,37 @@ export function App() {
                 ) : null}
                 <div className="file-table">
                   <div className="file-table-head">
-                    <span>名称</span>
-                    <span>大小</span>
-                    <span>修改日期</span>
+                    {(['name', 'size', 'modifiedAt'] as FileSortKey[]).map((key) => (
+                      <button
+                        key={key}
+                        className={fileSort.key === key ? 'active' : ''}
+                        type="button"
+                        title={`按${fileSortLabel(key)}${fileSort.key === key && fileSort.direction === 'asc' ? '降序' : '升序'}排序`}
+                        onClick={() => updateFileSort(key)}
+                      >
+                        <span>{fileSortLabel(key)}</span>
+                        <small aria-hidden="true">
+                          {fileSort.key === key ? (fileSort.direction === 'asc' ? '↑' : '↓') : ''}
+                        </small>
+                      </button>
+                    ))}
                   </div>
-                  {fileEntries.map((entry) => (
+                  {sortedFileEntries.map((entry, index) => (
                     <button
                       key={entry.path}
                       aria-pressed={selectedFilePaths.includes(entry.path)}
-                      className={selectedFilePaths.includes(entry.path) ? 'selected' : ''}
+                      className={`${selectedFilePaths.includes(entry.path) ? 'selected' : ''} ${focusedFilePath === entry.path ? 'focused' : ''}`}
+                      data-file-index={index}
                       draggable={entry.type === 'file'}
                       type="button"
                       title={entry.type === 'directory' ? '双击进入目录' : '单击选择，Ctrl/Shift 多选，双击预览，右键下载，拖出快速下载'}
                       onClick={(event) => {
+                        setFocusedFilePath(entry.path)
                         if (entry.type === 'file') {
                           selectFileEntry(entry, event)
+                        } else {
+                          setSelectedFilePaths([])
+                          lastSelectedFilePathRef.current = ''
                         }
                       }}
                       onDragStart={(event) => {
