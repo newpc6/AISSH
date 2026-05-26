@@ -714,13 +714,21 @@ export function App() {
     const next = previous
       .catch(() => undefined)
       .then(async () => {
-        await apiFetch(`/sessions/${sessionId}/input`, {
+        const response = await apiFetch(`/sessions/${sessionId}/input`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ data }),
         })
+        if (!response.ok) {
+          const detail = await response.text()
+          throw new Error(detail.trim() || `会话输入失败：${response.status}`)
+        }
+      })
+      .catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error)
+        markSessionDisconnected(sessionId, `会话已断开，输入无法发送：${detail}`)
       })
     inputQueuesRef.current[sessionId] = next.then(
       () => undefined,
@@ -750,6 +758,16 @@ export function App() {
         },
         body: JSON.stringify(payload),
       })
+        .then(async (response) => {
+          if (!response.ok) {
+            const detail = await response.text()
+            throw new Error(detail.trim() || `终端尺寸同步失败：${response.status}`)
+          }
+        })
+        .catch((error) => {
+          const detail = error instanceof Error ? error.message : String(error)
+          markSessionDisconnected(sessionId, `会话已断开，终端尺寸无法同步：${detail}`)
+        })
     }, 80)
   }
 
@@ -823,29 +841,62 @@ export function App() {
     delete pendingResizeRef.current[sessionId]
   }
 
+  const markSessionDisconnected = (sessionId: string, message: string) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
+    closeSessionStream(sessionId)
+    if (!session || session.status === 'error' || session.status === 'closed') {
+      return
+    }
+
+    const nextSessions = sessionsRef.current.map((item) =>
+      item.id === sessionId ? { ...item, status: 'error' as const, lastError: message } : item,
+    )
+    sessionsRef.current = nextSessions
+    setSessions(nextSessions)
+    appendLog('warn', 'ui.session', 'session marked disconnected', {
+      sessionID: sessionId,
+      hostID: session.hostId,
+      message,
+    })
+    if (activeSessionIdRef.current === sessionId) {
+      clearAIPrediction()
+      setErrorMessage(message)
+      appendSessionTerminalOutput(sessionId, `\r\nERROR: ${message}\r\n`)
+    }
+  }
+
   const apiFetch = async (path: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const requestPath = path.startsWith('/') ? path : `/${path}`
     const primaryUrl = `${CORE_API_BASE}${requestPath}`
     appendLog('debug', 'ui.api', 'request started', { method, path: requestPath })
 
-    let response = await fetch(primaryUrl, init)
-    if (isLikelyStatic405(response)) {
-      appendLog('warn', 'ui.api', 'primary api returned 405, retrying core fallback', {
+    try {
+      let response = await fetch(primaryUrl, init)
+      if (isLikelyStatic405(response)) {
+        appendLog('warn', 'ui.api', 'primary api returned 405, retrying core fallback', {
+          method,
+          path: requestPath,
+          primaryUrl: response.url,
+        })
+        response = await fetch(`${CORE_API_FALLBACK_BASE}${requestPath}`, init)
+      }
+
+      appendLog(response.ok ? 'debug' : 'warn', 'ui.api', 'request completed', {
         method,
         path: requestPath,
-        primaryUrl: response.url,
+        status: response.status,
+        url: response.url,
       })
-      response = await fetch(`${CORE_API_FALLBACK_BASE}${requestPath}`, init)
+      return response
+    } catch (error) {
+      appendLog('error', 'ui.api', 'request failed', {
+        method,
+        path: requestPath,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
     }
-
-    appendLog(response.ok ? 'debug' : 'warn', 'ui.api', 'request completed', {
-      method,
-      path: requestPath,
-      status: response.status,
-      url: response.url,
-    })
-    return response
   }
 
   useEffect(() => {
@@ -964,6 +1015,32 @@ export function App() {
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [openHostMenuId])
+
+  useEffect(() => {
+    const checkCoreHealth = async () => {
+      try {
+        const response = await apiFetch('/health')
+        if (!response.ok) {
+          throw new Error(`请求失败：${response.status}`)
+        }
+        const data = (await response.json()) as HealthResponse
+        setHealth(data)
+        setHealthState('success')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'core 不可用'
+        setHealthState('error')
+        setErrorMessage(message)
+        sessionsRef.current
+          .filter((session) => session.status === 'connected' || session.status === 'connecting')
+          .forEach((session) => markSessionDisconnected(session.id, `Go core 连接中断：${message}`))
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      void checkCoreHealth()
+    }, 3000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     if (!openTopMenu) {
@@ -1925,6 +2002,12 @@ export function App() {
     }
 
     const disposable = xtermRef.current.onData((data) => {
+      if (activeSession.status !== 'connected') {
+        if (activeSession.status === 'error' || activeSession.status === 'closed') {
+          setErrorMessage('当前 SSH 会话已断开，请点击重连后继续输入')
+        }
+        return
+      }
       if (data === '\t' && aiPredictions.length > 0 && !commandBufferRef.current.trim()) {
         cyclePrediction()
         return
@@ -1951,7 +2034,7 @@ export function App() {
     return () => {
       disposable.dispose()
     }
-  }, [activeSession, primaryPrediction, aiPredictions, aiPredictionIndex, settings.aiPredictionEnabled, aiEnabled])
+  }, [activeSession, activeSession?.status, primaryPrediction, aiPredictions, aiPredictionIndex, settings.aiPredictionEnabled, aiEnabled])
 
   useEffect(() => {
     if (leftMode === 'files') {
@@ -2005,17 +2088,11 @@ export function App() {
       if (eventSourcesRef.current[session.id] !== source) {
         return
       }
-      const messageText = '会话输出流连接失败，请查看运行日志或 Go core 控制台'
+      const messageText = '会话输出流已断开，请重连当前 SSH 会话'
       appendLog('error', 'ui.sse', messageText, { sessionID: session.id, url: streamUrl })
       source.close()
       delete eventSourcesRef.current[session.id]
-      setErrorMessage(messageText)
-      setSessions((current) =>
-        current.map((item) =>
-          item.id === session.id ? { ...item, status: 'error', lastError: messageText } : item,
-        ),
-      )
-      appendSessionTerminalOutput(session.id, `\r\nERROR: ${messageText}\r\n`)
+      markSessionDisconnected(session.id, messageText)
     }
 
     source.addEventListener('terminal', (event) => {
@@ -2028,21 +2105,15 @@ export function App() {
       }
 
       if (payload.type === 'status') {
-        setSessions((current) =>
-          current.map((item) =>
-            item.id === session.id
-              ? {
-                  ...item,
-                  status:
-                    payload.data === 'connected'
-                      ? 'connected'
-                      : payload.data === 'closed'
-                        ? 'closed'
-                        : item.status,
-                }
-              : item,
-          ),
-        )
+        const nextStatus: SessionRecord['status'] | '' =
+          payload.data === 'connected' ? 'connected' : payload.data === 'closed' ? 'closed' : ''
+        if (nextStatus) {
+          const nextSessions = sessionsRef.current.map((item) =>
+            item.id === session.id ? { ...item, status: nextStatus } : item,
+          )
+          sessionsRef.current = nextSessions
+          setSessions(nextSessions)
+        }
       }
 
       if (payload.type === 'cwd' && payload.data && trackTerminalPathRef.current) {
@@ -2060,11 +2131,11 @@ export function App() {
       if (payload.type === 'error') {
         const messageText = payload.data ?? '会话发生错误'
         setErrorMessage(messageText)
-        setSessions((current) =>
-          current.map((item) =>
-            item.id === session.id ? { ...item, status: 'error', lastError: messageText } : item,
-          ),
+        const nextSessions = sessionsRef.current.map((item) =>
+          item.id === session.id ? { ...item, status: 'error' as const, lastError: messageText } : item,
         )
+        sessionsRef.current = nextSessions
+        setSessions(nextSessions)
         appendSessionTerminalOutput(session.id, `\r\nERROR: ${messageText}\r\n`)
       }
     })
@@ -2075,6 +2146,10 @@ export function App() {
         delete eventSourcesRef.current[session.id]
       }
       appendLog('debug', 'ui.sse', 'session stream closed', { sessionID: session.id })
+      const latestSession = sessionsRef.current.find((item) => item.id === session.id)
+      if (latestSession?.status === 'connected' || latestSession?.status === 'connecting') {
+        markSessionDisconnected(session.id, '会话输出流已关闭，请重连当前 SSH 会话')
+      }
     })
   }
 
@@ -2178,44 +2253,89 @@ export function App() {
   }
 
   const reconnectSession = async (session: SessionRecord) => {
-    const response = await apiFetch(`/sessions/${session.id}/reconnect`, {
-      method: 'POST',
-    })
-    if (!response.ok) {
-      const detail = await response.text()
-      const message = detail.trim() || `重连失败：${response.status}`
-      setErrorMessage(message)
-      appendSessionTerminalOutput(session.id, `\r\nERROR: ${message}\r\n`)
-      setSessions((current) =>
-        current.map((item) => (item.id === session.id ? { ...item, status: 'error', lastError: message } : item)),
-      )
-      return
-    }
-
-    const data = (await response.json()) as SessionReconnectResponse
     closeSessionStream(session.id)
-    const reconnectOutput = `\r\n正在重新连接 ${session.hostName}...\r\nSession: ${data.session.id}\r\n`
-    const previousCache = terminalCachesRef.current[session.id] ?? emptyTerminalCache()
-    const nextCache = appendTerminalCache(previousCache, reconnectOutput, sessionSettingsRef.current.terminalRetainedLines)
+    const reconnectOutput = `\r\n正在重新连接 ${session.hostName}...\r\n`
+    const previousCache = appendTerminalCache(
+      terminalCachesRef.current[session.id] ?? emptyTerminalCache(),
+      reconnectOutput,
+      sessionSettingsRef.current.terminalRetainedLines,
+    )
     setTerminalCaches((current) => {
-      const next = { ...current }
-      delete next[session.id]
-      next[data.session.id] = nextCache
+      const next = { ...current, [session.id]: previousCache }
       terminalCachesRef.current = next
       return next
     })
-    setSessions((current) => current.map((item) => (item.id === session.id ? data.session : item)))
-    setActiveSession(data.session.id)
-    commandBufferRef.current = nextCache.commandDraft
-    replaceTerminalWithCache(data.session.id)
-    openSessionStream(data.session, true)
-    fitAddonRef.current?.fit()
-    syncTerminalSize(data.session.id)
+    const connectingSessions = sessionsRef.current.map((item) =>
+      item.id === session.id ? { ...item, status: 'connecting' as const, lastError: '' } : item,
+    )
+    sessionsRef.current = connectingSessions
+    setSessions(connectingSessions)
+
+    try {
+      let response = await apiFetch(`/sessions/${session.id}/reconnect`, {
+        method: 'POST',
+      })
+      if (response.status === 404) {
+        appendLog('warn', 'ui.session', 'session missing in core, creating replacement session', {
+          sessionID: session.id,
+          hostID: session.hostId,
+        })
+        response = await apiFetch('/sessions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ hostId: session.hostId } satisfies SessionOpenRequest),
+        })
+      }
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail.trim() || `重连失败：${response.status}`)
+      }
+
+      const data = (await response.json()) as SessionReconnectResponse | SessionOpenResponse
+      const nextSession = data.session
+      const connectedOutput = `Session: ${nextSession.id}\r\n正在连接会话输出流...\r\n`
+      const nextCache = appendTerminalCache(
+        terminalCachesRef.current[session.id] ?? previousCache,
+        connectedOutput,
+        sessionSettingsRef.current.terminalRetainedLines,
+      )
+      setTerminalCaches((current) => {
+        const next = { ...current }
+        delete next[session.id]
+        next[nextSession.id] = nextCache
+        terminalCachesRef.current = next
+        return next
+      })
+      const nextSessions = sessionsRef.current.map((item) => (item.id === session.id ? nextSession : item))
+      sessionsRef.current = nextSessions
+      setSessions(nextSessions)
+      setActiveSession(nextSession.id)
+      commandBufferRef.current = nextCache.commandDraft
+      replaceTerminalWithCache(nextSession.id)
+      openSessionStream(nextSession, true)
+      fitAddonRef.current?.fit()
+      syncTerminalSize(nextSession.id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '重连失败'
+      setErrorMessage(message)
+      appendSessionTerminalOutput(session.id, `\r\nERROR: ${message}\r\n`)
+      const nextSessions = sessionsRef.current.map((item) =>
+        item.id === session.id ? { ...item, status: 'error' as const, lastError: message } : item,
+      )
+      sessionsRef.current = nextSessions
+      setSessions(nextSessions)
+    }
   }
 
   const writeCommand = (command: string) => {
     xtermRef.current?.focus()
     if (activeSession) {
+      if (activeSession.status !== 'connected') {
+        setErrorMessage('当前 SSH 会话已断开，请点击重连后继续输入')
+        return
+      }
       const next = commandBufferRef.current + command
       commandBufferRef.current = next
       setSessionCommandDraft(activeSession.id, next)
