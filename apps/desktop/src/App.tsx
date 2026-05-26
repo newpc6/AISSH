@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -6,7 +6,17 @@ import { writeFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
-import { defaultKeymap, history as editorHistory, historyKeymap } from '@codemirror/commands'
+import {
+  defaultKeymap,
+  history as editorHistory,
+  historyKeymap,
+  indentLess,
+  indentMore,
+  redo,
+  selectAll,
+  toggleComment,
+  undo,
+} from '@codemirror/commands'
 import { indentOnInput, syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from '@codemirror/language'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
@@ -697,68 +707,90 @@ type CodeMirrorEditorProps = {
   onChange: (value: string) => void
 }
 
-function CodeMirrorEditor({ value, fileName, readOnly, onChange }: CodeMirrorEditorProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const viewRef = useRef<EditorView | null>(null)
-  const onChangeRef = useRef(onChange)
-  const language = useMemo(() => codeMirrorLanguage(fileName), [fileName])
-
-  useEffect(() => {
-    onChangeRef.current = onChange
-  }, [onChange])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) {
-      return undefined
-    }
-
-    const view = new EditorView({
-      parent: container,
-      state: EditorState.create({
-        doc: value,
-        extensions: [
-          lineNumbers(),
-          editorHistory(),
-          indentOnInput(),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          language,
-          EditorView.lineWrapping,
-          EditorView.editable.of(!readOnly),
-          EditorState.readOnly.of(readOnly),
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
-              onChangeRef.current(update.state.doc.toString())
-            }
-          }),
-        ],
-      }),
-    })
-    viewRef.current = view
-
-    return () => {
-      view.destroy()
-      viewRef.current = null
-    }
-  }, [fileName, language, readOnly])
-
-  useEffect(() => {
-    const view = viewRef.current
-    if (!view) {
-      return
-    }
-    const current = view.state.doc.toString()
-    if (current === value) {
-      return
-    }
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: value },
-    })
-  }, [value])
-
-  return <div className="codemirror-host" ref={containerRef} />
+type CodeMirrorEditorHandle = {
+  runCommand: (command: (view: EditorView) => boolean) => boolean
+  focus: () => void
 }
+
+const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEditorProps>(
+  function CodeMirrorEditor({ value, fileName, readOnly, onChange }, ref) {
+    const containerRef = useRef<HTMLDivElement | null>(null)
+    const viewRef = useRef<EditorView | null>(null)
+    const onChangeRef = useRef(onChange)
+    const language = useMemo(() => codeMirrorLanguage(fileName), [fileName])
+
+    useImperativeHandle(ref, () => ({
+      runCommand(command) {
+        const view = viewRef.current
+        if (!view) {
+          return false
+        }
+        const handled = command(view)
+        view.focus()
+        return handled
+      },
+      focus() {
+        viewRef.current?.focus()
+      },
+    }))
+
+    useEffect(() => {
+      onChangeRef.current = onChange
+    }, [onChange])
+
+    useEffect(() => {
+      const container = containerRef.current
+      if (!container) {
+        return undefined
+      }
+
+      const view = new EditorView({
+        parent: container,
+        state: EditorState.create({
+          doc: value,
+          extensions: [
+            lineNumbers(),
+            editorHistory(),
+            indentOnInput(),
+            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            keymap.of([...defaultKeymap, ...historyKeymap]),
+            language,
+            EditorView.lineWrapping,
+            EditorView.editable.of(!readOnly),
+            EditorState.readOnly.of(readOnly),
+            EditorView.updateListener.of((update) => {
+              if (update.docChanged) {
+                onChangeRef.current(update.state.doc.toString())
+              }
+            }),
+          ],
+        }),
+      })
+      viewRef.current = view
+
+      return () => {
+        view.destroy()
+        viewRef.current = null
+      }
+    }, [fileName, language, readOnly])
+
+    useEffect(() => {
+      const view = viewRef.current
+      if (!view) {
+        return
+      }
+      const current = view.state.doc.toString()
+      if (current === value) {
+        return
+      }
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: value },
+      })
+    }, [value])
+
+    return <div className="codemirror-host" ref={containerRef} />
+  },
+)
 
 function truncateErrorDetail(value: string) {
   const trimmed = value.trim()
@@ -855,6 +887,7 @@ export function App() {
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const codeMirrorRef = useRef<CodeMirrorEditorHandle | null>(null)
   const eventSourcesRef = useRef<Record<string, EventSource>>({})
   const commandBufferRef = useRef('')
   const activeSessionIdRef = useRef('')
@@ -3100,11 +3133,30 @@ export function App() {
         setErrorMessage('当前 SSH 会话已断开，请点击重连后继续输入')
         return
       }
+      setActiveViewId(`session:${activeSession.id}`)
       const next = commandBufferRef.current + command
       commandBufferRef.current = next
       setSessionCommandDraft(activeSession.id, next)
       queueSessionInput(activeSession.id, command)
     }
+  }
+
+  const executeCommand = (command: string) => {
+    const normalized = stripTerminalControlSequences(command).trim()
+    if (!normalized || !activeSession) {
+      return
+    }
+    if (activeSession.status !== 'connected') {
+      setErrorMessage('当前 SSH 会话已断开，请点击重连后继续执行')
+      return
+    }
+    clearAIPrediction()
+    xtermRef.current?.focus()
+    setActiveViewId(`session:${activeSession.id}`)
+    const input = `${commandBufferRef.current ? '\u0015' : ''}${normalized}\r`
+    commandBufferRef.current = ''
+    setSessionCommandDraft(activeSession.id, '')
+    queueSessionInput(activeSession.id, input)
   }
 
   const applyPrediction = () => {
@@ -3151,6 +3203,24 @@ export function App() {
             <div className="codemirror-toolbar">
               <span>编辑模式</span>
               <div className="codemirror-toolbar-actions">
+                <button type="button" title={`撤销 ${tab.name} 的上一步编辑`} onClick={() => codeMirrorRef.current?.runCommand(undo)}>
+                  撤销
+                </button>
+                <button type="button" title={`重做 ${tab.name} 的编辑`} onClick={() => codeMirrorRef.current?.runCommand(redo)}>
+                  重做
+                </button>
+                <button type="button" title={`全选 ${tab.name} 内容`} onClick={() => codeMirrorRef.current?.runCommand(selectAll)}>
+                  全选
+                </button>
+                <button type="button" title={`增加 ${tab.name} 选中行缩进`} onClick={() => codeMirrorRef.current?.runCommand(indentMore)}>
+                  缩进
+                </button>
+                <button type="button" title={`减少 ${tab.name} 选中行缩进`} onClick={() => codeMirrorRef.current?.runCommand(indentLess)}>
+                  反缩进
+                </button>
+                <button type="button" title={`切换 ${tab.name} 选中内容注释`} onClick={() => codeMirrorRef.current?.runCommand(toggleComment)}>
+                  注释
+                </button>
                 <button type="button" title={`格式化 ${tab.name}`} onClick={() => formatFilePreviewDraft(tab)}>
                   格式化
                 </button>
@@ -3165,6 +3235,7 @@ export function App() {
           ) : null}
           <CodeMirrorEditor
             fileName={tab.name}
+            ref={codeMirrorRef}
             readOnly={!tab.isEditing}
             value={draft}
             onChange={(value) => updateFilePreviewDraft(tab.id, value)}
@@ -4141,6 +4212,15 @@ export function App() {
                       >
                         {favorited ? '★' : '☆'}
                       </button>
+                      <button
+                        className="execute-command-button"
+                        disabled={!activeSession || activeSession.status !== 'connected'}
+                        type="button"
+                        title={`执行 AI 预测命令：${command}`}
+                        onClick={() => executeCommand(command)}
+                      >
+                        ↵
+                      </button>
                     </div>
                   )
                 })}
@@ -4172,6 +4252,15 @@ export function App() {
                           onClick={() => toggleFavoriteCommand(command)}
                         >
                           {favorited ? '★' : '☆'}
+                        </button>
+                        <button
+                          className="execute-command-button"
+                          disabled={!activeSession || activeSession.status !== 'connected'}
+                          type="button"
+                          title={`执行历史命令：${command}`}
+                          onClick={() => executeCommand(command)}
+                        >
+                          ↵
                         </button>
                       </div>
                     )
@@ -4207,6 +4296,15 @@ export function App() {
                         onClick={() => writeCommand(command)}
                       >
                         {command}
+                      </button>
+                      <button
+                        className="execute-command-button"
+                        disabled={!activeSession || activeSession.status !== 'connected'}
+                        type="button"
+                        title={`执行收藏命令：${command}`}
+                        onClick={() => executeCommand(command)}
+                      >
+                        ↵
                       </button>
                       <div className="favorite-order-buttons">
                         <button

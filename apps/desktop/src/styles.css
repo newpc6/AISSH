@@ -965,8 +965,9 @@ button {
   min-height: 38px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 0 10px;
+  padding: 5px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: #0d1520;
 }
@@ -980,6 +981,8 @@ button {
   margin-left: auto;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -1595,13 +1598,13 @@ button {
 
 .command-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
   align-items: center;
   overflow: hidden;
 }
 
 .favorite-list .command-row {
-  grid-template-columns: 30px minmax(0, 1fr) 24px 30px;
+  grid-template-columns: 30px minmax(0, 1fr) 32px 24px 30px;
 }
 
 .favorite-command-index {
@@ -1701,7 +1704,8 @@ button {
   color: #67e8f9;
 }
 
-.favorite-command-button {
+.favorite-command-button,
+.execute-command-button {
   width: 100%;
   height: 100%;
   border: 0;
@@ -1711,6 +1715,11 @@ button {
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
+}
+
+.execute-command-button {
+  color: #67e8f9;
+  font-size: 15px;
 }
 
 .favorite-order-buttons {
@@ -1735,10 +1744,21 @@ button {
   background: transparent;
 }
 
+.execute-command-button:disabled {
+  color: #475569;
+  cursor: not-allowed;
+  background: transparent;
+}
+
 .favorite-command-button:hover,
 .favorite-command-button.active {
   color: #facc15;
   background: rgba(250, 204, 21, 0.1);
+}
+
+.execute-command-button:hover {
+  color: #cffafe;
+  background: rgba(34, 211, 238, 0.12);
 }
 
 .favorite-command-button.danger {
