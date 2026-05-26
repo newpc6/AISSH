@@ -1110,6 +1110,7 @@ func copyOutput(session *terminalSession, reader io.Reader) {
 			if cwd != "" {
 				session.setCWD(cwd)
 				session.send(terminalEvent{Type: "cwd", Data: cwd})
+				session.send(terminalEvent{Type: "prompt", Data: cwd})
 			}
 			tail = outputTail(combined)
 		}

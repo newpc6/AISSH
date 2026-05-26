@@ -73,6 +73,7 @@ export interface AppSettings {
   aiPredictionCount: number
   aiTerminalContextLimit: number
   aiCommandHistoryLimit: number
+  agentCommandTimeoutSeconds: number
 }
 
 export interface HostRecord {
@@ -230,7 +231,7 @@ export type AIAssistTask = 'explain_error' | 'generate_command' | 'summarize_log
 export type AIAgentMode = 'review' | 'auto'
 export type AIRiskLevel = 'low' | 'medium' | 'high'
 export type AIAgentStatus = 'command' | 'done' | 'question'
-export type AIAgentStepStatus = 'pending' | 'approved' | 'executed' | 'skipped' | 'failed'
+export type AIAgentStepStatus = 'pending' | 'approved' | 'running' | 'executed' | 'skipped' | 'failed'
 
 export interface AIAgentStep {
   command: string
@@ -273,7 +274,7 @@ export interface AIAssistResponse {
   summary?: string
 }
 
-export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd' | 'command'
+export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd' | 'command' | 'prompt'
 
 export interface TerminalEvent {
   type: TerminalEventType

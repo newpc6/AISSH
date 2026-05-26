@@ -185,6 +185,13 @@ type AIAgentPlanStep = AIAgentStep & {
   id: string
 }
 
+type AgentCommandWaiter = {
+  stepId: string
+  sessionId: string
+  beforeContext: string
+  timeoutId: number
+}
+
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
@@ -258,6 +265,7 @@ const defaultSettings: AppSettings = {
   aiPredictionCount: 3,
   aiTerminalContextLimit: 5000,
   aiCommandHistoryLimit: 20,
+  agentCommandTimeoutSeconds: 120,
 }
 
 const emptySetupForm = {
@@ -606,6 +614,10 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
     aiCommandHistoryLimit: Math.max(
       1,
       Math.min(200, Number(value.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit) || 20),
+    ),
+    agentCommandTimeoutSeconds: Math.max(
+      10,
+      Math.min(1800, Number(value.agentCommandTimeoutSeconds ?? defaultSettings.agentCommandTimeoutSeconds) || 120),
     ),
   }
 }
@@ -1047,6 +1059,7 @@ export function App() {
   const agentStepsRef = useRef<AIAgentPlanStep[]>([])
   const agentGoalRef = useRef('')
   const agentModeRef = useRef<AIAgentMode>('review')
+  const agentWaiterRef = useRef<AgentCommandWaiter | null>(null)
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
@@ -2323,6 +2336,7 @@ export function App() {
       aiPredictionCount: normalized.aiPredictionCount,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
+      agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
     })
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
   }
@@ -3454,6 +3468,7 @@ export function App() {
 
   const stopAgentTask = () => {
     agentRunningRef.current = false
+    clearAgentWaiter()
     setAgentState('idle')
     setAgentMessage('Agent 已停止')
   }
@@ -3638,6 +3653,10 @@ export function App() {
       appendLog('error', 'ui.sse', messageText, { sessionID: session.id, url: streamUrl })
       source.close()
       delete eventSourcesRef.current[session.id]
+      if (agentWaiterRef.current?.sessionId === session.id) {
+        const waiter = agentWaiterRef.current
+        finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true)
+      }
       markSessionDisconnected(session.id, messageText)
     }
 
@@ -3670,12 +3689,20 @@ export function App() {
         }
       }
 
+      if (payload.type === 'prompt') {
+        handleAgentPrompt(session.id)
+      }
+
       if (payload.type === 'command' && payload.data) {
         recordCommand(payload.data)
       }
 
       if (payload.type === 'error') {
         const messageText = payload.data ?? '会话发生错误'
+        if (agentWaiterRef.current?.sessionId === session.id) {
+          const waiter = agentWaiterRef.current
+          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true)
+        }
         setErrorMessage(messageText)
         const nextSessions = sessionsRef.current.map((item) =>
           item.id === session.id ? { ...item, status: 'error' as const, lastError: messageText } : item,
@@ -3694,6 +3721,10 @@ export function App() {
       appendLog('debug', 'ui.sse', 'session stream closed', { sessionID: session.id })
       const latestSession = sessionsRef.current.find((item) => item.id === session.id)
       if (latestSession?.status === 'connected' || latestSession?.status === 'connecting') {
+        if (agentWaiterRef.current?.sessionId === session.id) {
+          const waiter = agentWaiterRef.current
+          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true)
+        }
         markSessionDisconnected(session.id, '会话输出流已关闭，请重连当前 SSH 会话')
       }
     })
@@ -3921,11 +3952,55 @@ export function App() {
   }
 
   const updateAgentStep = (stepId: string, patch: Partial<AIAgentPlanStep>) => {
-    setAgentSteps((current) => {
-      const next = current.map((step) => (step.id === stepId ? { ...step, ...patch } : step))
-      agentStepsRef.current = next
-      return next
+    const next = agentStepsRef.current.map((step) => (step.id === stepId ? { ...step, ...patch } : step))
+    agentStepsRef.current = next
+    setAgentSteps(next)
+  }
+
+  const finishAgentStep = (stepId: string, sessionId: string, beforeContext: string, timedOut = false) => {
+    if (agentWaiterRef.current?.stepId === stepId) {
+      window.clearTimeout(agentWaiterRef.current.timeoutId)
+      agentWaiterRef.current = null
+    }
+    const latestContext = terminalContextTail(terminalCachesRef.current[sessionId], 20000)
+    const output = latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext
+    updateAgentStep(stepId, {
+      status: timedOut ? 'failed' : 'executed',
+      output: output.trim().slice(-8000),
     })
+    appendLog(timedOut ? 'warn' : 'info', 'ui.agent', timedOut ? 'agent command wait timeout' : 'agent command completed', {
+      stepID: stepId,
+      sessionID: sessionId,
+      outputChars: output.length,
+    })
+    if (timedOut) {
+      agentRunningRef.current = false
+      setAgentState('idle')
+      setAgentMessage('命令等待超时，Agent 已暂停。请确认终端状态后点击继续。')
+      return
+    }
+    if (agentRunningRef.current) {
+      setAgentMessage('命令已完成，正在规划下一步...')
+      void requestAgentNextStep(agentStepsRef.current)
+    } else {
+      setAgentState('success')
+      setAgentMessage('命令已完成')
+    }
+  }
+
+  const clearAgentWaiter = () => {
+    if (agentWaiterRef.current) {
+      window.clearTimeout(agentWaiterRef.current.timeoutId)
+      agentWaiterRef.current = null
+    }
+  }
+
+  const handleAgentPrompt = (sessionId: string) => {
+    const waiter = agentWaiterRef.current
+    if (!waiter || waiter.sessionId !== sessionId) {
+      return
+    }
+    finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext)
   }
 
   const executeAgentStep = async (stepId: string, fromAuto = false, confirmed = false) => {
@@ -3941,16 +4016,25 @@ export function App() {
       return
     }
     const beforeContext = terminalContextTail(terminalCachesRef.current[activeSession.id], 12000)
-    updateAgentStep(step.id, { status: 'executed', riskLevel })
-    executeCommand(step.command)
-    window.setTimeout(() => {
-      const latestContext = terminalContextTail(terminalCachesRef.current[activeSession.id], 16000)
-      const output = latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext
-      updateAgentStep(step.id, { output: output.trim().slice(-8000) })
-      if (agentRunningRef.current) {
-        void requestAgentNextStep(agentStepsRef.current)
+    const sessionId = activeSession.id
+    const timeoutMs = normalizeAppSettings(sessionSettingsRef.current).agentCommandTimeoutSeconds * 1000
+    clearAgentWaiter()
+    updateAgentStep(step.id, { status: 'running', riskLevel })
+    setAgentState('loading')
+    setAgentMessage('命令执行中，等待远端命令完成...')
+    appendLog('info', 'ui.agent', 'agent command started', {
+      stepID: step.id,
+      sessionID: sessionId,
+      riskLevel,
+      timeoutMs,
+    })
+    const timeoutId = window.setTimeout(() => {
+      if (agentWaiterRef.current?.stepId === step.id) {
+        finishAgentStep(step.id, sessionId, beforeContext, true)
       }
-    }, 1800)
+    }, timeoutMs)
+    agentWaiterRef.current = { stepId: step.id, sessionId, beforeContext, timeoutId }
+    executeCommand(step.command)
   }
 
   const applyPrediction = () => {
@@ -5221,9 +5305,15 @@ export function App() {
                           <code>{step.command}</code>
                           {step.explanation ? <p>{step.explanation}</p> : null}
                           {step.riskReason ? <small>{step.riskReason}</small> : null}
+                          {step.output ? <pre className="agent-step-output">{step.output}</pre> : null}
                           <div>
                             <button
-                              disabled={step.status === 'executed' || !activeSession || activeSession.status !== 'connected'}
+                              disabled={
+                                step.status === 'executed' ||
+                                step.status === 'running' ||
+                                !activeSession ||
+                                activeSession.status !== 'connected'
+                              }
                               type="button"
                               title={`执行 Agent 命令：${step.command}`}
                               onClick={() => void executeAgentStep(step.id)}
@@ -5889,6 +5979,21 @@ export function App() {
                         />
                       </label>
                     </div>
+                    <label>
+                      <span>Agent 命令等待超时（秒）</span>
+                      <input
+                        min="10"
+                        max="1800"
+                        type="number"
+                        value={settings.agentCommandTimeoutSeconds ?? defaultSettings.agentCommandTimeoutSeconds}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            agentCommandTimeoutSeconds: Number(event.target.value) || 120,
+                          }))
+                        }
+                      />
+                    </label>
                     <label>
                       <span>大模型地址</span>
                       <input

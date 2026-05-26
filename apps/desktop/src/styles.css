@@ -1392,6 +1392,19 @@ button {
   overflow-wrap: anywhere;
 }
 
+.agent-step-output {
+  max-height: 120px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: rgba(3, 7, 18, 0.64);
+  color: #9fb2c8;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .terminal-ghost-prediction {
   position: absolute;
   z-index: 5;
