@@ -300,20 +300,22 @@ func parsePredictedCommands(content string, limit int) []string {
 	if limit <= 0 {
 		limit = 3
 	}
+	content = strings.TrimSpace(content)
 
-	var structured struct {
-		Commands []string `json:"commands"`
-	}
-	if err := json.Unmarshal([]byte(content), &structured); err == nil && len(structured.Commands) > 0 {
-		return cleanPredictedCommands(structured.Commands, limit)
+	if commands := parseStructuredPredictedCommands(content, limit); len(commands) > 0 {
+		return commands
 	}
 
 	start := strings.Index(content, "{")
 	end := strings.LastIndex(content, "}")
 	if start >= 0 && end > start {
-		if err := json.Unmarshal([]byte(content[start:end+1]), &structured); err == nil && len(structured.Commands) > 0 {
-			return cleanPredictedCommands(structured.Commands, limit)
+		if commands := parseStructuredPredictedCommands(content[start:end+1], limit); len(commands) > 0 {
+			return commands
 		}
+	}
+
+	if looksLikeBrokenStructuredPrediction(content) {
+		return nil
 	}
 
 	lines := strings.Split(content, "\n")
@@ -321,11 +323,33 @@ func parsePredictedCommands(content string, limit int) []string {
 	for _, line := range lines {
 		line = numberedCommandPattern.ReplaceAllString(line, "")
 		line = strings.Trim(strings.TrimSpace(line), "`\"'")
-		if line != "" {
+		if line != "" && !looksLikeBrokenStructuredPrediction(line) {
 			commands = append(commands, line)
 		}
 	}
 	return cleanPredictedCommands(commands, limit)
+}
+
+func parseStructuredPredictedCommands(content string, limit int) []string {
+	var structured struct {
+		Commands []string `json:"commands"`
+	}
+	if err := json.Unmarshal([]byte(content), &structured); err == nil && len(structured.Commands) > 0 {
+		return cleanPredictedCommands(structured.Commands, limit)
+	}
+
+	var array []string
+	if err := json.Unmarshal([]byte(content), &array); err == nil && len(array) > 0 {
+		return cleanPredictedCommands(array, limit)
+	}
+
+	return nil
+}
+
+func looksLikeBrokenStructuredPrediction(content string) bool {
+	trimmed := strings.TrimSpace(strings.Trim(content, "`"))
+	lower := strings.ToLower(trimmed)
+	return strings.HasPrefix(trimmed, "{") || strings.Contains(lower, `"commands"`)
 }
 
 func cleanPredictedCommands(values []string, limit int) []string {
