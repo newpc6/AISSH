@@ -4,7 +4,6 @@ import { FitAddon } from '@xterm/addon-fit'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
-import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import {
@@ -155,23 +154,10 @@ type AppErrorNotice = {
   status?: number
 }
 
-type DragPosition = {
-  x: number
-  y: number
-}
-
 type LocalUploadFile = {
   path: string
   name: string
   data: number[] | ArrayBuffer | Uint8Array
-}
-
-type RemoteFileDragState = {
-  entry: FileEntry
-  pointerId: number
-  startX: number
-  startY: number
-  triggered: boolean
 }
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
@@ -286,6 +272,11 @@ function resolveApiUrl(path: string) {
     return `${CORE_API_BASE}${requestPath}`
   }
   return `${CORE_API_FALLBACK_BASE}${requestPath}`
+}
+
+function appendQueryParam(url: string, name: string, value: string) {
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}${encodeURIComponent(name)}=${encodeURIComponent(value)}`
 }
 
 function formatBytes(size: number) {
@@ -838,14 +829,6 @@ function normalizeRequestPath(path: string) {
   return path.split('?')[0]
 }
 
-function isPointInsideElement(element: HTMLElement, position: DragPosition) {
-  const rect = element.getBoundingClientRect()
-  const pixelRatio = window.devicePixelRatio || 1
-  const x = position.x / pixelRatio
-  const y = position.y / pixelRatio
-  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
-}
-
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -921,8 +904,6 @@ export function App() {
   const [metricHistory, setMetricHistory] = useState<MetricSample[]>([])
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const fileBrowserRef = useRef<HTMLDivElement | null>(null)
-  const uploadLocalPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => undefined)
-  const remoteFileDragRef = useRef<RemoteFileDragState | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const codeMirrorRef = useRef<CodeMirrorEditorHandle | null>(null)
@@ -952,6 +933,7 @@ export function App() {
   const filePathRef = useRef('.')
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
+  const desktopTokenRef = useRef('')
 
   const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
     const entry: LogEntry = {
@@ -1234,7 +1216,8 @@ export function App() {
     const primaryUrl = resolveApiUrl(requestPath)
     const headers = new Headers(init?.headers)
     if (isTauriRuntime) {
-      const token = await invoke<string>('desktop_login_token').catch(() => '')
+      const token = desktopTokenRef.current || await invoke<string>('desktop_login_token').catch(() => '')
+      desktopTokenRef.current = token
       if (token && !headers.has('X-AI-SSH-Desktop-Token')) {
         headers.set('X-AI-SSH-Desktop-Token', token)
       }
@@ -1282,6 +1265,7 @@ export function App() {
       }
       const status = (await response.json()) as AuthStatusResponse
       const initialized = status.initialized ?? true
+      const shouldBypassDesktopLogin = isTauriRuntime && initialized && status.enabled && !status.desktopLoginRequired
       setAuthInitialized(initialized)
       setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
       setSetupForm((current) => ({
@@ -1296,7 +1280,8 @@ export function App() {
         return
       }
       if (status.enabled && !status.authenticated && isTauriRuntime && !status.desktopLoginRequired) {
-        const token = await invoke<string>('desktop_login_token')
+        const token = desktopTokenRef.current || await invoke<string>('desktop_login_token').catch(() => '')
+        desktopTokenRef.current = token
         if (token) {
           const desktopResponse = await apiFetch('/auth/desktop', {
             method: 'POST',
@@ -1312,6 +1297,12 @@ export function App() {
             return
           }
         }
+      }
+      if (shouldBypassDesktopLogin) {
+        setAuthRequired(false)
+        setAuthState('success')
+        setLoginError('')
+        return
       }
       setAuthRequired(status.enabled && !status.authenticated)
       setAuthState(status.enabled && !status.authenticated ? 'idle' : 'success')
@@ -1353,8 +1344,9 @@ export function App() {
       const status = (await response.json()) as AuthStatusResponse
       setAuthInitialized(status.initialized ?? true)
       setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
-      setAuthRequired(status.enabled && !status.authenticated)
-      setAuthState(status.enabled && !status.authenticated ? 'idle' : 'success')
+      const shouldBypassDesktopLogin = isTauriRuntime && status.enabled && !status.desktopLoginRequired
+      setAuthRequired(status.enabled && !status.authenticated && !shouldBypassDesktopLogin)
+      setAuthState(status.enabled && !status.authenticated && !shouldBypassDesktopLogin ? 'idle' : 'success')
       setLoginForm((current) => ({ ...current, username: payload.username, password: '' }))
       setSetupForm({ ...emptySetupForm, username: payload.username, desktopLoginRequired: Boolean(status.desktopLoginRequired) })
       setShowSetupPassword(false)
@@ -1494,6 +1486,17 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    if (!isTauriRuntime) {
+      return
+    }
+    void invoke<string>('desktop_login_token')
+      .then((token) => {
+        desktopTokenRef.current = token
+      })
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
     if (authRequired || !terminalRef.current || xtermRef.current) {
       return undefined
     }
@@ -1578,7 +1581,8 @@ export function App() {
         const status = (await authResponse.json()) as AuthStatusResponse
         setAuthInitialized(status.initialized ?? true)
         setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
-        if (!status.initialized || (status.enabled && !status.authenticated)) {
+        const canEnterDesktop = isTauriRuntime && (status.initialized ?? true) && status.enabled && !status.desktopLoginRequired
+        if (!status.initialized || (status.enabled && !status.authenticated && !canEnterDesktop)) {
           return
         }
       }
@@ -1701,48 +1705,6 @@ export function App() {
   useEffect(() => {
     terminalCachesRef.current = terminalCaches
   }, [terminalCaches])
-
-  useEffect(() => {
-    if (!isTauriRuntime) {
-      return undefined
-    }
-
-    let unlisten: (() => void) | undefined
-    const setupDragDrop = async () => {
-      try {
-        unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-          const payload = event.payload
-          if (payload.type === 'leave') {
-            setIsFileDropActive(false)
-            return
-          }
-
-          const target = fileBrowserRef.current
-          const canDropToFileBrowser =
-            leftModeRef.current === 'files' && Boolean(target) && isPointInsideElement(target as HTMLElement, payload.position)
-          if (payload.type === 'enter' || payload.type === 'over') {
-            setIsFileDropActive(canDropToFileBrowser)
-            return
-          }
-
-          setIsFileDropActive(false)
-          if (payload.type === 'drop' && canDropToFileBrowser) {
-            void uploadLocalPathsRef.current(payload.paths)
-          }
-        })
-      } catch (error) {
-        appendLog('warn', 'ui.files', 'tauri drag drop listener failed', {
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-
-    void setupDragDrop()
-    return () => {
-      unlisten?.()
-      setIsFileDropActive(false)
-    }
-  }, [])
 
   useEffect(() => {
     filePreviewTabsRef.current = filePreviewTabs
@@ -2660,6 +2622,30 @@ export function App() {
     }
   }
 
+  const remoteFileDownloadUrl = (entry: FileEntry) => {
+    const hostId = activeSession?.hostId ?? selectedHostId
+    let url = resolveApiUrl(`/files/${hostId}?download=1&path=${encodeURIComponent(entry.path)}`)
+    if (isTauriRuntime) {
+      const token = desktopTokenRef.current
+      if (token) {
+        url = appendQueryParam(url, 'desktopToken', token)
+      }
+    }
+    return url
+  }
+
+  const setupRemoteFileDrag = (entry: FileEntry, event: React.DragEvent<HTMLButtonElement>) => {
+    if (entry.type !== 'file') {
+      return
+    }
+    const url = remoteFileDownloadUrl(entry)
+    event.dataTransfer.clearData()
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('text/uri-list', url)
+    event.dataTransfer.setData('text/plain', url)
+    event.dataTransfer.setData('DownloadURL', `application/octet-stream:${entry.name}:${url}`)
+  }
+
   const chooseUploadFiles = async () => {
     if (!isTauriRuntime) {
       uploadFileRef.current?.click()
@@ -2683,45 +2669,6 @@ export function App() {
       })
     }
   }
-
-  const startRemoteFileDrag = (entry: FileEntry, event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!isTauriRuntime || entry.type !== 'file' || event.button !== 0) {
-      return
-    }
-    remoteFileDragRef.current = {
-      entry,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      triggered: false,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const trackRemoteFileDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const dragState = remoteFileDragRef.current
-    if (!dragState || dragState.pointerId !== event.pointerId || dragState.triggered) {
-      return
-    }
-    const movedDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY)
-    if (movedDistance < 12) {
-      return
-    }
-    const hoverTarget = document.elementFromPoint(event.clientX, event.clientY)
-    if (hoverTarget && fileBrowserRef.current?.contains(hoverTarget)) {
-      return
-    }
-    remoteFileDragRef.current = { ...dragState, triggered: true }
-    void downloadFile(dragState.entry)
-  }
-
-  const finishRemoteFileDrag = (pointerId: number) => {
-    if (remoteFileDragRef.current?.pointerId === pointerId) {
-      remoteFileDragRef.current = null
-    }
-  }
-
-  uploadLocalPathsRef.current = uploadLocalPaths
 
   const loadServerMetrics = async () => {
     const hostId = activeSession?.hostId
@@ -3996,7 +3943,7 @@ export function App() {
                   {fileEntries.map((entry) => (
                     <button
                       key={entry.path}
-                      draggable={!isTauriRuntime && entry.type === 'file'}
+                      draggable={entry.type === 'file'}
                       type="button"
                       title={entry.type === 'directory' ? '双击进入目录' : '单击打开预览，右键下载，拖出快速下载'}
                       onClick={() => {
@@ -4005,14 +3952,7 @@ export function App() {
                         }
                       }}
                       onDragStart={(event) => {
-                        if (entry.type === 'file') {
-                          event.dataTransfer.effectAllowed = 'copy'
-                          event.dataTransfer.setData(
-                            'text/uri-list',
-                            resolveApiUrl(`/files/${activeSession?.hostId ?? selectedHostId}?download=1&path=${encodeURIComponent(entry.path)}`),
-                          )
-                          event.dataTransfer.setData('DownloadURL', `application/octet-stream:${entry.name}:${resolveApiUrl(`/files/${activeSession?.hostId ?? selectedHostId}?download=1&path=${encodeURIComponent(entry.path)}`)}`)
-                        }
+                        setupRemoteFileDrag(entry, event)
                       }}
                       onDoubleClick={() => {
                         if (entry.type === 'directory') {
@@ -4027,10 +3967,6 @@ export function App() {
                           void downloadFile(entry)
                         }
                       }}
-                      onPointerCancel={(event) => finishRemoteFileDrag(event.pointerId)}
-                      onPointerDown={(event) => startRemoteFileDrag(entry, event)}
-                      onPointerMove={trackRemoteFileDrag}
-                      onPointerUp={(event) => finishRemoteFileDrag(event.pointerId)}
                     >
                       <span>{entry.type === 'directory' ? '▸ ' : ''}{entry.name}</span>
                       <span>{entry.type === 'directory' ? '-' : formatBytes(entry.size)}</span>

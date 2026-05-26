@@ -303,6 +303,10 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		switch r.Method {
 		case http.MethodGet:
 			if r.URL.Query().Get("download") == "1" {
+				if !authenticator.requestAuthenticated(r) {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+					return
+				}
 				if err := downloadRemoteFile(host, remotePath, w); err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 				}

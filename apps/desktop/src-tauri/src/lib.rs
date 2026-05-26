@@ -9,7 +9,7 @@ struct LocalUploadFile {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let desktop_token = desktop_token();
+    let desktop_token = persistent_desktop_token();
     std::env::set_var("AI_SSH_DESKTOP_TOKEN", &desktop_token);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -92,6 +92,39 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
     }
     command.spawn().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn persistent_desktop_token() -> String {
+    if let Some(token) = read_persistent_desktop_token() {
+        return token;
+    }
+    let token = desktop_token();
+    let _ = write_persistent_desktop_token(&token);
+    token
+}
+
+fn read_persistent_desktop_token() -> Option<String> {
+    let path = desktop_token_path()?;
+    let token = std::fs::read_to_string(path).ok()?.trim().to_string();
+    if token.is_empty() {
+        return None;
+    }
+    Some(token)
+}
+
+fn write_persistent_desktop_token(token: &str) -> Result<(), String> {
+    let path = desktop_token_path().ok_or_else(|| "无法解析桌面 token 存储路径".to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    std::fs::write(path, token).map_err(|error| error.to_string())
+}
+
+fn desktop_token_path() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))?;
+    Some(base.join("ai-ssh").join("desktop-token"))
 }
 
 fn desktop_token() -> String {

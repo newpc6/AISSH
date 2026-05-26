@@ -393,7 +393,19 @@ var errWebAuthDesktopTokenInvalid = &webAuthError{message: "desktop token invali
 
 func (a *webAuthenticator) desktopAuthenticated(r *http.Request) bool {
 	token := os.Getenv("AI_SSH_DESKTOP_TOKEN")
-	return token != "" && subtle.ConstantTimeCompare(hashString(r.Header.Get("X-AI-SSH-Desktop-Token")), hashString(token)) == 1
+	requestToken := r.Header.Get("X-AI-SSH-Desktop-Token")
+	if requestToken == "" && isLocalRequest(r) {
+		requestToken = r.URL.Query().Get("desktopToken")
+	}
+	return token != "" && subtle.ConstantTimeCompare(hashString(requestToken), hashString(token)) == 1
+}
+
+func isLocalRequest(r *http.Request) bool {
+	host := r.RemoteAddr
+	if strings.HasPrefix(host, "[") {
+		return strings.HasPrefix(host, "[::1]:")
+	}
+	return strings.HasPrefix(host, "127.0.0.1:") || strings.HasPrefix(host, "[::1]:") || strings.HasPrefix(host, "localhost:")
 }
 
 func (a *webAuthenticator) desktopRequestAllowed(r *http.Request) bool {

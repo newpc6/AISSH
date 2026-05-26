@@ -222,6 +222,42 @@ func TestDesktopLoginCanBeDisabledBySetting(t *testing.T) {
 	}
 }
 
+func TestDesktopDownloadTokenQueryIsLimitedToLocalRequests(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "1")
+	t.Setenv("AI_SSH_WEB_USER", "admin")
+	t.Setenv("AI_SSH_WEB_PASSWORD", "")
+	t.Setenv("AI_SSH_WEB_AUTH_PATH", filepath.Join(t.TempDir(), "web-auth.json"))
+	t.Setenv("AI_SSH_DESKTOP_TOKEN", "desktop-token")
+	authenticator := newWebAuthenticator(newAppLogger())
+
+	setupReq := httptest.NewRequest(http.MethodPost, "/api/auth/desktop-setup", bytes.NewBufferString(`{
+		"username":"admin",
+		"password":"secret",
+		"desktopLoginRequired":false
+	}`))
+	setupReq.RemoteAddr = "127.0.0.1:12345"
+	setupReq.Header.Set("X-AI-SSH-Desktop-Token", "desktop-token")
+	if err := authenticator.setupFromDesktop(httptest.NewRecorder(), setupReq, webAuthSetupRequest{
+		Username:             "admin",
+		Password:             "secret",
+		DesktopLoginRequired: false,
+	}); err != nil {
+		t.Fatalf("expected desktop setup to succeed: %v", err)
+	}
+
+	localReq := httptest.NewRequest(http.MethodGet, "/api/files/host?download=1&desktopToken=desktop-token", nil)
+	localReq.RemoteAddr = "127.0.0.1:23456"
+	if !authenticator.requestAuthenticated(localReq) {
+		t.Fatalf("expected local desktop token query to authenticate")
+	}
+
+	remoteReq := httptest.NewRequest(http.MethodGet, "/api/files/host?download=1&desktopToken=desktop-token", nil)
+	remoteReq.RemoteAddr = "192.168.1.20:23456"
+	if authenticator.requestAuthenticated(remoteReq) {
+		t.Fatalf("expected remote desktop token query to be rejected")
+	}
+}
+
 func TestCORSAllowsCredentialedRequests(t *testing.T) {
 	t.Setenv("AI_SSH_WEB_AUTH", "0")
 	srv := newServer("18555", newSessionManagerWithStores(
