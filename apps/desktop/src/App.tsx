@@ -3,6 +3,22 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
+import { EditorState } from '@codemirror/state'
+import { EditorView, keymap, lineNumbers } from '@codemirror/view'
+import { defaultKeymap, history as editorHistory, historyKeymap } from '@codemirror/commands'
+import { indentOnInput, syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from '@codemirror/language'
+import { json } from '@codemirror/lang-json'
+import { javascript } from '@codemirror/lang-javascript'
+import { css } from '@codemirror/lang-css'
+import { html } from '@codemirror/lang-html'
+import { markdown } from '@codemirror/lang-markdown'
+import { python } from '@codemirror/lang-python'
+import { sql } from '@codemirror/lang-sql'
+import { xml } from '@codemirror/lang-xml'
+import { yaml } from '@codemirror/lang-yaml'
+import { shell } from '@codemirror/legacy-modes/mode/shell'
+import { toml } from '@codemirror/legacy-modes/mode/toml'
+import { properties } from '@codemirror/legacy-modes/mode/properties'
 import '@xterm/xterm/css/xterm.css'
 import {
   type AIPredictionRequest,
@@ -86,6 +102,10 @@ type FilePreviewTab = {
   kind: FilePreviewKind
   status: FilePreviewStatus
   content?: string
+  draftContent?: string
+  isEditing?: boolean
+  saveState?: LoadState
+  saveMessage?: string
   objectUrl?: string
   error?: string
 }
@@ -274,6 +294,27 @@ function previewMimeType(entry: Pick<FileEntry, 'name'>, kind: FilePreviewKind) 
   return 'application/octet-stream'
 }
 
+function codeMirrorLanguage(name: string) {
+  const extension = fileExtension(name)
+  if (extension === 'json') return json()
+  if (extension === 'js' || extension === 'jsx' || extension === 'ts' || extension === 'tsx') {
+    return javascript({ jsx: true, typescript: extension === 'ts' || extension === 'tsx' })
+  }
+  if (extension === 'css') return css()
+  if (extension === 'html') return html()
+  if (extension === 'md') return markdown()
+  if (extension === 'py') return python()
+  if (extension === 'sql') return sql()
+  if (extension === 'xml') return xml()
+  if (extension === 'yaml' || extension === 'yml') return yaml()
+  if (extension === 'sh' || extension === 'bash') return StreamLanguage.define(shell)
+  if (extension === 'toml') return StreamLanguage.define(toml)
+  if (extension === 'ini' || extension === 'conf' || extension === 'properties' || extension === 'env') {
+    return StreamLanguage.define(properties)
+  }
+  return []
+}
+
 function formatMetricTime(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
@@ -301,6 +342,11 @@ function parentPath(path: string) {
   const parts = path.split('/').filter(Boolean)
   parts.pop()
   return parts.length === 0 ? '/' : `/${parts.join('/')}`
+}
+
+function remoteFileName(path: string) {
+  const parts = path.split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? path
 }
 
 function normalizeRemotePath(path: string) {
@@ -604,6 +650,76 @@ function sessionStatusLabel(status: SessionRecord['status']) {
   if (status === 'error') return '已断开'
   if (status === 'closed') return '已关闭'
   return '空闲'
+}
+
+type CodeMirrorEditorProps = {
+  value: string
+  fileName: string
+  readOnly: boolean
+  onChange: (value: string) => void
+}
+
+function CodeMirrorEditor({ value, fileName, readOnly, onChange }: CodeMirrorEditorProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const viewRef = useRef<EditorView | null>(null)
+  const onChangeRef = useRef(onChange)
+  const language = useMemo(() => codeMirrorLanguage(fileName), [fileName])
+
+  useEffect(() => {
+    onChangeRef.current = onChange
+  }, [onChange])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) {
+      return undefined
+    }
+
+    const view = new EditorView({
+      parent: container,
+      state: EditorState.create({
+        doc: value,
+        extensions: [
+          lineNumbers(),
+          editorHistory(),
+          indentOnInput(),
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          language,
+          EditorView.lineWrapping,
+          EditorView.editable.of(!readOnly),
+          EditorState.readOnly.of(readOnly),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+              onChangeRef.current(update.state.doc.toString())
+            }
+          }),
+        ],
+      }),
+    })
+    viewRef.current = view
+
+    return () => {
+      view.destroy()
+      viewRef.current = null
+    }
+  }, [fileName, language, readOnly])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) {
+      return
+    }
+    const current = view.state.doc.toString()
+    if (current === value) {
+      return
+    }
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: value },
+    })
+  }, [value])
+
+  return <div className="codemirror-host" ref={containerRef} />
 }
 
 function truncateErrorDetail(value: string) {
@@ -1917,7 +2033,11 @@ export function App() {
       if (kind === 'text') {
         const content = await blob.text()
         setFilePreviewTabs((current) =>
-          current.map((tab) => (tab.id === tabID ? { ...tab, status: 'ready', content } : tab)),
+          current.map((tab) => (
+            tab.id === tabID
+              ? { ...tab, status: 'ready', content, draftContent: content, isEditing: false, saveState: 'idle', saveMessage: '' }
+              : tab
+          )),
         )
         return
       }
@@ -1959,6 +2079,90 @@ export function App() {
       } else {
         setActiveViewId('')
       }
+    }
+  }
+
+  const updateFilePreviewDraft = (tabID: string, content: string) => {
+    setFilePreviewTabs((current) =>
+      current.map((tab) => (
+        tab.id === tabID
+          ? { ...tab, draftContent: content, saveState: 'idle', saveMessage: '' }
+          : tab
+      )),
+    )
+  }
+
+  const setFilePreviewEditMode = (tabID: string, isEditing: boolean) => {
+    setFilePreviewTabs((current) =>
+      current.map((tab) => {
+        if (tab.id !== tabID) return tab
+        return {
+          ...tab,
+          isEditing,
+          draftContent: tab.draftContent ?? tab.content ?? '',
+          saveState: 'idle',
+          saveMessage: '',
+        }
+      }),
+    )
+  }
+
+  const saveFilePreview = async (tab: FilePreviewTab) => {
+    if (tab.kind !== 'text') {
+      return
+    }
+    const content = tab.draftContent ?? tab.content ?? ''
+    const remoteDir = parentPath(tab.path)
+    const fileName = remoteFileName(tab.path)
+    const formData = new FormData()
+    formData.append('files', new File([content], fileName, { type: previewMimeType({ name: tab.name }, 'text') }))
+    setFilePreviewTabs((current) =>
+      current.map((item) => (
+        item.id === tab.id ? { ...item, saveState: 'loading', saveMessage: '正在保存...' } : item
+      )),
+    )
+    try {
+      const response = await apiFetch(`/files/${tab.hostId}?path=${encodeURIComponent(remoteDir)}`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail.trim() || `保存失败：${response.status}`)
+      }
+      const savedAt = new Date().toISOString()
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id
+            ? {
+                ...item,
+                content,
+                draftContent: content,
+                isEditing: false,
+                saveState: 'success',
+                saveMessage: '保存成功',
+                size: new Blob([content]).size,
+                modifiedAt: savedAt,
+              }
+            : item
+        )),
+      )
+      if (tab.hostId === (activeSession?.hostId ?? selectedHostId)) {
+        await loadFiles(remoteDir, tab.hostId)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存失败'
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id ? { ...item, saveState: 'error', saveMessage: message } : item
+        )),
+      )
+      setErrorMessage(message, {
+        title: '远程文件保存失败',
+        method: 'POST',
+        path: `/files/${tab.hostId}`,
+        source: '远程文件',
+      })
     }
   }
 
@@ -2638,9 +2842,15 @@ export function App() {
       )
     }
     if (tab.kind === 'text') {
+      const draft = tab.draftContent ?? tab.content ?? ''
       return (
         <div className="file-text-preview">
-          <pre>{tab.content ?? ''}</pre>
+          <CodeMirrorEditor
+            fileName={tab.name}
+            readOnly={!tab.isEditing}
+            value={draft}
+            onChange={(value) => updateFilePreviewDraft(tab.id, value)}
+          />
         </div>
       )
     }
@@ -3219,6 +3429,39 @@ export function App() {
                   <span>{activeFilePreview.path}</span>
                 </div>
                 <small>{previewKindLabel(activeFilePreview.kind)} · {formatBytes(activeFilePreview.size)} · {new Date(activeFilePreview.modifiedAt).toLocaleString()}</small>
+                {activeFilePreview.kind === 'text' && activeFilePreview.status === 'ready' ? (
+                  <div className="file-preview-actions">
+                    <button
+                      className={!activeFilePreview.isEditing ? 'active' : ''}
+                      type="button"
+                      title={`以预览模式查看 ${activeFilePreview.name}`}
+                      onClick={() => setFilePreviewEditMode(activeFilePreview.id, false)}
+                    >
+                      预览
+                    </button>
+                    <button
+                      className={activeFilePreview.isEditing ? 'active' : ''}
+                      type="button"
+                      title={`编辑 ${activeFilePreview.name}`}
+                      onClick={() => setFilePreviewEditMode(activeFilePreview.id, true)}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      disabled={!activeFilePreview.isEditing || activeFilePreview.saveState === 'loading'}
+                      type="button"
+                      title={`保存 ${activeFilePreview.name}`}
+                      onClick={() => void saveFilePreview(activeFilePreview)}
+                    >
+                      {activeFilePreview.saveState === 'loading' ? '保存中' : '保存'}
+                    </button>
+                    {activeFilePreview.saveMessage ? (
+                      <span className={`file-save-message file-save-${activeFilePreview.saveState ?? 'idle'}`}>
+                        {activeFilePreview.saveMessage}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <button
                   className="terminal-reconnect"
                   type="button"
