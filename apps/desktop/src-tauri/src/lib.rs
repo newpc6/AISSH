@@ -158,10 +158,7 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
     let core_path = resolve_core_path(app)?;
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
+    let app_data_dir = resolve_app_data_dir(app)?;
     std::fs::create_dir_all(&app_data_dir).map_err(|error| error.to_string())?;
 
     let mut command = std::process::Command::new(core_path);
@@ -182,6 +179,26 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
     }
     command.spawn().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn resolve_app_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    if let Ok(path) = std::env::var("AI_SSH_HOME") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Ok(std::path::PathBuf::from(trimmed));
+        }
+    }
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let portable_data = exe_dir.join("data");
+            if portable_data.is_dir() {
+                return Ok(portable_data);
+            }
+        }
+    }
+    app.path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())
 }
 
 fn persistent_desktop_token() -> String {

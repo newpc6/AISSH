@@ -307,6 +307,7 @@ npm run dev:tauri
 - 如果未配置 `AI_SSH_WEB_PASSWORD`，Go core 首次启动会自动生成初始密码并写入 `%AI_SSH_HOME%\data\web-auth.json`
 - 桌面客户端会用本机一次性令牌自动登录内置窗口；普通浏览器仍需要输入账号密码
 - 打包版会把 `ai-ssh-core.exe` 和 Web 前端资源一起放进安装包，客户端启动后自动拉起 `0.0.0.0:18555` 服务；浏览器访问仍需要登录
+- 绿色便携版位于 `release/portable`，拷贝整个目录后双击 `AI SSH Portable.bat` 即可运行，数据默认保存在便携目录下的 `data`
 
 ## 7. 方式三：只启动 Web 服务
 

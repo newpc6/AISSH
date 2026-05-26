@@ -1,5 +1,7 @@
 ﻿param(
   [switch]$SkipDesktop,
+  [switch]$SkipPortable,
+  [switch]$SkipDesktopInstaller,
   [switch]$SkipWebArchive,
   [switch]$Clean,
   [switch]$RunTests
@@ -11,6 +13,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $releaseRoot = Join-Path $repoRoot "release"
 $webPackageDir = Join-Path $releaseRoot "web"
 $desktopPackageDir = Join-Path $releaseRoot "desktop"
+$portablePackageDir = Join-Path $releaseRoot "portable"
 $distDir = Join-Path $repoRoot "apps\desktop\dist"
 $coreOutDir = Join-Path $repoRoot "apps\core-go\bin"
 
@@ -27,6 +30,8 @@ $platform = if ($isWindowsPlatform) {
 $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
 $coreExeName = if ($isWindowsPlatform) { "ai-ssh-core.exe" } else { "ai-ssh-core" }
 $coreExe = Join-Path $coreOutDir $coreExeName
+$desktopExeName = if ($isWindowsPlatform) { "ai-ssh-desktop.exe" } else { "ai-ssh-desktop" }
+$desktopExe = Join-Path $repoRoot "apps\desktop\src-tauri\target\release\$desktopExeName"
 
 function Invoke-Step {
   param(
@@ -155,11 +160,107 @@ function Write-WebReadme {
   $readmeContent | Set-Content -Encoding utf8 -Path $readme
 }
 
+function Write-PortableLauncher {
+  $startCmd = Join-Path $portablePackageDir "AI SSH Portable.bat"
+  $startPs1 = Join-Path $portablePackageDir "start-portable.ps1"
+
+  $startCmdContent = @'
+@echo off
+setlocal
+set "SCRIPT_DIR=%~dp0"
+set "AI_SSH_HOME=%SCRIPT_DIR%data"
+set "AI_SSH_CORE_PATH=%SCRIPT_DIR%resources\__CORE_EXE__"
+set "AI_SSH_WEB_ROOT=%SCRIPT_DIR%resources\web"
+set "AI_SSH_BIND_HOST=0.0.0.0"
+if not exist "%AI_SSH_HOME%" mkdir "%AI_SSH_HOME%"
+start "" "%SCRIPT_DIR%__DESKTOP_EXE__"
+'@
+  $startCmdContent = $startCmdContent.Replace("__CORE_EXE__", $coreExeName).Replace("__DESKTOP_EXE__", $desktopExeName)
+  $startCmdContent | Set-Content -Encoding ascii -Path $startCmd
+
+  $startPs1Content = @'
+$ErrorActionPreference = "Stop"
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$env:AI_SSH_HOME = Join-Path $scriptDir "data"
+$env:AI_SSH_CORE_PATH = Join-Path $scriptDir "resources\__CORE_EXE__"
+$env:AI_SSH_WEB_ROOT = Join-Path $scriptDir "resources\web"
+$env:AI_SSH_BIND_HOST = "0.0.0.0"
+New-Item -ItemType Directory -Force -Path $env:AI_SSH_HOME | Out-Null
+Start-Process -FilePath (Join-Path $scriptDir "__DESKTOP_EXE__")
+'@
+  $startPs1Content = $startPs1Content.Replace("__CORE_EXE__", $coreExeName).Replace("__DESKTOP_EXE__", $desktopExeName)
+  $startPs1Content | Set-Content -Encoding utf8 -Path $startPs1
+}
+
+function Write-PortableReadme {
+  $readme = Join-Path $portablePackageDir "README.md"
+  $readmeContent = @(
+    '# AI SSH 绿色便携版',
+    '',
+    '## 包含内容',
+    '',
+    "- ``$desktopExeName``：桌面客户端主程序",
+    "- ``resources/$coreExeName``：内置 Go core 服务",
+    '- `resources/web`：前端 Web 静态资源，客户端启动后浏览器也可访问同一个服务',
+    '- `data`：便携版运行数据目录，主机列表、网页登录配置、日志等数据默认保存在这里',
+    '- `AI SSH Portable.bat`：Windows 双击启动入口',
+    '- `start-portable.ps1`：PowerShell 启动入口',
+    '',
+    '## 启动',
+    '',
+    'Windows 下优先双击：',
+    '',
+    '````text',
+    'AI SSH Portable.bat',
+    '````',
+    '',
+    '也可以运行：',
+    '',
+    '````powershell',
+    '.\start-portable.ps1',
+    '````',
+    '',
+    '## 访问',
+    '',
+    '桌面客户端会自动启动内置 Go core，默认监听 `0.0.0.0:18555`。浏览器可访问：',
+    '',
+    '````text',
+    'http://127.0.0.1:18555',
+    'http://本机或服务器IP:18555',
+    '````',
+    '',
+    '浏览器访问需要登录。首次启动会进入初始化页面，需要先设置网页登录用户名和密码。',
+    '',
+    '## 迁移',
+    '',
+    '拷贝整个 portable 文件夹即可迁移程序和便携数据。密码和 SSH Key 如果保存到系统安全存储，跨电脑迁移时建议使用软件里的“导出服务器列表（含加密凭据）”再在新电脑导入。'
+  ) -join [Environment]::NewLine
+  $readmeContent | Set-Content -Encoding utf8 -Path $readme
+}
+
+function Build-PortablePackage {
+  if (-not (Test-Path -LiteralPath $desktopExe)) {
+    throw "Desktop executable not found: $desktopExe"
+  }
+  Reset-ReleaseDirectory $portablePackageDir
+  $portableResourcesDir = Join-Path $portablePackageDir "resources"
+  $portableWebDir = Join-Path $portableResourcesDir "web"
+  $portableDataDir = Join-Path $portablePackageDir "data"
+  New-Item -ItemType Directory -Force -Path $portableResourcesDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $portableWebDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $portableDataDir | Out-Null
+  Copy-Item -Force $desktopExe (Join-Path $portablePackageDir $desktopExeName)
+  Copy-Item -Force $coreExe (Join-Path $portableResourcesDir $coreExeName)
+  Copy-Item -Recurse -Force (Join-Path $distDir "*") $portableWebDir
+  Write-PortableLauncher
+  Write-PortableReadme
+}
+
 Push-Location $repoRoot
 try {
   if ($Clean) {
-    Invoke-Step "清理 release 目录" {
-      Reset-ReleaseDirectory $releaseRoot
+    Invoke-Step "准备 release 目录" {
+      New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
     }
   } else {
     New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
@@ -209,24 +310,48 @@ try {
       & (Join-Path $repoRoot "scripts\prepare-tauri-core.ps1")
     }
 
-    Invoke-Step "构建 Tauri 桌面客户端" {
-      npm run tauri:build -w apps/desktop
+    if ($SkipDesktopInstaller) {
+      Invoke-Step "构建 Tauri 桌面 exe" {
+        cargo build --release --manifest-path (Join-Path $repoRoot "apps\desktop\src-tauri\Cargo.toml")
+      }
+    } else {
+      Invoke-Step "构建 Tauri 桌面客户端" {
+        npm run tauri:build -w apps/desktop
+      }
+
+      Invoke-Step "复制桌面安装包" {
+        Reset-ReleaseDirectory $desktopPackageDir
+        $bundleRoot = Join-Path $repoRoot "apps\desktop\src-tauri\target\release\bundle"
+        if (-not (Test-Path -LiteralPath $bundleRoot)) {
+          throw "Tauri bundle directory not found: $bundleRoot"
+        }
+        $bundleItems = Get-ChildItem -LiteralPath $bundleRoot -Force
+        if ($bundleItems.Count -eq 0) {
+          throw "Tauri bundle directory is empty: $bundleRoot"
+        }
+        foreach ($item in $bundleItems) {
+          Copy-Item -Recurse -Force -LiteralPath $item.FullName -Destination $desktopPackageDir
+        }
+        Write-Host "Desktop bundles: $desktopPackageDir"
+      }
     }
 
-    Invoke-Step "复制桌面安装包" {
-      Reset-ReleaseDirectory $desktopPackageDir
-      $bundleRoot = Join-Path $repoRoot "apps\desktop\src-tauri\target\release\bundle"
-      if (-not (Test-Path -LiteralPath $bundleRoot)) {
-        throw "Tauri bundle directory not found: $bundleRoot"
+    if (-not $SkipPortable) {
+      Invoke-Step "整理桌面绿色便携版" {
+        Build-PortablePackage
+        Write-Host "Portable package: $portablePackageDir"
       }
-      $bundleItems = Get-ChildItem -LiteralPath $bundleRoot -Force
-      if ($bundleItems.Count -eq 0) {
-        throw "Tauri bundle directory is empty: $bundleRoot"
+
+      if (-not $SkipWebArchive) {
+        Invoke-Step "压缩桌面绿色便携版" {
+          $portableZip = Join-Path $releaseRoot "ai-ssh-portable-$platform-$arch.zip"
+          if (Test-Path -LiteralPath $portableZip) {
+            Remove-Item -LiteralPath $portableZip -Force
+          }
+          Compress-Archive -Path (Join-Path $portablePackageDir "*") -DestinationPath $portableZip
+          Write-Host "Portable zip: $portableZip"
+        }
       }
-      foreach ($item in $bundleItems) {
-        Copy-Item -Recurse -Force -LiteralPath $item.FullName -Destination $desktopPackageDir
-      }
-      Write-Host "Desktop bundles: $desktopPackageDir"
     }
   }
 
@@ -234,7 +359,12 @@ try {
   Write-Host "打包完成" -ForegroundColor Green
   Write-Host "Web 发布目录: $webPackageDir"
   if (-not $SkipDesktop) {
-    Write-Host "桌面安装包目录: $desktopPackageDir"
+    if (-not $SkipDesktopInstaller) {
+      Write-Host "桌面安装包目录: $desktopPackageDir"
+    }
+    if (-not $SkipPortable) {
+      Write-Host "桌面绿色版目录: $portablePackageDir"
+    }
   }
 } finally {
   Pop-Location

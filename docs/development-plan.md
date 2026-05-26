@@ -250,6 +250,9 @@
 67. 远程文件列表支持表头升降序排序，并支持文件目录聚焦时输入中文 / 英文快速定位文件或目录
 68. 增加 Windows 双击打包入口 `build-release.bat`
 69. 将 Web 发布包和 Go core 默认监听地址调整为 `0.0.0.0`，便于局域网或公网访问
+70. 打包流程增加桌面绿色便携版，包含桌面 exe、Go core、Web 资源、启动脚本和便携 data 目录
+71. 打包脚本增加 `-SkipDesktopInstaller` 参数，可在安装包文件被占用时只生成 Web 包和绿色便携版
+72. 增加 Windows 双击绿色版打包入口 `build-portable.bat`
 
 ## 6. 工程规则
 
@@ -407,6 +410,9 @@
 - [x] 远程文件列表支持按名称、大小、修改日期升降序排序，并支持文件目录区域聚焦后输入中文 / 英文快速定位文件或目录
 - [x] 增加根目录 `build-release.bat`，Windows 下可双击完整打包 Web 发布包和桌面安装包
 - [x] Web 发布包启动器与 Go core 默认使用 `AI_SSH_BIND_HOST=0.0.0.0`，局域网或公网访问不再需要额外设置监听地址
+- [x] 打包流程新增 `release/portable` 和便携版 zip，双击 `AI SSH Portable.bat` 可启动，运行数据默认保存在便携目录 `data`
+- [x] 打包脚本支持 `-SkipDesktopInstaller`，用于跳过 Tauri 安装包 bundler，仅生成可拷贝运行的绿色版 exe 包
+- [x] 增加根目录 `build-portable.bat`，双击即可生成 Web 包和绿色便携版，避免安装包文件占用影响绿色版打包
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验
