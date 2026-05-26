@@ -1271,7 +1271,7 @@ export function App() {
 
   const exportSoftwareConfig = async () => {
     const config = {
-      settings,
+      settings: normalizeAppSettings(settings),
       leftRailWidth,
       hostGroups,
       exportedAt: new Date().toISOString(),
@@ -3509,7 +3509,7 @@ export function App() {
                           max="50000"
                           step="500"
                           type="number"
-                          value={settings.aiTerminalContextLimit}
+                          value={settings.aiTerminalContextLimit ?? defaultSettings.aiTerminalContextLimit}
                           onChange={(event) =>
                             setSettings((current) => ({
                               ...current,
@@ -3524,7 +3524,7 @@ export function App() {
                           min="1"
                           max="200"
                           type="number"
-                          value={settings.aiCommandHistoryLimit}
+                          value={settings.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit}
                           onChange={(event) =>
                             setSettings((current) => ({
                               ...current,
