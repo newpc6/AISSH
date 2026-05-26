@@ -109,8 +109,6 @@ type WindowWithSaveFilePicker = Window & {
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
-const AI_TERMINAL_CONTEXT_LIMIT = 5000
-const AI_COMMAND_HISTORY_LIMIT = 20
 
 const textFileExtensions = new Set([
   'bash',
@@ -170,6 +168,8 @@ const defaultSettings: AppSettings = {
   aiModel: '',
   aiPredictionEnabled: true,
   aiPredictionCount: 3,
+  aiTerminalContextLimit: 5000,
+  aiCommandHistoryLimit: 20,
 }
 
 function statusToLabel(state: LoadState) {
@@ -378,8 +378,8 @@ function stripTerminalControlSequences(data: string) {
     .replace(/\x1b[@-Z\\-_]/g, '')
 }
 
-function terminalContextTail(cache: TerminalCache | undefined) {
-  return stripTerminalControlSequences(cache?.chunks.join('') ?? '').slice(-AI_TERMINAL_CONTEXT_LIMIT)
+function terminalContextTail(cache: TerminalCache | undefined, limit: number) {
+  return stripTerminalControlSequences(cache?.chunks.join('') ?? '').slice(-Math.max(500, limit))
 }
 
 function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
@@ -409,6 +409,14 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
     aiPredictionCount: Math.max(
       1,
       Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3),
+    ),
+    aiTerminalContextLimit: Math.max(
+      500,
+      Math.min(50000, Number(value.aiTerminalContextLimit ?? defaultSettings.aiTerminalContextLimit) || 5000),
+    ),
+    aiCommandHistoryLimit: Math.max(
+      1,
+      Math.min(200, Number(value.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit) || 20),
     ),
   }
 }
@@ -1437,6 +1445,8 @@ export function App() {
       terminalRetainedLines: normalized.terminalRetainedLines,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
+      aiTerminalContextLimit: normalized.aiTerminalContextLimit,
+      aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
     })
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
   }
@@ -1788,8 +1798,8 @@ export function App() {
       apiKey: normalized.aiApiKey,
       model: normalized.aiModel,
       predictionCount: normalized.aiPredictionCount,
-      terminalContext: terminalContextTail(terminalCachesRef.current[session.id]),
-      commandHistory: history.slice(0, AI_COMMAND_HISTORY_LIMIT),
+      terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
+      commandHistory: history.slice(0, normalized.aiCommandHistoryLimit),
       currentCommand: commandBufferRef.current,
       hostName: session.hostName,
       hostAddress: host.address,
@@ -3491,6 +3501,39 @@ export function App() {
                         }
                       />
                     </label>
+                    <div className="form-row settings-pair">
+                      <label>
+                        <span>终端上下文字符数</span>
+                        <input
+                          min="500"
+                          max="50000"
+                          step="500"
+                          type="number"
+                          value={settings.aiTerminalContextLimit}
+                          onChange={(event) =>
+                            setSettings((current) => ({
+                              ...current,
+                              aiTerminalContextLimit: Number(event.target.value) || 5000,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>历史命令条数</span>
+                        <input
+                          min="1"
+                          max="200"
+                          type="number"
+                          value={settings.aiCommandHistoryLimit}
+                          onChange={(event) =>
+                            setSettings((current) => ({
+                              ...current,
+                              aiCommandHistoryLimit: Number(event.target.value) || 20,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
                     <label>
                       <span>大模型地址</span>
                       <input

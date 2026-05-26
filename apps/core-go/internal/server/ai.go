@@ -36,8 +36,8 @@ var numberedCommandPattern = regexp.MustCompile(`^\s*(?:[-*]|\d+[.)])\s*`)
 const (
 	aiDefaultPredictionCount = 3
 	aiMaxPredictionCount     = 8
-	aiTerminalContextLimit   = 6000
-	aiCommandHistoryLimit    = 20
+	aiTerminalContextLimit   = 50000
+	aiCommandHistoryLimit    = 200
 	aiRequestTimeout         = 18 * time.Second
 	aiMaxTokens              = 260
 )

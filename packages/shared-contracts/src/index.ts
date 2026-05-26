@@ -43,6 +43,8 @@ export interface AppSettings {
   aiModel: string
   aiPredictionEnabled: boolean
   aiPredictionCount: number
+  aiTerminalContextLimit: number
+  aiCommandHistoryLimit: number
 }
 
 export interface HostRecord {
