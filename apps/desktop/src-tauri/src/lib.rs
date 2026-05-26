@@ -1,5 +1,12 @@
 use tauri::Manager;
 
+#[derive(serde::Serialize)]
+struct LocalUploadFile {
+    path: String,
+    name: String,
+    data: Vec<u8>,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let desktop_token = desktop_token();
@@ -7,7 +14,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![desktop_login_token])
+        .invoke_handler(tauri::generate_handler![
+            desktop_login_token,
+            read_local_upload_files
+        ])
         .setup(|app| {
             if let Err(error) = start_core_server(app.handle()) {
                 eprintln!("failed to start AI SSH core: {error}");
@@ -28,6 +38,26 @@ pub fn run() {
 #[tauri::command]
 fn desktop_login_token() -> String {
     std::env::var("AI_SSH_DESKTOP_TOKEN").unwrap_or_default()
+}
+
+#[tauri::command]
+fn read_local_upload_files(paths: Vec<String>) -> Result<Vec<LocalUploadFile>, String> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let file_path = std::path::PathBuf::from(&path);
+            if !file_path.is_file() {
+                return Err(format!("{path} 不是可上传的文件"));
+            }
+            let name = file_path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("upload-file")
+                .to_string();
+            let data = std::fs::read(&file_path).map_err(|error| format!("{path}: {error}"))?;
+            Ok(LocalUploadFile { path, name, data })
+        })
+        .collect()
 }
 
 fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {

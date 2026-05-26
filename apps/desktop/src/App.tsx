@@ -1,9 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import {
@@ -152,6 +153,25 @@ type AppErrorNotice = {
   path?: string
   source?: string
   status?: number
+}
+
+type DragPosition = {
+  x: number
+  y: number
+}
+
+type LocalUploadFile = {
+  path: string
+  name: string
+  data: number[] | ArrayBuffer | Uint8Array
+}
+
+type RemoteFileDragState = {
+  entry: FileEntry
+  pointerId: number
+  startX: number
+  startY: number
+  triggered: boolean
 }
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
@@ -395,6 +415,12 @@ function parentPath(path: string) {
 function remoteFileName(path: string) {
   const parts = path.split('/').filter(Boolean)
   return parts[parts.length - 1] ?? path
+}
+
+function localFileName(path: string) {
+  const normalized = path.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? 'upload-file'
 }
 
 function normalizeRemotePath(path: string) {
@@ -812,6 +838,14 @@ function normalizeRequestPath(path: string) {
   return path.split('?')[0]
 }
 
+function isPointInsideElement(element: HTMLElement, position: DragPosition) {
+  const rect = element.getBoundingClientRect()
+  const pixelRatio = window.devicePixelRatio || 1
+  const x = position.x / pixelRatio
+  const y = position.y / pixelRatio
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -875,6 +909,7 @@ export function App() {
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
   const [fileError, setFileError] = useState('')
+  const [isFileDropActive, setIsFileDropActive] = useState(false)
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
   const [leftRailWidth, setLeftRailWidth] = useState(380)
   const [filePathDraft, setFilePathDraft] = useState('.')
@@ -885,6 +920,9 @@ export function App() {
   const [serverMetrics, setServerMetrics] = useState<ServerMetrics | null>(null)
   const [metricHistory, setMetricHistory] = useState<MetricSample[]>([])
   const terminalRef = useRef<HTMLDivElement | null>(null)
+  const fileBrowserRef = useRef<HTMLDivElement | null>(null)
+  const uploadLocalPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => undefined)
+  const remoteFileDragRef = useRef<RemoteFileDragState | null>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const codeMirrorRef = useRef<CodeMirrorEditorHandle | null>(null)
@@ -1663,6 +1701,48 @@ export function App() {
   useEffect(() => {
     terminalCachesRef.current = terminalCaches
   }, [terminalCaches])
+
+  useEffect(() => {
+    if (!isTauriRuntime) {
+      return undefined
+    }
+
+    let unlisten: (() => void) | undefined
+    const setupDragDrop = async () => {
+      try {
+        unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+          const payload = event.payload
+          if (payload.type === 'leave') {
+            setIsFileDropActive(false)
+            return
+          }
+
+          const target = fileBrowserRef.current
+          const canDropToFileBrowser =
+            leftModeRef.current === 'files' && Boolean(target) && isPointInsideElement(target as HTMLElement, payload.position)
+          if (payload.type === 'enter' || payload.type === 'over') {
+            setIsFileDropActive(canDropToFileBrowser)
+            return
+          }
+
+          setIsFileDropActive(false)
+          if (payload.type === 'drop' && canDropToFileBrowser) {
+            void uploadLocalPathsRef.current(payload.paths)
+          }
+        })
+      } catch (error) {
+        appendLog('warn', 'ui.files', 'tauri drag drop listener failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    void setupDragDrop()
+    return () => {
+      unlisten?.()
+      setIsFileDropActive(false)
+    }
+  }, [])
 
   useEffect(() => {
     filePreviewTabsRef.current = filePreviewTabs
@@ -2547,6 +2627,101 @@ export function App() {
       )
     }
   }
+
+  const uploadLocalPaths = async (paths: string[]) => {
+    const localPaths = paths.filter(Boolean)
+    if (localPaths.length === 0) {
+      return
+    }
+
+    try {
+      const localFiles = await invoke<LocalUploadFile[]>('read_local_upload_files', { paths: localPaths })
+      const files = localFiles.map((file) => {
+        const bytes =
+          file.data instanceof Uint8Array
+            ? file.data
+            : file.data instanceof ArrayBuffer
+              ? new Uint8Array(file.data)
+              : Uint8Array.from(file.data)
+        return new File([bytes as BlobPart], file.name || localFileName(file.path))
+      })
+      await uploadFiles(files)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '拖拽上传失败'
+      appendLog('error', 'ui.files', 'tauri local file upload failed', {
+        error: message,
+        count: localPaths.length,
+      })
+      setFileError(`拖拽上传失败：${message}`)
+      setErrorMessage(`拖拽上传失败：${message}`, {
+        title: '本地文件上传失败',
+        source: '远程文件',
+      })
+    }
+  }
+
+  const chooseUploadFiles = async () => {
+    if (!isTauriRuntime) {
+      uploadFileRef.current?.click()
+      return
+    }
+
+    try {
+      const selected = await openDialog({
+        multiple: true,
+        directory: false,
+        title: '选择要上传的文件',
+      })
+      const paths = Array.isArray(selected) ? selected : selected ? [selected] : []
+      await uploadLocalPaths(paths)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '选择上传文件失败'
+      appendLog('error', 'ui.files', 'tauri upload file dialog failed', { error: message })
+      setErrorMessage(message, {
+        title: '选择上传文件失败',
+        source: '远程文件',
+      })
+    }
+  }
+
+  const startRemoteFileDrag = (entry: FileEntry, event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!isTauriRuntime || entry.type !== 'file' || event.button !== 0) {
+      return
+    }
+    remoteFileDragRef.current = {
+      entry,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      triggered: false,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const trackRemoteFileDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const dragState = remoteFileDragRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId || dragState.triggered) {
+      return
+    }
+    const movedDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY)
+    if (movedDistance < 12) {
+      return
+    }
+    const hoverTarget = document.elementFromPoint(event.clientX, event.clientY)
+    if (hoverTarget && fileBrowserRef.current?.contains(hoverTarget)) {
+      return
+    }
+    remoteFileDragRef.current = { ...dragState, triggered: true }
+    void downloadFile(dragState.entry)
+  }
+
+  const finishRemoteFileDrag = (pointerId: number) => {
+    if (remoteFileDragRef.current?.pointerId === pointerId) {
+      remoteFileDragRef.current = null
+    }
+  }
+
+  uploadLocalPathsRef.current = uploadLocalPaths
 
   const loadServerMetrics = async () => {
     const hostId = activeSession?.hostId
@@ -3609,7 +3784,7 @@ export function App() {
                   ) : null}
                   {key === 'transfer' ? (
                     <>
-                      <button type="button" title="上传文件到当前目录" onClick={() => uploadFileRef.current?.click()}>上传文件</button>
+                      <button type="button" title="上传文件到当前目录" onClick={() => void chooseUploadFiles()}>上传文件</button>
                       <button type="button" title="打开远程文件面板" onClick={() => setLeftMode('files')}>打开文件</button>
                     </>
                   ) : null}
@@ -3726,7 +3901,7 @@ export function App() {
                 <strong>远程文件</strong>
                 <div>
                   <button type="button" title="进入上级目录" onClick={() => void loadFiles(parentPath(filePath))}>上级</button>
-                  <button type="button" title="上传文件到当前目录" onClick={() => uploadFileRef.current?.click()}>上传</button>
+                  <button type="button" title="上传文件到当前目录" onClick={() => void chooseUploadFiles()}>上传</button>
                 </div>
               </div>
               <form
@@ -3764,15 +3939,38 @@ export function App() {
                 <span>跟踪终端路径</span>
               </label>
               <div
-                className={`file-browser ${fileError ? 'has-status' : ''}`}
-                onDragOver={(event) => event.preventDefault()}
+                ref={fileBrowserRef}
+                className={`file-browser ${fileError ? 'has-status' : ''} ${isFileDropActive ? 'drop-active' : ''}`}
+                onDragEnter={(event) => {
+                  event.preventDefault()
+                  if (Array.from(event.dataTransfer.types).includes('Files')) {
+                    setIsFileDropActive(true)
+                  }
+                }}
+                onDragLeave={(event) => {
+                  const nextTarget = event.relatedTarget
+                  if (!nextTarget || !event.currentTarget.contains(nextTarget as Node)) {
+                    setIsFileDropActive(false)
+                  }
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'copy'
+                }}
                 onDrop={(event) => {
                   event.preventDefault()
+                  setIsFileDropActive(false)
                   if (event.dataTransfer.files.length > 0) {
                     void uploadFiles(event.dataTransfer.files)
                   }
                 }}
               >
+                {isFileDropActive ? (
+                  <div className="file-drop-overlay">
+                    <strong>松开上传</strong>
+                    <span>上传到 {filePath}</span>
+                  </div>
+                ) : null}
                 <div className="file-path-row">
                   <span className="file-path-text">{filePath}</span>
                   <div className="file-path-actions">
@@ -3798,9 +3996,9 @@ export function App() {
                   {fileEntries.map((entry) => (
                     <button
                       key={entry.path}
-                      draggable={entry.type === 'file'}
+                      draggable={!isTauriRuntime && entry.type === 'file'}
                       type="button"
-                      title={entry.type === 'directory' ? '双击进入目录' : '单击打开预览，右键下载文件'}
+                      title={entry.type === 'directory' ? '双击进入目录' : '单击打开预览，右键下载，拖出快速下载'}
                       onClick={() => {
                         if (entry.type === 'file') {
                           void openFilePreview(entry)
@@ -3808,6 +4006,7 @@ export function App() {
                       }}
                       onDragStart={(event) => {
                         if (entry.type === 'file') {
+                          event.dataTransfer.effectAllowed = 'copy'
                           event.dataTransfer.setData(
                             'text/uri-list',
                             resolveApiUrl(`/files/${activeSession?.hostId ?? selectedHostId}?download=1&path=${encodeURIComponent(entry.path)}`),
@@ -3828,6 +4027,10 @@ export function App() {
                           void downloadFile(entry)
                         }
                       }}
+                      onPointerCancel={(event) => finishRemoteFileDrag(event.pointerId)}
+                      onPointerDown={(event) => startRemoteFileDrag(entry, event)}
+                      onPointerMove={trackRemoteFileDrag}
+                      onPointerUp={(event) => finishRemoteFileDrag(event.pointerId)}
                     >
                       <span>{entry.type === 'directory' ? '▸ ' : ''}{entry.name}</span>
                       <span>{entry.type === 'directory' ? '-' : formatBytes(entry.size)}</span>
