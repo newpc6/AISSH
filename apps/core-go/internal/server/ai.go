@@ -15,20 +15,27 @@ import (
 )
 
 type openAIChatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []openAIChatMessage `json:"messages"`
-	Temperature float64             `json:"temperature"`
-	MaxTokens   int                 `json:"max_tokens,omitempty"`
+	Model          string                `json:"model"`
+	Messages       []openAIChatMessage   `json:"messages"`
+	Temperature    float64               `json:"temperature"`
+	MaxTokens      int                   `json:"max_tokens,omitempty"`
+	ResponseFormat *openAIResponseFormat `json:"response_format,omitempty"`
+}
+
+type openAIResponseFormat struct {
+	Type string `json:"type"`
 }
 
 type openAIChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type openAIChatResponse struct {
 	Choices []struct {
-		Message openAIChatMessage `json:"message"`
+		Message      openAIChatMessage `json:"message"`
+		FinishReason string            `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -40,7 +47,7 @@ const (
 	aiTerminalContextLimit   = 50000
 	aiCommandHistoryLimit    = 200
 	aiRequestTimeout         = 18 * time.Second
-	aiMaxTokens              = 260
+	aiMaxTokens              = 1024
 	aiProviderBodyReadLimit  = 1024 * 1024
 	aiLogSnippetLimit        = 2000
 )
@@ -57,13 +64,14 @@ func predictCommands(ctx context.Context, request aiPredictionRequest, logger *a
 	}
 
 	body, err := json.Marshal(openAIChatRequest{
-		Model:       normalized.Model,
-		Temperature: 0.2,
-		MaxTokens:   aiMaxTokens,
+		Model:          normalized.Model,
+		Temperature:    0,
+		MaxTokens:      aiMaxTokens,
+		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: "你是 SSH 终端命令预测助手。你只能返回严格 JSON，不能返回 Markdown。请根据当前终端上下文预测用户最可能执行的下一步 shell 命令。不要解释，不要执行任何操作，不要返回危险或破坏性命令。响应格式必须是 {\"commands\":[\"命令1\",\"命令2\"]}。",
+				Content: "你是 SSH 终端命令预测助手。必须预测用户接下来最可能人工确认执行的 shell 命令，因为最终是否应用由用户确认。你只能在最终 content 中返回严格 JSON，不能返回 Markdown、解释、思考过程或空内容。即使不确定，也要给出保守的查看型命令。不要执行任何操作，不要返回危险或破坏性命令。响应格式必须是 {\"commands\":[\"命令1\",\"命令2\"]}。",
 			},
 			{
 				Role:    "user",
@@ -174,20 +182,27 @@ func predictCommands(ctx context.Context, request aiPredictionRequest, logger *a
 		return aiPredictionResponse{}, errors.New("ai provider returned no choices; see run logs for provider response")
 	}
 
-	content := chatResponse.Choices[0].Message.Content
+	choice := chatResponse.Choices[0]
+	content := choice.Message.Content
 	commands := parsePredictedCommands(content, normalized.PredictionCount)
 	if len(commands) == 0 {
 		if logger != nil {
 			logger.error("ai", "provider returned no commands", map[string]any{
-				"endpoint":       endpoint,
-				"model":          normalized.Model,
-				"status":         response.StatusCode,
-				"contentChars":   len(content),
-				"contentSnippet": logTextSnippet(content),
-				"bodySnippet":    logTextSnippet(string(responseBody)),
-				"bodyTruncated":  bodyTruncated,
-				"durationMs":     time.Since(started).Milliseconds(),
+				"endpoint":              endpoint,
+				"model":                 normalized.Model,
+				"status":                response.StatusCode,
+				"finishReason":          choice.FinishReason,
+				"contentChars":          len(content),
+				"contentSnippet":        logTextSnippet(content),
+				"reasoningContentChars": len(choice.Message.ReasoningContent),
+				"reasoningSnippet":      logTextSnippet(choice.Message.ReasoningContent),
+				"bodySnippet":           logTextSnippet(string(responseBody)),
+				"bodyTruncated":         bodyTruncated,
+				"durationMs":            time.Since(started).Milliseconds(),
 			})
+		}
+		if choice.FinishReason == "length" {
+			return aiPredictionResponse{}, errors.New("ai provider output was truncated before final commands; see run logs for provider reasoning")
 		}
 		return aiPredictionResponse{}, errors.New("ai provider returned no commands; see run logs for provider content")
 	}
@@ -197,6 +212,7 @@ func predictCommands(ctx context.Context, request aiPredictionRequest, logger *a
 			"endpoint":      endpoint,
 			"model":         normalized.Model,
 			"status":        response.StatusCode,
+			"finishReason":  choice.FinishReason,
 			"commandCount":  len(commands),
 			"contentChars":  len(content),
 			"bodyTruncated": bodyTruncated,
@@ -277,6 +293,8 @@ func buildPredictionPrompt(request aiPredictionRequest) string {
 终端上下文：
 %s
 
+必须预测下一步命令。即使不确定，也返回保守的查看型命令，例如 ls -la、pwd、tail -n 100 nohup.out、ps -ef | grep 进程名。
+不要在 content 中输出解释、分析、Markdown 或空内容。
 请只返回严格 JSON：{"commands":["命令1","命令2"]}`,
 		emptyAsDash(request.HostName),
 		emptyAsDash(request.Username),

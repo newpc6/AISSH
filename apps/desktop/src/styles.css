@@ -1364,6 +1364,14 @@ button {
   height: 58px;
 }
 
+.prediction-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
 .prediction-row .command-main {
   display: grid;
   gap: 6px;

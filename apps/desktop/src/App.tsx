@@ -3397,7 +3397,12 @@ export function App() {
                   />
                   <span>预测下一步命令</span>
                 </label>
-                {aiPredictionState === 'loading' ? <p className="hint-text">正在调用大模型预测...</p> : null}
+                {aiPredictionState === 'loading' ? (
+                  <div className="prediction-loading">
+                    <span aria-hidden="true" className="file-loading-spinner" />
+                    <span>正在调用大模型预测...</span>
+                  </div>
+                ) : null}
                 {!isAIProviderConfigured && aiEnabled && settings.aiPredictionEnabled ? (
                   <p className="hint-text">请先在设置里填写大模型地址和模型，保存后才会调用 AI 预测。</p>
                 ) : null}
