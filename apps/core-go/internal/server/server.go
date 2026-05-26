@@ -27,6 +27,7 @@ type healthResponse struct {
 	Version      string   `json:"version"`
 	Timestamp    string   `json:"timestamp"`
 	Capabilities []string `json:"capabilities"`
+	HostStore    string   `json:"hostStore,omitempty"`
 }
 
 type hostRecord struct {
@@ -255,13 +256,14 @@ func newSessionManagerWithStores(store *hostStore, credentials credentialStore, 
 		credentials: credentials,
 		logger:      logger,
 	}
+	manager.logger.info("hosts", "host store configured", map[string]any{"path": manager.store.path})
 
 	if hosts, groups, err := manager.store.load(); err == nil && (len(hosts) > 0 || len(groups) > 0) {
 		manager.hosts = hosts
 		manager.groups = mergeHostGroups(groups, hosts)
-		manager.logger.info("hosts", "loaded hosts from local store", map[string]any{"count": len(hosts)})
+		manager.logger.info("hosts", "loaded hosts from local store", map[string]any{"count": len(hosts), "path": manager.store.path})
 	} else if err != nil {
-		manager.logger.debug("hosts", "using default hosts", map[string]any{"reason": err.Error()})
+		manager.logger.debug("hosts", "using default hosts", map[string]any{"reason": err.Error(), "path": manager.store.path})
 	}
 	if len(manager.groups) == 0 {
 		manager.groups = mergeHostGroups(nil, manager.hosts)
@@ -310,16 +312,40 @@ func newHostStore() *hostStore {
 		return &hostStore{path: path}
 	}
 
-	baseDir := os.Getenv("AI_SSH_HOME")
-	if baseDir == "" {
-		var err error
-		baseDir, err = os.Getwd()
-		if err != nil {
-			baseDir = "."
-		}
-	}
+	baseDir := resolveHostStoreBaseDir()
 
 	return &hostStore{path: filepath.Join(baseDir, "data", "hosts.json")}
+}
+
+func resolveHostStoreBaseDir() string {
+	if baseDir := strings.TrimSpace(os.Getenv("AI_SSH_HOME")); baseDir != "" {
+		return baseDir
+	}
+	current, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	if baseDir, ok := findNearestHostStoreBaseDir(current); ok {
+		return baseDir
+	}
+	return current
+}
+
+func findNearestHostStoreBaseDir(start string) (string, bool) {
+	current, err := filepath.Abs(start)
+	if err != nil {
+		current = start
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(current, "data", "hosts.json")); err == nil {
+			return current, true
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", false
+		}
+		current = parent
+	}
 }
 
 func (s *hostStore) load() ([]hostRecord, []hostGroup, error) {

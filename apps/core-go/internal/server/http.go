@@ -31,6 +31,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			Service:   "ai-ssh-core",
 			Version:   "0.1.0",
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			HostStore: manager.store.path,
 			Capabilities: []string{
 				"health-check",
 				"api-contract",
@@ -106,6 +107,17 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 		writeJSON(w, authenticator.status(r))
+	})
+	mux.HandleFunc("/api/auth/desktop-token", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !authenticator.desktopAuthenticated(r) {
+			http.Error(w, "desktop token invalid", http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

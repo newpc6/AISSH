@@ -151,15 +151,7 @@ func webAuthConfigPath() string {
 	if path := os.Getenv("AI_SSH_WEB_AUTH_PATH"); strings.TrimSpace(path) != "" {
 		return path
 	}
-	baseDir := os.Getenv("AI_SSH_HOME")
-	if baseDir == "" {
-		var err error
-		baseDir, err = os.Getwd()
-		if err != nil {
-			baseDir = "."
-		}
-	}
-	return filepath.Join(baseDir, "data", "web-auth.json")
+	return filepath.Join(resolveHostStoreBaseDir(), "data", "web-auth.json")
 }
 
 func readWebAuthStore(path string) (webAuthStoreFile, error) {
@@ -515,6 +507,7 @@ func isAuthBypassPath(path string) bool {
 		path == "/api/auth/setup" ||
 		path == "/api/auth/desktop-setup" ||
 		path == "/api/auth/desktop" ||
+		path == "/api/auth/desktop-token" ||
 		path == "/api/auth/logout"
 }
 

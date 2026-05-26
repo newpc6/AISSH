@@ -40,6 +40,29 @@ func TestNewHostStoreDefaultsToCurrentDataDirectory(t *testing.T) {
 	}
 }
 
+func TestFindNearestHostStoreBaseDir(t *testing.T) {
+	workspace := t.TempDir()
+	dataDir := filepath.Join(workspace, "data")
+	nested := filepath.Join(workspace, "apps", "desktop", "src-tauri")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatalf("expected data dir, got error: %v", err)
+	}
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatalf("expected nested dir, got error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "hosts.json"), []byte(`{"hosts":[]}`), 0o600); err != nil {
+		t.Fatalf("expected hosts file, got error: %v", err)
+	}
+
+	baseDir, ok := findNearestHostStoreBaseDir(nested)
+	if !ok {
+		t.Fatalf("expected nearest host store base dir")
+	}
+	if filepath.Clean(baseDir) != filepath.Clean(workspace) {
+		t.Fatalf("expected base dir %q, got %q", workspace, baseDir)
+	}
+}
+
 func newTestServer(t *testing.T) *http.Server {
 	t.Helper()
 	return newTestServerWithCredentials(t, newMemoryCredentialStore())
@@ -70,6 +93,10 @@ func TestHealthEndpoint(t *testing.T) {
 
 	if response["status"] != "ok" {
 		t.Fatalf("expected status ok, got %v", response["status"])
+	}
+	hostStore, ok := response["hostStore"].(string)
+	if !ok || filepath.Base(hostStore) != "hosts.json" {
+		t.Fatalf("expected health response to include host store path, got %v", response["hostStore"])
 	}
 }
 
@@ -219,6 +246,22 @@ func TestDesktopLoginCanBeDisabledBySetting(t *testing.T) {
 	srv.Handler.ServeHTTP(blockedDesktopRecorder, blockedDesktopReq)
 	if blockedDesktopRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("expected desktop login 401 when login is required, got %d", blockedDesktopRecorder.Code)
+	}
+
+	tokenCheckReq := httptest.NewRequest(http.MethodPost, "/api/auth/desktop-token", nil)
+	tokenCheckReq.Header.Set("X-AI-SSH-Desktop-Token", "desktop-token")
+	tokenCheckRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(tokenCheckRecorder, tokenCheckReq)
+	if tokenCheckRecorder.Code != http.StatusOK {
+		t.Fatalf("expected desktop token check status 200, got %d", tokenCheckRecorder.Code)
+	}
+
+	badTokenReq := httptest.NewRequest(http.MethodPost, "/api/auth/desktop-token", nil)
+	badTokenReq.Header.Set("X-AI-SSH-Desktop-Token", "wrong-token")
+	badTokenRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(badTokenRecorder, badTokenReq)
+	if badTokenRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected bad desktop token status 401, got %d", badTokenRecorder.Code)
 	}
 }
 
