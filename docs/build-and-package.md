@@ -21,6 +21,12 @@ Windows 上如果首次打 Tauri 安装包，需要确保 WebView2、Rust MSVC �
 powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Clean
 ```
 
+Windows 也可以直接双击项目根目录的：
+
+```text
+build-release.bat
+```
+
 脚本会依次执行：
 
 1. 构建前端静态资源：`apps/desktop/dist`
@@ -121,6 +127,9 @@ release/web/data/web-auth.json
 ```powershell
 # 清理 release 后完整打包桌面和 Web
 powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Clean
+
+# Windows 双击完整打包入口
+build-release.bat
 
 # 只打 Web 包
 powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Clean -SkipDesktop
