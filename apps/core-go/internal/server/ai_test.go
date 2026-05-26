@@ -7,6 +7,16 @@ func TestParsePredictedCommandsRejectsBrokenStructuredContent(t *testing.T) {
 	if len(commands) != 0 {
 		t.Fatalf("expected broken JSON-like response to be rejected, got %#v", commands)
 	}
+
+	commands = parsePredictedCommands(`{"commands":["ls -la","./start`, 3)
+	if len(commands) != 0 {
+		t.Fatalf("expected truncated JSON-like response to be rejected, got %#v", commands)
+	}
+
+	commands = cleanPredictedCommands([]string{`{"commands":["ls -la","./start`}, 3)
+	if len(commands) != 0 {
+		t.Fatalf("expected JSON-like command candidate to be rejected, got %#v", commands)
+	}
 }
 
 func TestParsePredictedCommandsAcceptsStructuredJSON(t *testing.T) {

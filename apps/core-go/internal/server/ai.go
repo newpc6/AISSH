@@ -349,7 +349,7 @@ func parseStructuredPredictedCommands(content string, limit int) []string {
 func looksLikeBrokenStructuredPrediction(content string) bool {
 	trimmed := strings.TrimSpace(strings.Trim(content, "`"))
 	lower := strings.ToLower(trimmed)
-	return strings.HasPrefix(trimmed, "{") || strings.Contains(lower, `"commands"`)
+	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") || strings.Contains(lower, `"commands"`)
 }
 
 func cleanPredictedCommands(values []string, limit int) []string {
@@ -361,7 +361,7 @@ func cleanPredictedCommands(values []string, limit int) []string {
 		if command == "" || strings.Contains(command, "\n") {
 			continue
 		}
-		if looksDangerousCommand(command) || seen[command] {
+		if looksLikeBrokenStructuredPrediction(command) || looksDangerousCommand(command) || seen[command] {
 			continue
 		}
 		seen[command] = true

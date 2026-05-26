@@ -465,6 +465,32 @@ function isVisibleLogLevel(entryLevel: LogLevel, selectedLevel: LogLevel) {
   return logLevelRank[entryLevel] >= logLevelRank[selectedLevel]
 }
 
+function looksLikeStructuredPredictionFragment(command: string) {
+  const trimmed = stripTerminalControlSequences(command).trim().replace(/^`+|`+$/g, '').trim()
+  const lower = trimmed.toLowerCase()
+  return trimmed.startsWith('{') || trimmed.startsWith('[') || lower.includes('"commands"')
+}
+
+function normalizePredictedCommands(values: unknown, limit: number) {
+  if (!Array.isArray(values)) {
+    return []
+  }
+  const seen = new Set<string>()
+  const commands: string[] = []
+  for (const value of values) {
+    const command = stripTerminalControlSequences(String(value)).trim()
+    if (!command || command.includes('\n') || looksLikeStructuredPredictionFragment(command) || seen.has(command)) {
+      continue
+    }
+    seen.add(command)
+    commands.push(command)
+    if (commands.length >= limit) {
+      break
+    }
+  }
+  return commands
+}
+
 function emptyTerminalCache(): TerminalCache {
   return {
     chunks: [],
@@ -634,6 +660,7 @@ export function App() {
   const [isLogDialogOpen, setIsLogDialogOpen] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
+  const [logSearch, setLogSearch] = useState('')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [favoriteCommands, setFavoriteCommands] = useState<string[]>([])
   const [pendingFavoriteDelete, setPendingFavoriteDelete] = useState('')
@@ -1299,8 +1326,28 @@ export function App() {
   const primaryPrediction = commandBufferRef.current.trim() ? '' : (aiPredictions[aiPredictionIndex] ?? aiPredictions[0] ?? '')
   const isAIProviderConfigured = Boolean(settings.aiBaseUrl.trim() && settings.aiModel.trim())
   const visibleLogs = useMemo(
-    () => logs.filter((entry) => isVisibleLogLevel(entry.level, logLevel)),
-    [logs, logLevel],
+    () => {
+      const keyword = logSearch.trim().toLowerCase()
+      return logs.filter((entry) => {
+        if (!isVisibleLogLevel(entry.level, logLevel)) {
+          return false
+        }
+        if (!keyword) {
+          return true
+        }
+        const haystack = [
+          entry.level,
+          entry.source,
+          entry.message,
+          entry.timestamp,
+          entry.fields ? JSON.stringify(entry.fields) : '',
+        ]
+          .join('\n')
+          .toLowerCase()
+        return haystack.includes(keyword)
+      })
+    },
+    [logs, logLevel, logSearch],
   )
   const groupedHosts = useMemo<HostGroupView[]>(() => {
     const groups = normalizeHostGroups(hostGroups, hosts)
@@ -2051,6 +2098,7 @@ export function App() {
     }
 
     let failedStatus: number | undefined
+    let failedDetail = '这是调用 Go core 的 /api/ai/predict 接口失败。通常表示 Go core 调用大模型 provider 失败、provider 返回内容无法解析，或模型没有返回有效 commands。可在“工具 -> 日志”里查看 source=ai 的详细响应片段。'
     try {
       const response = await apiFetch('/ai/predict', {
         method: 'POST',
@@ -2062,13 +2110,19 @@ export function App() {
       if (!response.ok) {
         failedStatus = response.status
         const detail = await readResponseErrorDetail(response)
+        failedDetail = detail || failedDetail
         throw new Error(detail || `AI 预测请求失败：${response.status}`)
       }
       const data = (await response.json()) as AIPredictionResponse
       if (aiPredictionRequestRef.current !== requestID) {
         return
       }
-      setAiPredictions(data.commands.slice(0, normalized.aiPredictionCount))
+      const commands = normalizePredictedCommands(data.commands, normalized.aiPredictionCount)
+      if (commands.length === 0) {
+        failedDetail = `Go core 返回了 ${data.commands.length} 条预测，但前端过滤后没有可执行命令。原始候选：${truncateErrorDetail(JSON.stringify(data.commands))}`
+        throw new Error('AI 返回的预测命令无效，已过滤结构化残片')
+      }
+      setAiPredictions(commands)
       aiPredictionCursorRef.current = 0
       aiPredictionCycleStartedRef.current = false
       setAiPredictionIndex(0)
@@ -2098,7 +2152,7 @@ export function App() {
         path: '/ai/predict',
         source: 'AI 大模型',
         status: failedStatus,
-        detail: '这是调用 Go core 的 /api/ai/predict 接口失败。通常表示 Go core 调用大模型 provider 失败、provider 返回内容无法解析，或模型没有返回有效 commands。可在“工具 -> 日志”里查看 source=ai 的详细响应片段。',
+        detail: failedDetail,
       })
     }
   }
@@ -3738,6 +3792,14 @@ export function App() {
                   <option value="warn">warn</option>
                   <option value="error">error</option>
                 </select>
+              </label>
+              <label>
+                <span>搜索</span>
+                <input
+                  placeholder="搜索 predict、/ai/predict、source=ai..."
+                  value={logSearch}
+                  onChange={(event) => setLogSearch(event.target.value)}
+                />
               </label>
               <button type="button" title="刷新运行日志" onClick={() => void loadLogs()}>刷新</button>
             </div>

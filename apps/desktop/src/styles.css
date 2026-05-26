@@ -1254,6 +1254,7 @@ button {
 .host-modal select,
 .host-modal textarea,
 .group-modal input,
+.log-toolbar input,
 .log-toolbar select,
 .settings-modal input {
   width: 100%;
@@ -1276,6 +1277,7 @@ button {
 .host-modal select:focus,
 .host-modal textarea:focus,
 .group-modal input:focus,
+.log-toolbar input:focus,
 .log-toolbar select:focus,
 .settings-modal input:focus {
   border-color: rgba(79, 140, 255, 0.7);
@@ -1689,7 +1691,7 @@ code {
 
 .log-toolbar {
   display: grid;
-  grid-template-columns: minmax(160px, 220px) auto;
+  grid-template-columns: minmax(150px, 190px) minmax(240px, 1fr) auto;
   align-items: end;
   gap: 10px;
 }
