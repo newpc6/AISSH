@@ -110,6 +110,12 @@ type WindowWithSaveFilePicker = Window & {
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
+const logLevelRank: Record<LogLevel, number> = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40,
+}
 
 const textFileExtensions = new Set([
   'bash',
@@ -440,6 +446,10 @@ function normalizeFavoriteCommands(value: unknown) {
     }
   }
   return commands
+}
+
+function isVisibleLogLevel(entryLevel: LogLevel, selectedLevel: LogLevel) {
+  return logLevelRank[entryLevel] >= logLevelRank[selectedLevel]
 }
 
 function emptyTerminalCache(): TerminalCache {
@@ -1200,6 +1210,10 @@ export function App() {
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
   const primaryPrediction = commandBufferRef.current.trim() ? '' : (aiPredictions[aiPredictionIndex] ?? aiPredictions[0] ?? '')
   const isAIProviderConfigured = Boolean(settings.aiBaseUrl.trim() && settings.aiModel.trim())
+  const visibleLogs = useMemo(
+    () => logs.filter((entry) => isVisibleLogLevel(entry.level, logLevel)),
+    [logs, logLevel],
+  )
   const groupedHosts = useMemo<HostGroupView[]>(() => {
     const groups = normalizeHostGroups(hostGroups, hosts)
     return groups.map((group) => ({
@@ -1981,6 +1995,11 @@ export function App() {
       pendingAIPredictionCommandRef.current = ''
       appendLog('warn', 'ui.ai', 'prediction failed', {
         error: error instanceof Error ? error.message : String(error),
+        model: normalized.aiModel,
+        endpoint: normalized.aiBaseUrl,
+        predictionCount: normalized.aiPredictionCount,
+        terminalContextChars: payload.terminalContext.length,
+        commandHistoryCount: payload.commandHistory.length,
       })
     }
   }
@@ -3576,7 +3595,7 @@ export function App() {
 
             <div className="log-toolbar">
               <label>
-                <span>日志级别</span>
+                <span>展示级别</span>
                 <select
                   value={logLevel}
                   onChange={(event) => void updateLogLevel(event.target.value as LogLevel)}
@@ -3591,10 +3610,10 @@ export function App() {
             </div>
 
             <div className="log-list">
-              {logs.length === 0 ? (
+              {visibleLogs.length === 0 ? (
                 <p className="hint-text">暂无日志</p>
               ) : (
-                logs
+                visibleLogs
                   .slice()
                   .reverse()
                   .map((entry) => (

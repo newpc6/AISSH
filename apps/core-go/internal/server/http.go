@@ -72,9 +72,9 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 
-		response, err := predictCommands(r.Context(), request)
+		response, err := predictCommands(r.Context(), request, logger)
 		if err != nil {
-			logger.warn("ai", "prediction failed", map[string]any{"error": err.Error()})
+			logger.error("ai", "prediction failed", map[string]any{"error": err.Error()})
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}

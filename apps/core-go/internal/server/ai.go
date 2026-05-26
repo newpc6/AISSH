@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -40,9 +41,11 @@ const (
 	aiCommandHistoryLimit    = 200
 	aiRequestTimeout         = 18 * time.Second
 	aiMaxTokens              = 260
+	aiProviderBodyReadLimit  = 1024 * 1024
+	aiLogSnippetLimit        = 2000
 )
 
-func predictCommands(ctx context.Context, request aiPredictionRequest) (aiPredictionResponse, error) {
+func predictCommands(ctx context.Context, request aiPredictionRequest, logger *appLogger) (aiPredictionResponse, error) {
 	normalized, err := normalizeAIRequest(request)
 	if err != nil {
 		return aiPredictionResponse{}, err
@@ -72,6 +75,20 @@ func predictCommands(ctx context.Context, request aiPredictionRequest) (aiPredic
 		return aiPredictionResponse{}, err
 	}
 
+	started := time.Now()
+	if logger != nil {
+		logger.debug("ai", "prediction request prepared", map[string]any{
+			"endpoint":             endpoint,
+			"model":                normalized.Model,
+			"predictionCount":      normalized.PredictionCount,
+			"terminalContextChars": len(normalized.TerminalContext),
+			"commandHistoryCount":  len(normalized.CommandHistory),
+			"currentCommandChars":  len(normalized.CurrentCommand),
+			"host":                 normalized.HostName,
+			"hasAPIKey":            normalized.APIKey != "",
+		})
+	}
+
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return aiPredictionResponse{}, err
@@ -84,27 +101,108 @@ func predictCommands(ctx context.Context, request aiPredictionRequest) (aiPredic
 	client := &http.Client{Timeout: aiRequestTimeout}
 	response, err := client.Do(httpRequest)
 	if err != nil {
+		if logger != nil {
+			logger.error("ai", "provider request failed", map[string]any{
+				"endpoint":   endpoint,
+				"model":      normalized.Model,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
 		return aiPredictionResponse{}, err
 	}
 	defer response.Body.Close()
 
+	responseBody, bodyTruncated, err := readLimitedAIResponseBody(response.Body)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "provider response read failed", map[string]any{
+				"endpoint":   endpoint,
+				"model":      normalized.Model,
+				"status":     response.StatusCode,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
+		return aiPredictionResponse{}, err
+	}
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		bodySnippet := logTextSnippet(string(responseBody))
+		if logger != nil {
+			logger.error("ai", "provider returned non-success status", map[string]any{
+				"endpoint":      endpoint,
+				"model":         normalized.Model,
+				"status":        response.StatusCode,
+				"bodySnippet":   bodySnippet,
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		if bodySnippet != "" {
+			return aiPredictionResponse{}, fmt.Errorf("ai provider returned status %d: %s", response.StatusCode, bodySnippet)
+		}
 		return aiPredictionResponse{}, fmt.Errorf("ai provider returned status %d", response.StatusCode)
 	}
 
 	var chatResponse openAIChatResponse
-	if err := json.NewDecoder(response.Body).Decode(&chatResponse); err != nil {
+	if err := json.Unmarshal(responseBody, &chatResponse); err != nil {
+		if logger != nil {
+			logger.error("ai", "provider response decode failed", map[string]any{
+				"endpoint":      endpoint,
+				"model":         normalized.Model,
+				"status":        response.StatusCode,
+				"error":         err.Error(),
+				"bodySnippet":   logTextSnippet(string(responseBody)),
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
 		return aiPredictionResponse{}, err
 	}
 	if len(chatResponse.Choices) == 0 {
-		return aiPredictionResponse{}, errors.New("ai provider returned no choices")
+		if logger != nil {
+			logger.error("ai", "provider returned no choices", map[string]any{
+				"endpoint":      endpoint,
+				"model":         normalized.Model,
+				"status":        response.StatusCode,
+				"bodySnippet":   logTextSnippet(string(responseBody)),
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		return aiPredictionResponse{}, errors.New("ai provider returned no choices; see run logs for provider response")
 	}
 
-	commands := parsePredictedCommands(chatResponse.Choices[0].Message.Content, normalized.PredictionCount)
+	content := chatResponse.Choices[0].Message.Content
+	commands := parsePredictedCommands(content, normalized.PredictionCount)
 	if len(commands) == 0 {
-		return aiPredictionResponse{}, errors.New("ai provider returned no commands")
+		if logger != nil {
+			logger.error("ai", "provider returned no commands", map[string]any{
+				"endpoint":       endpoint,
+				"model":          normalized.Model,
+				"status":         response.StatusCode,
+				"contentChars":   len(content),
+				"contentSnippet": logTextSnippet(content),
+				"bodySnippet":    logTextSnippet(string(responseBody)),
+				"bodyTruncated":  bodyTruncated,
+				"durationMs":     time.Since(started).Milliseconds(),
+			})
+		}
+		return aiPredictionResponse{}, errors.New("ai provider returned no commands; see run logs for provider content")
 	}
 
+	if logger != nil {
+		logger.debug("ai", "prediction parsed commands", map[string]any{
+			"endpoint":      endpoint,
+			"model":         normalized.Model,
+			"status":        response.StatusCode,
+			"commandCount":  len(commands),
+			"contentChars":  len(content),
+			"bodyTruncated": bodyTruncated,
+			"durationMs":    time.Since(started).Milliseconds(),
+		})
+	}
 	return aiPredictionResponse{Commands: commands}, nil
 }
 
@@ -130,6 +228,27 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 		request.CommandHistory = request.CommandHistory[:aiCommandHistoryLimit]
 	}
 	return request, nil
+}
+
+func readLimitedAIResponseBody(reader io.Reader) ([]byte, bool, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, aiProviderBodyReadLimit+1))
+	truncated := len(body) > aiProviderBodyReadLimit
+	if truncated {
+		body = body[:aiProviderBodyReadLimit]
+	}
+	return body, truncated, err
+}
+
+func logTextSnippet(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= aiLogSnippetLimit {
+		return value
+	}
+	return string(runes[:aiLogSnippetLimit]) + "...(truncated)"
 }
 
 func chatCompletionsURL(baseURL string) (string, error) {
