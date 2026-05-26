@@ -3887,24 +3887,26 @@ export function App() {
                       >
                         {command}
                       </button>
-                      <button
-                        className="favorite-command-button"
-                        disabled={index === 0}
-                        type="button"
-                        title={`上移收藏命令：${command}`}
-                        onClick={() => moveFavoriteCommand(index, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        className="favorite-command-button"
-                        disabled={index === favoriteCommands.length - 1}
-                        type="button"
-                        title={`下移收藏命令：${command}`}
-                        onClick={() => moveFavoriteCommand(index, 1)}
-                      >
-                        ↓
-                      </button>
+                      <div className="favorite-order-buttons">
+                        <button
+                          className="favorite-command-button"
+                          disabled={index === 0}
+                          type="button"
+                          title={`上移收藏命令：${command}`}
+                          onClick={() => moveFavoriteCommand(index, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="favorite-command-button"
+                          disabled={index === favoriteCommands.length - 1}
+                          type="button"
+                          title={`下移收藏命令：${command}`}
+                          onClick={() => moveFavoriteCommand(index, 1)}
+                        >
+                          ↓
+                        </button>
+                      </div>
                       <button
                         className="favorite-command-button danger"
                         type="button"

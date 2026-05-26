@@ -1477,7 +1477,7 @@ button {
 }
 
 .favorite-list .command-row {
-  grid-template-columns: 30px minmax(0, 1fr) 30px 30px 30px;
+  grid-template-columns: 30px minmax(0, 1fr) 24px 30px;
 }
 
 .favorite-command-index {
@@ -1587,6 +1587,22 @@ button {
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
+}
+
+.favorite-order-buttons {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.favorite-order-buttons .favorite-command-button {
+  border-left: 0;
+  font-size: 12px;
+}
+
+.favorite-order-buttons .favorite-command-button + .favorite-command-button {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .favorite-command-button:disabled {
