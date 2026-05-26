@@ -299,14 +299,14 @@ npm run dev:tauri
 
 - 一个标题为 `AI SSH` 的桌面窗口
 - 窗口内显示和浏览器版一致的当前工作台界面
-- 同时可以在浏览器访问 <http://127.0.0.1:18555>
+- 同时可以在浏览器访问 <http://127.0.0.1:18555>，局域网或公网可访问 `http://服务器IP:18555`
 - 浏览器访问需要登录；默认用户是 `admin`
 
 说明：
 
 - 如果未配置 `AI_SSH_WEB_PASSWORD`，Go core 首次启动会自动生成初始密码并写入 `%AI_SSH_HOME%\data\web-auth.json`
 - 桌面客户端会用本机一次性令牌自动登录内置窗口；普通浏览器仍需要输入账号密码
-- 打包版会把 `ai-ssh-core.exe` 和 Web 前端资源一起放进安装包，客户端启动后自动拉起本机 `127.0.0.1:18555` 服务
+- 打包版会把 `ai-ssh-core.exe` 和 Web 前端资源一起放进安装包，客户端启动后自动拉起 `0.0.0.0:18555` 服务；浏览器访问仍需要登录
 
 ## 7. 方式三：只启动 Web 服务
 
@@ -319,7 +319,6 @@ npm run dev:tauri
 ```powershell
 $env:AI_SSH_WEB_USER = "admin"
 $env:AI_SSH_WEB_PASSWORD = "你的密码"
-$env:AI_SSH_BIND_HOST = "0.0.0.0"
 npm run serve:web
 ```
 
@@ -341,7 +340,6 @@ npm run build:core
 
 ```powershell
 $env:AI_SSH_WEB_ROOT = "apps/desktop/dist"
-$env:AI_SSH_BIND_HOST = "0.0.0.0"
 $env:AI_SSH_WEB_USER = "admin"
 $env:AI_SSH_WEB_PASSWORD = "你的密码"
 apps/core-go/bin/ai-ssh-core.exe
@@ -350,7 +348,7 @@ apps/core-go/bin/ai-ssh-core.exe
 常用环境变量：
 
 - `AI_SSH_CORE_PORT`：服务端口，默认 `18555`
-- `AI_SSH_BIND_HOST`：监听地址，默认 `127.0.0.1`；服务器部署可设为 `0.0.0.0`
+- `AI_SSH_BIND_HOST`：监听地址，默认 `0.0.0.0`；如只允许本机访问可设为 `127.0.0.1`
 - `AI_SSH_WEB_ROOT`：前端静态资源目录，通常是 `apps/desktop/dist`
 - `AI_SSH_WEB_USER`：网页登录用户名，默认 `admin`
 - `AI_SSH_WEB_PASSWORD`：网页登录密码；未设置时会自动生成并保存到 `data/web-auth.json`

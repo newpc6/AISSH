@@ -63,7 +63,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $env:AI_SSH_HOME) { $env:AI_SSH_HOME = Join-Path $scriptDir "data" }
 if (-not $env:AI_SSH_WEB_ROOT) { $env:AI_SSH_WEB_ROOT = Join-Path $scriptDir "web" }
-if (-not $env:AI_SSH_BIND_HOST) { $env:AI_SSH_BIND_HOST = "127.0.0.1" }
+if (-not $env:AI_SSH_BIND_HOST) { $env:AI_SSH_BIND_HOST = "0.0.0.0" }
 if (-not $env:AI_SSH_CORE_PORT) { $env:AI_SSH_CORE_PORT = "18555" }
 New-Item -ItemType Directory -Force -Path $env:AI_SSH_HOME | Out-Null
 Write-Host "AI SSH Web: http://$($env:AI_SSH_BIND_HOST):$($env:AI_SSH_CORE_PORT)"
@@ -78,7 +78,7 @@ Write-Host "Data: $env:AI_SSH_HOME"
 set "SCRIPT_DIR=%~dp0"
 if "%AI_SSH_HOME%"=="" set "AI_SSH_HOME=%SCRIPT_DIR%data"
 if "%AI_SSH_WEB_ROOT%"=="" set "AI_SSH_WEB_ROOT=%SCRIPT_DIR%web"
-if "%AI_SSH_BIND_HOST%"=="" set "AI_SSH_BIND_HOST=127.0.0.1"
+if "%AI_SSH_BIND_HOST%"=="" set "AI_SSH_BIND_HOST=0.0.0.0"
 if "%AI_SSH_CORE_PORT%"=="" set "AI_SSH_CORE_PORT=18555"
 if not exist "%AI_SSH_HOME%" mkdir "%AI_SSH_HOME%"
 echo AI SSH Web: http://%AI_SSH_BIND_HOST%:%AI_SSH_CORE_PORT%
@@ -94,7 +94,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 export AI_SSH_HOME="${AI_SSH_HOME:-$SCRIPT_DIR/data}"
 export AI_SSH_WEB_ROOT="${AI_SSH_WEB_ROOT:-$SCRIPT_DIR/web}"
-export AI_SSH_BIND_HOST="${AI_SSH_BIND_HOST:-127.0.0.1}"
+export AI_SSH_BIND_HOST="${AI_SSH_BIND_HOST:-0.0.0.0}"
 export AI_SSH_CORE_PORT="${AI_SSH_CORE_PORT:-18555}"
 mkdir -p "$AI_SSH_HOME"
 echo "AI SSH Web: http://$AI_SSH_BIND_HOST:$AI_SSH_CORE_PORT"
@@ -142,14 +142,7 @@ function Write-WebReadme {
     '',
     '## 局域网访问',
     '',
-    '如需让其他机器访问，请在启动前设置：',
-    '',
-    '````powershell',
-    '$env:AI_SSH_BIND_HOST = "0.0.0.0"',
-    '.\start-web.ps1',
-    '````',
-    '',
-    '然后从其他电脑访问：',
+    '发布包默认监听 `0.0.0.0`，同一局域网或公网机器可以直接访问：',
     '',
     '````text',
     'http://服务器IP:18555',

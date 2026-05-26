@@ -61,17 +61,17 @@ cd release/web
 
 ```text
 http://127.0.0.1:18555
+http://本机或服务器IP:18555
 ```
 
 首次启动会进入初始化页面，需要设置网页登录用户名和密码。
 
 ## 4. 局域网访问 Web 版
 
-默认只监听本机 `127.0.0.1`。如果部署到服务器，想让其他电脑通过浏览器访问：
+Web 发布包默认监听 `0.0.0.0`。部署到服务器或局域网电脑后，其他电脑可以直接通过浏览器访问：
 
 ```powershell
 cd release/web
-$env:AI_SSH_BIND_HOST = "0.0.0.0"
 .\start-web.ps1
 ```
 
@@ -79,6 +79,13 @@ $env:AI_SSH_BIND_HOST = "0.0.0.0"
 
 ```text
 http://服务器IP:18555
+```
+
+如只想限制为本机访问，可以在启动前设置：
+
+```powershell
+$env:AI_SSH_BIND_HOST = "127.0.0.1"
+.\start-web.ps1
 ```
 
 如需修改端口：

@@ -485,7 +485,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 func resolveBindHost() string {
 	host := strings.TrimSpace(os.Getenv("AI_SSH_BIND_HOST"))
 	if host == "" {
-		return "127.0.0.1"
+		return "0.0.0.0"
 	}
 	return host
 }
