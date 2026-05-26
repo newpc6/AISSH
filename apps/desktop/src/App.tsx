@@ -593,6 +593,7 @@ export function App() {
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [favoriteCommands, setFavoriteCommands] = useState<string[]>([])
+  const [pendingFavoriteDelete, setPendingFavoriteDelete] = useState('')
   const [aiPredictions, setAiPredictions] = useState<string[]>([])
   const [aiPredictionIndex, setAiPredictionIndex] = useState(0)
   const [aiPredictionState, setAiPredictionState] = useState<LoadState>('idle')
@@ -943,11 +944,8 @@ export function App() {
     if (!normalized) {
       return
     }
-    const confirmed = window.confirm(`确定删除收藏命令「${normalized}」吗？`)
-    if (!confirmed) {
-      return
-    }
     persistFavoriteCommands(favoriteCommands.filter((item) => item !== normalized))
+    setPendingFavoriteDelete('')
   }
 
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
@@ -3316,7 +3314,7 @@ export function App() {
                         className="favorite-command-button danger"
                         type="button"
                         title={`删除收藏命令：${command}`}
-                        onClick={() => deleteFavoriteCommand(command)}
+                        onClick={() => setPendingFavoriteDelete(command)}
                       >
                         ×
                       </button>
@@ -3823,6 +3821,28 @@ export function App() {
             <div className="modal-actions">
               <button type="button" title="关闭偏好设置窗口" onClick={() => setIsSettingsDialogOpen(false)}>关闭</button>
               <button className="primary-button" type="button" title="保存偏好设置" onClick={saveSettings}>保存</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingFavoriteDelete ? (
+        <div className="modal-backdrop">
+          <section className="confirm-modal">
+            <div className="modal-header">
+              <div>
+                <p className="section-label">收藏命令</p>
+                <h3>删除收藏</h3>
+              </div>
+              <button type="button" title="关闭删除确认" onClick={() => setPendingFavoriteDelete('')}>×</button>
+            </div>
+            <p className="confirm-copy">确定删除这条收藏命令吗？</p>
+            <code className="confirm-command">{pendingFavoriteDelete}</code>
+            <div className="modal-actions">
+              <button type="button" title="取消删除收藏命令" onClick={() => setPendingFavoriteDelete('')}>取消</button>
+              <button className="danger-button" type="button" title="确认删除收藏命令" onClick={() => deleteFavoriteCommand(pendingFavoriteDelete)}>
+                删除
+              </button>
             </div>
           </section>
         </div>

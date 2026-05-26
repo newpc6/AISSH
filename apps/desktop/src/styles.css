@@ -1229,6 +1229,7 @@ button {
 .group-modal,
 .log-modal,
 .settings-modal,
+.confirm-modal,
 .metric-modal {
   display: grid;
   gap: 10px;
@@ -1479,6 +1480,7 @@ code {
 .group-modal,
 .log-modal,
 .settings-modal,
+.confirm-modal,
 .metric-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
@@ -1575,6 +1577,28 @@ code {
   width: min(920px, 100%);
 }
 
+.confirm-modal {
+  width: min(460px, calc(100vw - 40px));
+}
+
+.confirm-copy {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.confirm-command {
+  display: block;
+  max-height: 120px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .modal-header,
 .modal-actions {
   display: flex;
@@ -1598,6 +1622,16 @@ code {
 .modal-actions button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.danger-button {
+  border-color: rgba(248, 113, 113, 0.35) !important;
+  background: rgba(239, 68, 68, 0.14) !important;
+  color: #fecaca !important;
+}
+
+.danger-button:hover {
+  background: rgba(239, 68, 68, 0.22) !important;
 }
 
 .log-toolbar {
