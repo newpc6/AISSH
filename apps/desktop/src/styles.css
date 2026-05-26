@@ -787,7 +787,7 @@ button {
 .file-preview-header {
   min-height: 58px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, auto) max-content;
   align-items: center;
   gap: 14px;
   padding: 0 14px;
@@ -797,32 +797,40 @@ button {
   background: #0d1520;
 }
 
-.file-preview-header div {
+.file-preview-title {
   min-width: 0;
   display: grid;
   gap: 4px;
 }
 
 .file-preview-header strong,
-.file-preview-header span,
-.file-preview-header small {
+.file-preview-title span,
+.file-preview-meta,
+.file-save-message {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-preview-header span,
-.file-preview-header small {
+.file-preview-title span,
+.file-preview-meta {
   color: #8ca0b8;
   font-size: 12px;
 }
 
+.file-preview-meta {
+  justify-self: end;
+  max-width: 320px;
+}
+
 .file-preview-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
   gap: 6px;
-  min-width: 0;
+  min-width: max-content;
 }
 
 .file-preview-actions button {
@@ -872,13 +880,59 @@ button {
 
 .file-text-preview {
   height: 100%;
-  overflow: auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
   background: #0b111a;
+}
+
+.file-text-preview.editing {
+  grid-template-rows: 38px minmax(0, 1fr);
+}
+
+.codemirror-toolbar {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0d1520;
+}
+
+.codemirror-toolbar span {
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.codemirror-toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.codemirror-toolbar button {
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.codemirror-toolbar button:hover {
+  border-color: rgba(79, 140, 255, 0.45);
+  background: rgba(79, 140, 255, 0.12);
+  color: #e8edf4;
 }
 
 .codemirror-host,
 .codemirror-host .cm-editor {
   height: 100%;
+  min-height: 0;
 }
 
 .codemirror-host .cm-editor {

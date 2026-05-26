@@ -324,6 +324,25 @@ function codeMirrorLanguage(name: string) {
   return []
 }
 
+function formatEditableText(name: string, content: string) {
+  const extension = fileExtension(name)
+  const normalized = content.replace(/\r\n?/g, '\n')
+  if (extension === 'json') {
+    const formatted = JSON.stringify(JSON.parse(normalized), null, 2)
+    return {
+      content: `${formatted}${normalized.endsWith('\n') ? '\n' : ''}`,
+      message: 'JSON 已格式化',
+    }
+  }
+  return {
+    content: normalized
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+$/g, ''))
+      .join('\n'),
+    message: '已整理行尾空白',
+  }
+}
+
 function formatMetricTime(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
@@ -2193,6 +2212,73 @@ export function App() {
     )
   }
 
+  const formatFilePreviewDraft = (tab: FilePreviewTab) => {
+    if (tab.kind !== 'text') {
+      return
+    }
+    try {
+      const result = formatEditableText(tab.name, tab.draftContent ?? tab.content ?? '')
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id
+            ? { ...item, draftContent: result.content, saveState: 'success', saveMessage: result.message }
+            : item
+        )),
+      )
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '文本格式不合法'
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id
+            ? { ...item, saveState: 'error', saveMessage: `格式化失败：${detail}` }
+            : item
+        )),
+      )
+    }
+  }
+
+  const resetFilePreviewDraft = (tab: FilePreviewTab) => {
+    if (tab.kind !== 'text') {
+      return
+    }
+    setFilePreviewTabs((current) =>
+      current.map((item) => (
+        item.id === tab.id
+          ? {
+              ...item,
+              draftContent: item.content ?? '',
+              saveState: 'success',
+              saveMessage: '已还原为保存内容',
+            }
+          : item
+      )),
+    )
+  }
+
+  const copyFilePreviewDraft = async (tab: FilePreviewTab) => {
+    if (tab.kind !== 'text') {
+      return
+    }
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('当前环境不支持剪贴板写入')
+      }
+      await navigator.clipboard.writeText(tab.draftContent ?? tab.content ?? '')
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id ? { ...item, saveState: 'success', saveMessage: '已复制到剪贴板' } : item
+        )),
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '复制失败'
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id ? { ...item, saveState: 'error', saveMessage: message } : item
+        )),
+      )
+    }
+  }
+
   const saveFilePreview = async (tab: FilePreviewTab) => {
     if (tab.kind !== 'text') {
       return
@@ -2930,7 +3016,23 @@ export function App() {
     if (tab.kind === 'text') {
       const draft = tab.draftContent ?? tab.content ?? ''
       return (
-        <div className="file-text-preview">
+        <div className={`file-text-preview ${tab.isEditing ? 'editing' : ''}`}>
+          {tab.isEditing ? (
+            <div className="codemirror-toolbar">
+              <span>编辑模式</span>
+              <div className="codemirror-toolbar-actions">
+                <button type="button" title={`格式化 ${tab.name}`} onClick={() => formatFilePreviewDraft(tab)}>
+                  格式化
+                </button>
+                <button type="button" title={`还原 ${tab.name} 到已保存内容`} onClick={() => resetFilePreviewDraft(tab)}>
+                  还原
+                </button>
+                <button type="button" title={`复制 ${tab.name} 当前内容`} onClick={() => void copyFilePreviewDraft(tab)}>
+                  复制
+                </button>
+              </div>
+            </div>
+          ) : null}
           <CodeMirrorEditor
             fileName={tab.name}
             readOnly={!tab.isEditing}
@@ -3545,58 +3647,59 @@ export function App() {
           <section className={`terminal-stage ${isFilePreviewActive ? 'show-file-preview' : ''}`}>
             {activeFilePreview ? (
               <div className="file-preview-header">
-                <div>
+                <div className="file-preview-title">
                   <strong>{activeFilePreview.name}</strong>
                   <span>{activeFilePreview.path}</span>
                 </div>
-                <small>{previewKindLabel(activeFilePreview.kind)} · {formatBytes(activeFilePreview.size)} · {new Date(activeFilePreview.modifiedAt).toLocaleString()}</small>
-                {activeFilePreview.kind === 'text' && activeFilePreview.status === 'ready' ? (
-                  <div className="file-preview-actions">
-                    <button
-                      className={!activeFilePreview.isEditing ? 'active' : ''}
-                      type="button"
-                      title={`以预览模式查看 ${activeFilePreview.name}`}
-                      onClick={() => setFilePreviewEditMode(activeFilePreview.id, false)}
-                    >
-                      预览
-                    </button>
-                    <button
-                      className={activeFilePreview.isEditing ? 'active' : ''}
-                      type="button"
-                      title={`编辑 ${activeFilePreview.name}`}
-                      onClick={() => setFilePreviewEditMode(activeFilePreview.id, true)}
-                    >
-                      编辑
-                    </button>
-                    <button
-                      disabled={!activeFilePreview.isEditing || activeFilePreview.saveState === 'loading'}
-                      type="button"
-                      title={`保存 ${activeFilePreview.name}`}
-                      onClick={() => void saveFilePreview(activeFilePreview)}
-                    >
-                      {activeFilePreview.saveState === 'loading' ? '保存中' : '保存'}
-                    </button>
-                    {activeFilePreview.saveMessage ? (
-                      <span className={`file-save-message file-save-${activeFilePreview.saveState ?? 'idle'}`}>
-                        {activeFilePreview.saveMessage}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                <button
-                  className="terminal-reconnect"
-                  type="button"
-                  title={`下载 ${activeFilePreview.name}`}
-                  onClick={() => void downloadFile({
-                    name: activeFilePreview.name,
-                    path: activeFilePreview.path,
-                    type: 'file',
-                    size: activeFilePreview.size,
-                    modifiedAt: activeFilePreview.modifiedAt,
-                  })}
-                >
-                  下载
-                </button>
+                <small className="file-preview-meta">{previewKindLabel(activeFilePreview.kind)} · {formatBytes(activeFilePreview.size)} · {new Date(activeFilePreview.modifiedAt).toLocaleString()}</small>
+                <div className="file-preview-actions">
+                  {activeFilePreview.kind === 'text' && activeFilePreview.status === 'ready' ? (
+                    <>
+                      <button
+                        className={!activeFilePreview.isEditing ? 'active' : ''}
+                        type="button"
+                        title={`以预览模式查看 ${activeFilePreview.name}`}
+                        onClick={() => setFilePreviewEditMode(activeFilePreview.id, false)}
+                      >
+                        预览
+                      </button>
+                      <button
+                        className={activeFilePreview.isEditing ? 'active' : ''}
+                        type="button"
+                        title={`编辑 ${activeFilePreview.name}`}
+                        onClick={() => setFilePreviewEditMode(activeFilePreview.id, true)}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        disabled={!activeFilePreview.isEditing || activeFilePreview.saveState === 'loading'}
+                        type="button"
+                        title={`保存 ${activeFilePreview.name}`}
+                        onClick={() => void saveFilePreview(activeFilePreview)}
+                      >
+                        {activeFilePreview.saveState === 'loading' ? '保存中' : '保存'}
+                      </button>
+                      {activeFilePreview.saveMessage ? (
+                        <span className={`file-save-message file-save-${activeFilePreview.saveState ?? 'idle'}`}>
+                          {activeFilePreview.saveMessage}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                  <button
+                    type="button"
+                    title={`下载 ${activeFilePreview.name}`}
+                    onClick={() => void downloadFile({
+                      name: activeFilePreview.name,
+                      path: activeFilePreview.path,
+                      type: 'file',
+                      size: activeFilePreview.size,
+                      modifiedAt: activeFilePreview.modifiedAt,
+                    })}
+                  >
+                    下载
+                  </button>
+                </div>
               </div>
             ) : activeSession ? (
               <div className="terminal-header">
