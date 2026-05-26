@@ -2501,6 +2501,55 @@ export function App() {
     }
   }
 
+  const openFilePreviewAsText = async (tab: FilePreviewTab) => {
+    if (tab.status === 'loading') {
+      return
+    }
+
+    setFilePreviewTabs((current) =>
+      current.map((item) => (
+        item.id === tab.id
+          ? { ...item, kind: 'text', status: 'loading', error: '', saveState: 'idle', saveMessage: '' }
+          : item
+      )),
+    )
+
+    try {
+      const response = await apiFetch(`/files/${tab.hostId}?download=1&path=${encodeURIComponent(tab.path)}`)
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail.trim() || `以文本方式打开失败：${response.status}`)
+      }
+      const content = await response.text()
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id
+            ? {
+                ...item,
+                kind: 'text',
+                status: 'ready',
+                content,
+                draftContent: content,
+                isEditing: false,
+                saveState: 'idle',
+                saveMessage: '',
+                error: '',
+                objectUrl: undefined,
+              }
+            : item
+        )),
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '以文本方式打开失败'
+      setFilePreviewTabs((current) =>
+        current.map((item) => (
+          item.id === tab.id ? { ...item, status: 'error', error: message, kind: 'binary' } : item
+        )),
+      )
+      setErrorMessage(message)
+    }
+  }
+
   const closeFilePreview = (tabID: string) => {
     const currentTabs = filePreviewTabsRef.current
     const closedIndex = currentTabs.findIndex((tab) => tab.id === tabID)
@@ -3464,6 +3513,13 @@ export function App() {
         <div className="file-preview-empty">
           <strong>预览失败</strong>
           <small>{tab.error ?? '无法读取远程文件'}</small>
+          <button
+            type="button"
+            title={`以文本方式打开 ${tab.name}`}
+            onClick={() => void openFilePreviewAsText(tab)}
+          >
+            以文本方式打开
+          </button>
           <button type="button" title={`下载 ${tab.name}`} onClick={() => void downloadFile({
             name: tab.name,
             path: tab.path,
@@ -3542,6 +3598,13 @@ export function App() {
       <div className="file-preview-empty">
         <strong>暂不支持直接预览这种文件</strong>
         <small>{meta}</small>
+        <button
+          type="button"
+          title={`以文本方式打开 ${tab.name}`}
+          onClick={() => void openFilePreviewAsText(tab)}
+        >
+          以文本方式打开
+        </button>
         <button type="button" title={`下载 ${tab.name}`} onClick={() => void downloadFile({
           name: tab.name,
           path: tab.path,
