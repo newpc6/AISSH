@@ -16,6 +16,8 @@
 - React 前端工作台界面
 - 前端对 Go core 健康检查接口的状态展示
 - Tauri 桌面壳启动能力
+- Go core 托管前端 Web，网页访问默认需要登录
+- 桌面客户端启动后会尝试自动拉起内置 Go core，浏览器也可以访问同一服务
 - `local-demo` 演示主机的终端输入输出链路
 - 临时 SSH 主机密码认证连接
 - 左侧加号弹窗新增 SSH 连接
@@ -69,6 +71,8 @@ npm install
 ## 5. 方式一：启动浏览器版前端界面
 
 这个方式最适合快速看当前页面效果。
+
+如果希望使用“带登录的完整 Web 服务”，优先使用 `方式二`。本节是开发调试模式，Vite 会代理到 Go core。
 
 ### 步骤 1：启动 Go core
 
@@ -250,9 +254,27 @@ http://127.0.0.1:1420
 
 这个方式用于查看当前桌面壳效果。
 
-### 步骤 1：确保 Go core 已启动
+### 步骤 1：开发模式先准备 core 可执行文件
 
-在项目根目录执行：
+Tauri 窗口启动时会尝试自动拉起 Go core。开发模式首次运行前，在项目根目录执行：
+
+```powershell
+npm run build:desktop
+powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1
+```
+
+说明：
+
+- 脚本会编译 `ai-ssh-core.exe`
+- 脚本会把前端 `dist` 复制到 Tauri resources，用于客户端启动后的浏览器 Web 访问
+
+如果你不想让 Tauri 自动启动 core，可以设置：
+
+```powershell
+$env:AI_SSH_DESKTOP_NO_CORE = "1"
+```
+
+然后手动启动 core：
 
 ```powershell
 npm run dev:core
@@ -260,7 +282,7 @@ npm run dev:core
 
 ### 步骤 2：启动 Tauri
 
-在另一个终端窗口执行：
+在项目根目录执行：
 
 ```powershell
 npm run dev:tauri
@@ -277,8 +299,65 @@ npm run dev:tauri
 
 - 一个标题为 `AI SSH` 的桌面窗口
 - 窗口内显示和浏览器版一致的当前工作台界面
+- 同时可以在浏览器访问 <http://127.0.0.1:18555>
+- 浏览器访问需要登录；默认用户是 `admin`
 
-## 7. 构建检查
+说明：
+
+- 如果未配置 `AI_SSH_WEB_PASSWORD`，Go core 首次启动会自动生成初始密码并写入 `%AI_SSH_HOME%\data\web-auth.json`
+- 桌面客户端会用本机一次性令牌自动登录内置窗口；普通浏览器仍需要输入账号密码
+- 打包版会把 `ai-ssh-core.exe` 和 Web 前端资源一起放进安装包，客户端启动后自动拉起本机 `127.0.0.1:18555` 服务
+
+## 7. 方式三：只启动 Web 服务
+
+这个方式适合部署在服务器上，只提供浏览器访问。
+
+### 本地开发启动
+
+在项目根目录执行：
+
+```powershell
+$env:AI_SSH_WEB_USER = "admin"
+$env:AI_SSH_WEB_PASSWORD = "你的密码"
+$env:AI_SSH_BIND_HOST = "0.0.0.0"
+npm run serve:web
+```
+
+然后访问：
+
+- 本机：<http://127.0.0.1:18555>
+- 局域网或服务器：`http://服务器IP:18555`
+
+### 使用已编译 core 启动
+
+先构建前端和 Go core：
+
+```powershell
+npm run build:desktop
+npm run build:core
+```
+
+然后启动：
+
+```powershell
+$env:AI_SSH_WEB_ROOT = "apps/desktop/dist"
+$env:AI_SSH_BIND_HOST = "0.0.0.0"
+$env:AI_SSH_WEB_USER = "admin"
+$env:AI_SSH_WEB_PASSWORD = "你的密码"
+apps/core-go/bin/ai-ssh-core.exe
+```
+
+常用环境变量：
+
+- `AI_SSH_CORE_PORT`：服务端口，默认 `18555`
+- `AI_SSH_BIND_HOST`：监听地址，默认 `127.0.0.1`；服务器部署可设为 `0.0.0.0`
+- `AI_SSH_WEB_ROOT`：前端静态资源目录，通常是 `apps/desktop/dist`
+- `AI_SSH_WEB_USER`：网页登录用户名，默认 `admin`
+- `AI_SSH_WEB_PASSWORD`：网页登录密码；未设置时会自动生成并保存到 `data/web-auth.json`
+- `AI_SSH_WEB_AUTH=0`：关闭网页登录认证，仅限本机临时调试使用
+- `AI_SSH_HOME`：数据目录，影响 `data/hosts.json` 和 `data/web-auth.json`
+
+## 8. 构建检查
 
 如果你只想验证工程是否能编译通过，可以在项目根目录执行：
 
@@ -293,9 +372,9 @@ npm run test:core
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
-## 8. 常见问题
+## 9. 常见问题
 
-### 8.1 页面显示 core 未连接
+### 9.1 页面显示 core 未连接
 
 排查顺序：
 
@@ -309,7 +388,7 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 如果正常，应返回一段 JSON。
 
-### 8.2 新增 SSH 连接保存失败或出现 HTTP 405
+### 9.2 新增 SSH 连接保存失败或出现 HTTP 405
 
 排查顺序：
 
@@ -321,7 +400,7 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 当前保存主机成功后，对话框会自动关闭，新主机会插入左侧服务器列表并自动选中。
 
-### 8.3 Tauri 启动失败
+### 9.3 Tauri 启动失败
 
 先检查：
 
@@ -343,7 +422,7 @@ npm run tauri -- info -w apps/desktop
 
 它用于减小代理问题对当前仓库的影响。
 
-### 8.4 命令可用但当前终端找不到 rustc / cargo
+### 9.4 命令可用但当前终端找不到 rustc / cargo
 
 通常是因为安装后当前终端没有刷新环境变量。
 
@@ -357,15 +436,22 @@ rustc --version
 cargo --version
 ```
 
-## 9. 当前推荐启动方式
+## 10. 当前推荐启动方式
 
 日常开发建议：
 
-1. 一个终端运行 `npm run dev:core`
-2. 一个终端运行 `npm run dev:tauri`
+1. 先运行 `npm run build:desktop`
+2. 再运行 `powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1`
+3. 运行 `npm run dev:tauri`
 
 如果只是想快速看前端页面：
 
 1. 一个终端运行 `npm run dev:core`
 2. 一个终端运行 `npm run dev:desktop`
 3. 浏览器打开 <http://127.0.0.1:1420>
+
+如果要模拟服务器 Web 部署：
+
+1. 设置 `AI_SSH_WEB_USER`、`AI_SSH_WEB_PASSWORD`、`AI_SSH_BIND_HOST`
+2. 运行 `npm run serve:web`
+3. 浏览器打开 <http://127.0.0.1:18555>

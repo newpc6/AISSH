@@ -47,6 +47,7 @@ func newTestServer(t *testing.T) *http.Server {
 
 func newTestServerWithCredentials(t *testing.T, credentials credentialStore) *http.Server {
 	t.Helper()
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
 	store := &hostStore{path: filepath.Join(t.TempDir(), "hosts.json")}
 	return newServer("18555", newSessionManagerWithStores(store, credentials, newAppLogger()))
 }
@@ -69,6 +70,42 @@ func TestHealthEndpoint(t *testing.T) {
 
 	if response["status"] != "ok" {
 		t.Fatalf("expected status ok, got %v", response["status"])
+	}
+}
+
+func TestWebAuthProtectsAPIAndAllowsLogin(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "1")
+	t.Setenv("AI_SSH_WEB_USER", "admin")
+	t.Setenv("AI_SSH_WEB_PASSWORD", "secret")
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	unauthorizedRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(unauthorizedRecorder, unauthorizedReq)
+	if unauthorizedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected protected api status 401, got %d", unauthorizedRecorder.Code)
+	}
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"secret"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(loginRecorder, loginReq)
+	if loginRecorder.Code != http.StatusOK {
+		t.Fatalf("expected login status 200, got %d", loginRecorder.Code)
+	}
+
+	authorizedReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	for _, cookie := range loginRecorder.Result().Cookies() {
+		authorizedReq.AddCookie(cookie)
+	}
+	authorizedRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(authorizedRecorder, authorizedReq)
+	if authorizedRecorder.Code != http.StatusOK {
+		t.Fatalf("expected authenticated api status 200, got %d", authorizedRecorder.Code)
 	}
 }
 
@@ -261,6 +298,7 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 }
 
 func TestHostGroupsPersistEmptyGroups(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
 	storePath := filepath.Join(t.TempDir(), "hosts.json")
 	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, newMemoryCredentialStore(), newAppLogger()))
 	updateBody := []byte(`{"groups":[{"name":"默认"},{"name":"生产环境"},{"name":"空分组"}]}`)
@@ -291,6 +329,7 @@ func TestHostGroupsPersistEmptyGroups(t *testing.T) {
 }
 
 func TestHostGroupsRenameUpdatesHosts(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
 	storePath := filepath.Join(t.TempDir(), "hosts.json")
 	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, newMemoryCredentialStore(), newAppLogger()))
 	createBody := []byte(`{
@@ -327,6 +366,7 @@ func TestHostGroupsRenameUpdatesHosts(t *testing.T) {
 }
 
 func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
 	storePath := filepath.Join(t.TempDir(), "hosts.json")
 	credentials := newMemoryCredentialStore()
 
@@ -748,6 +788,7 @@ func TestOutputTail(t *testing.T) {
 }
 
 func TestSessionCWDEndpoint(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
 	sessionID := "session-test-cwd"
 	sessionManager := newSessionManagerWithStores(&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")}, newMemoryCredentialStore(), newAppLogger())
 	session := &terminalSession{

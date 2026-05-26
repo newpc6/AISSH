@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { defaultKeymap, history as editorHistory, historyKeymap } from '@codemirror/commands'
@@ -23,6 +24,7 @@ import '@xterm/xterm/css/xterm.css'
 import {
   type AIPredictionRequest,
   type AIPredictionResponse,
+  type AuthStatusResponse,
   CORE_API_BASE,
   CORE_DEFAULT_PORT,
   type HealthResponse,
@@ -143,6 +145,7 @@ const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
 const ERROR_DETAIL_LIMIT = 1200
+const isTauriRuntime = '__TAURI_INTERNALS__' in window
 const logLevelRank: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
@@ -228,12 +231,18 @@ function resolveApiStreamUrl(path: string) {
   if (window.location.origin.startsWith('http://127.0.0.1:1420')) {
     return `${CORE_API_BASE}${requestPath}`
   }
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    return `${CORE_API_BASE}${requestPath}`
+  }
   return `${CORE_API_FALLBACK_BASE}${requestPath}`
 }
 
 function resolveApiUrl(path: string) {
   const requestPath = path.startsWith('/') ? path : `/${path}`
   if (window.location.origin.startsWith('http://127.0.0.1:1420')) {
+    return `${CORE_API_BASE}${requestPath}`
+  }
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     return `${CORE_API_BASE}${requestPath}`
   }
   return `${CORE_API_FALLBACK_BASE}${requestPath}`
@@ -395,7 +404,7 @@ function inferRemotePathFromCommand(command: string, currentPath: string) {
 }
 
 async function saveBlobWithFilePicker(blob: Blob, suggestedName: string) {
-  if ('__TAURI_INTERNALS__' in window) {
+  if (isTauriRuntime) {
     const targetPath = await saveDialog({ defaultPath: suggestedName })
     if (!targetPath) {
       return true
@@ -745,6 +754,10 @@ function normalizeRequestPath(path: string) {
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
+  const [authState, setAuthState] = useState<LoadState>('loading')
+  const [authRequired, setAuthRequired] = useState(true)
+  const [loginForm, setLoginForm] = useState({ username: 'admin', password: '' })
+  const [loginError, setLoginError] = useState('')
   const [errorNotice, setErrorNotice] = useState<AppErrorNotice | null>(null)
   const [hosts, setHosts] = useState<HostRecord[]>([])
   const [hostGroups, setHostGroups] = useState<HostGroup[]>([{ name: '默认' }])
@@ -1112,18 +1125,19 @@ export function App() {
   const apiFetch = async (path: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const requestPath = path.startsWith('/') ? path : `/${path}`
-    const primaryUrl = `${CORE_API_BASE}${requestPath}`
+    const primaryUrl = resolveApiUrl(requestPath)
+    const requestInit: RequestInit = { ...init, credentials: 'include' }
     appendLog('debug', 'ui.api', 'request started', { method, path: requestPath })
 
     try {
-      let response = await fetch(primaryUrl, init)
+      let response = await fetch(primaryUrl, requestInit)
       if (isLikelyStatic405(response)) {
         appendLog('warn', 'ui.api', 'primary api returned 405, retrying core fallback', {
           method,
           path: requestPath,
           primaryUrl: response.url,
         })
-        response = await fetch(`${CORE_API_FALLBACK_BASE}${requestPath}`, init)
+        response = await fetch(`${CORE_API_FALLBACK_BASE}${requestPath}`, requestInit)
       }
 
       appendLog(response.ok ? 'debug' : 'warn', 'ui.api', 'request completed', {
@@ -1143,6 +1157,94 @@ export function App() {
         error: error instanceof Error ? error.message : String(error),
       })
       throw error
+    }
+  }
+
+  const checkAuthStatus = async () => {
+    setAuthState('loading')
+    try {
+      const response = await apiFetch('/auth/status')
+      if (!response.ok) {
+        throw new Error(`认证状态检查失败：${response.status}`)
+      }
+      const status = (await response.json()) as AuthStatusResponse
+      if (status.enabled && !status.authenticated && isTauriRuntime) {
+        const token = await invoke<string>('desktop_login_token')
+        if (token) {
+          const desktopResponse = await apiFetch('/auth/desktop', {
+            method: 'POST',
+            headers: {
+              'X-AI-SSH-Desktop-Token': token,
+            },
+          })
+          if (desktopResponse.ok) {
+            setAuthRequired(false)
+            setAuthState('success')
+            setLoginError('')
+            return
+          }
+        }
+      }
+      setAuthRequired(status.enabled && !status.authenticated)
+      setAuthState(status.enabled && !status.authenticated ? 'idle' : 'success')
+      setLoginError('')
+    } catch (error) {
+      setAuthRequired(true)
+      setAuthState('error')
+      setLoginError(error instanceof Error ? error.message : '认证状态检查失败')
+    }
+  }
+
+  const submitLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setAuthState('loading')
+    setLoginError('')
+    try {
+      const response = await apiFetch('/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(loginForm),
+      })
+      if (!response.ok) {
+        const detail = await readResponseErrorDetail(response)
+        throw new Error(detail || `登录失败：${response.status}`)
+      }
+      setAuthRequired(false)
+      setAuthState('success')
+      setLoginForm((current) => ({ ...current, password: '' }))
+      await Promise.all([checkHealth(), loadHosts(), loadHostGroups()])
+    } catch (error) {
+      setAuthRequired(true)
+      setAuthState('error')
+      setLoginError(error instanceof Error ? error.message : '登录失败')
+    }
+  }
+
+  const checkHealth = async () => {
+    setHealthState('loading')
+    let failedStatus: number | undefined
+    try {
+      const response = await apiFetch('/health')
+      if (!response.ok) {
+        failedStatus = response.status
+        const detail = await readResponseErrorDetail(response)
+        throw new Error(detail || `请求失败：${response.status}`)
+      }
+      const data = (await response.json()) as HealthResponse
+      setHealth(data)
+      setHealthState('success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      setErrorMessage(message, {
+        title: 'Go core 健康检查失败',
+        method: 'GET',
+        path: '/health',
+        source: '核心服务',
+        status: failedStatus,
+      })
+      setHealthState('error')
     }
   }
 
@@ -1289,35 +1391,19 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const loadHealth = async () => {
-      setHealthState('loading')
-      let failedStatus: number | undefined
-      try {
-        const response = await apiFetch('/health')
-        if (!response.ok) {
-          failedStatus = response.status
-          const detail = await readResponseErrorDetail(response)
-          throw new Error(detail || `请求失败：${response.status}`)
+    const boot = async () => {
+      await checkAuthStatus()
+      const authResponse = await apiFetch('/auth/status')
+      if (authResponse.ok) {
+        const status = (await authResponse.json()) as AuthStatusResponse
+        if (status.enabled && !status.authenticated) {
+          return
         }
-        const data = (await response.json()) as HealthResponse
-        setHealth(data)
-        setHealthState('success')
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '未知错误'
-        setErrorMessage(message, {
-          title: 'Go core 健康检查失败',
-          method: 'GET',
-          path: '/health',
-          source: '核心服务',
-          status: failedStatus,
-        })
-        setHealthState('error')
       }
+      await Promise.all([checkHealth(), loadHosts(), loadHostGroups()])
     }
 
-    void loadHealth()
-    void loadHosts()
-    void loadHostGroups()
+    void boot()
   }, [])
 
   useEffect(() => {
@@ -3037,6 +3123,41 @@ export function App() {
   }
 
   const expandedMetricLabel = expandedMetric === 'cpuPercent' ? 'CPU 使用率' : '内存使用率'
+
+  if (authRequired) {
+    return (
+      <div className="login-shell">
+        <form className="login-panel" onSubmit={submitLogin}>
+          <div>
+            <span>AI SSH Web</span>
+            <h1>登录后继续</h1>
+            <p>网页访问需要先登录。桌面客户端会继续使用本机安全会话。</p>
+          </div>
+          <label>
+            <span>用户名</span>
+            <input
+              autoComplete="username"
+              value={loginForm.username}
+              onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
+            />
+          </label>
+          <label>
+            <span>密码</span>
+            <input
+              autoComplete="current-password"
+              type="password"
+              value={loginForm.password}
+              onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+            />
+          </label>
+          {loginError ? <div className="login-error">{loginError}</div> : null}
+          <button disabled={authState === 'loading'} type="submit">
+            {authState === 'loading' ? '登录中...' : '登录'}
+          </button>
+        </form>
+      </div>
+    )
+  }
 
   return (
     <div className="workbench-shell">

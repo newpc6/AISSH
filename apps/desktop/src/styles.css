@@ -38,6 +38,83 @@ button {
   color: inherit;
 }
 
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 24% 20%, rgba(79, 140, 255, 0.18), transparent 34%),
+    #0e1319;
+}
+
+.login-panel {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #101821;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+.login-panel h1 {
+  margin: 4px 0;
+  font-size: 28px;
+}
+
+.login-panel p,
+.login-panel > div > span,
+.login-panel label span {
+  color: #8ca0b8;
+  font-size: 13px;
+}
+
+.login-panel p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.login-panel label {
+  display: grid;
+  gap: 7px;
+}
+
+.login-panel input {
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: #0b1118;
+  color: #f8fafc;
+  padding: 0 12px;
+}
+
+.login-panel button {
+  height: 40px;
+  border: 0;
+  border-radius: 7px;
+  background: #4f8cff;
+  color: white;
+  cursor: pointer;
+}
+
+.login-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.login-error {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
 .workbench-shell {
   height: 100vh;
   min-height: 0;

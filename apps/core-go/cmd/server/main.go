@@ -15,7 +15,7 @@ func main() {
 
 	srv := server.New(port)
 
-	log.Printf("AI SSH core listening on http://127.0.0.1:%s", port)
+	log.Printf("AI SSH core listening on http://%s", srv.Addr)
 
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)

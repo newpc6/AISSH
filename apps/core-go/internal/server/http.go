@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -15,6 +18,7 @@ func New(port string) *http.Server {
 func newServer(port string, manager *sessionManager) *http.Server {
 	mux := http.NewServeMux()
 	logger := manager.logger
+	authenticator := newWebAuthenticator(logger)
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -37,6 +41,48 @@ func newServer(port string, manager *sessionManager) *http.Server {
 
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/health", healthHandler)
+	mux.HandleFunc("/api/auth/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, authenticator.status(r))
+	})
+	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var request webLoginRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if !authenticator.login(w, request) {
+			http.Error(w, "用户名或密码错误", http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, authenticator.status(r))
+	})
+	mux.HandleFunc("/api/auth/desktop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !authenticator.desktopLogin(w, r) {
+			http.Error(w, "desktop token invalid", http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, authenticator.status(r))
+	})
+	mux.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		authenticator.logout(w, r)
+		writeJSON(w, map[string]string{"status": "ok"})
+	})
 	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -355,11 +401,87 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		}
 	})
 
+	handler := http.Handler(mux)
+	if staticDir := resolveWebStaticDir(); staticDir != "" {
+		logger.info("web", "serving web assets", map[string]any{"dir": staticDir})
+		handler = withStaticFallback(handler, staticDir)
+	} else {
+		logger.info("web", "web assets not configured; api only mode", nil)
+	}
+	handler = authenticator.requireAuth(handler)
+
 	return &http.Server{
-		Addr:              fmt.Sprintf("127.0.0.1:%s", port),
-		Handler:           logger.middleware(withCORS(mux)),
+		Addr:              fmt.Sprintf("%s:%s", resolveBindHost(), port),
+		Handler:           logger.middleware(withCORS(handler)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+}
+
+func resolveBindHost() string {
+	host := strings.TrimSpace(os.Getenv("AI_SSH_BIND_HOST"))
+	if host == "" {
+		return "127.0.0.1"
+	}
+	return host
+}
+
+func resolveWebStaticDir() string {
+	if value := strings.TrimSpace(os.Getenv("AI_SSH_WEB_ROOT")); value != "" {
+		if directoryExists(value) {
+			return value
+		}
+		return ""
+	}
+
+	candidates := []string{
+		filepath.Join("apps", "desktop", "dist"),
+		filepath.Join("..", "..", "desktop", "dist"),
+		filepath.Join("web"),
+		filepath.Join("dist"),
+	}
+	executable, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(executable)
+		candidates = append([]string{
+			filepath.Join(exeDir, "web"),
+			filepath.Join(exeDir, "dist"),
+			filepath.Join(exeDir, "resources", "web"),
+			filepath.Join(exeDir, "..", "resources", "web"),
+		}, candidates...)
+	}
+	for _, candidate := range candidates {
+		if directoryExists(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func withStaticFallback(api http.Handler, staticDir string) http.Handler {
+	fileServer := http.FileServer(http.Dir(staticDir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/health" {
+			api.ServeHTTP(w, r)
+			return
+		}
+
+		requestPath := strings.TrimPrefix(filepath.Clean(r.URL.Path), string(filepath.Separator))
+		if requestPath == "." || requestPath == "" {
+			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+			return
+		}
+		fullPath := filepath.Join(staticDir, requestPath)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+	})
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

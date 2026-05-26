@@ -32,6 +32,17 @@ export interface LogSettings {
   level: LogLevel
 }
 
+export interface AuthStatusResponse {
+  authenticated: boolean
+  username?: string
+  enabled: boolean
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
 export interface AppSettings {
   metricsRefreshIntervalSeconds: number
   metricsHistoryWindowMinutes: number
