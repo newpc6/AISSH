@@ -1400,6 +1400,15 @@ button {
   background: rgba(250, 204, 21, 0.1);
 }
 
+.favorite-command-button.danger {
+  color: #fca5a5;
+}
+
+.favorite-command-button.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+}
+
 code {
   color: #93c5fd;
   font-family: Consolas, "Cascadia Code", monospace;

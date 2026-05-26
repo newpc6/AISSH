@@ -938,6 +938,18 @@ export function App() {
     persistFavoriteCommands(next)
   }
 
+  const deleteFavoriteCommand = (command: string) => {
+    const normalized = stripTerminalControlSequences(command).trim()
+    if (!normalized) {
+      return
+    }
+    const confirmed = window.confirm(`确定删除收藏命令「${normalized}」吗？`)
+    if (!confirmed) {
+      return
+    }
+    persistFavoriteCommands(favoriteCommands.filter((item) => item !== normalized))
+  }
+
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
 
   useEffect(() => {
@@ -3301,12 +3313,12 @@ export function App() {
                         {command}
                       </button>
                       <button
-                        className="favorite-command-button active"
+                        className="favorite-command-button danger"
                         type="button"
-                        title={`取消收藏：${command}`}
-                        onClick={() => toggleFavoriteCommand(command)}
+                        title={`删除收藏命令：${command}`}
+                        onClick={() => deleteFavoriteCommand(command)}
                       >
-                        ★
+                        ×
                       </button>
                     </div>
                   ))
