@@ -7,6 +7,12 @@ struct LocalUploadFile {
     data: Vec<u8>,
 }
 
+#[derive(serde::Deserialize)]
+struct LocalDownloadFile {
+    name: String,
+    data: Vec<u8>,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let desktop_token = persistent_desktop_token();
@@ -16,7 +22,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             desktop_login_token,
-            read_local_upload_files
+            read_local_upload_files,
+            write_local_download_files,
+            active_explorer_directory
         ])
         .setup(|app| {
             if let Err(error) = start_core_server(app.handle()) {
@@ -58,6 +66,88 @@ fn read_local_upload_files(paths: Vec<String>) -> Result<Vec<LocalUploadFile>, S
             Ok(LocalUploadFile { path, name, data })
         })
         .collect()
+}
+
+#[tauri::command]
+fn write_local_download_files(directory: String, files: Vec<LocalDownloadFile>) -> Result<(), String> {
+    let target_dir = std::path::PathBuf::from(&directory);
+    if !target_dir.is_dir() {
+        return Err(format!("{directory} 不是可写入的文件夹"));
+    }
+
+    for file in files {
+        let name = safe_download_file_name(&file.name);
+        let target = target_dir.join(name);
+        std::fs::write(&target, file.data)
+            .map_err(|error| format!("{}: {error}", target.display()))?;
+    }
+    Ok(())
+}
+
+fn safe_download_file_name(name: &str) -> String {
+    std::path::Path::new(name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty() && *value != "." && *value != "..")
+        .unwrap_or("download-file")
+        .to_string()
+}
+
+#[tauri::command]
+fn active_explorer_directory() -> Result<Option<String>, String> {
+    platform_active_explorer_directory()
+}
+
+#[cfg(windows)]
+fn platform_active_explorer_directory() -> Result<Option<String>, String> {
+    let script = r#"
+$shell = New-Object -ComObject Shell.Application
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+$point = [System.Windows.Forms.Cursor]::Position
+foreach ($window in $shell.Windows()) {
+  try {
+    $name = [System.IO.Path]::GetFileName($window.FullName)
+    if ($name -ne 'explorer.exe') { continue }
+    $left = [int]$window.Left
+    $top = [int]$window.Top
+    $right = $left + [int]$window.Width
+    $bottom = $top + [int]$window.Height
+    $path = $window.Document.Folder.Self.Path
+    if (-not $path) { continue }
+    if ($point.X -ge $left -and $point.X -le $right -and $point.Y -ge $top -and $point.Y -le $bottom) {
+      $path
+      break
+    }
+  } catch {}
+}
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(path))
+    }
+}
+
+#[cfg(not(windows))]
+fn platform_active_explorer_directory() -> Result<Option<String>, String> {
+    Ok(None)
 }
 
 fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {

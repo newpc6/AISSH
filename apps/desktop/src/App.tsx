@@ -160,6 +160,11 @@ type LocalUploadFile = {
   data: number[] | ArrayBuffer | Uint8Array
 }
 
+type LocalDownloadFile = {
+  name: string
+  data: number[]
+}
+
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
@@ -891,6 +896,7 @@ export function App() {
   const [settingsSavedMessage, setSettingsSavedMessage] = useState('')
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
+  const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([])
   const [fileError, setFileError] = useState('')
   const [isFileDropActive, setIsFileDropActive] = useState(false)
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
@@ -931,6 +937,7 @@ export function App() {
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
+  const lastSelectedFilePathRef = useRef('')
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
   const desktopTokenRef = useRef('')
@@ -1729,6 +1736,10 @@ export function App() {
     () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
     [hosts, activeSession, currentHost],
   )
+  const selectedFileEntries = useMemo(() => {
+    const selected = new Set(selectedFilePaths)
+    return fileEntries.filter((entry) => entry.type === 'file' && selected.has(entry.path))
+  }, [fileEntries, selectedFilePaths])
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
@@ -2208,6 +2219,8 @@ export function App() {
   const loadFiles = async (path = filePath, hostId = activeSession?.hostId ?? selectedHostId) => {
     if (!hostId || hostId === 'local-demo') {
       setFileEntries([])
+      setSelectedFilePaths([])
+      lastSelectedFilePathRef.current = ''
       setFileError('请选择一个真实 SSH 会话后查看文件')
       return
     }
@@ -2223,6 +2236,8 @@ export function App() {
       const data = (await response.json()) as FileListResponse
       setTrackedFilePath(data.path)
       setFileEntries(data.entries)
+      setSelectedFilePaths([])
+      lastSelectedFilePathRef.current = ''
     } catch (error) {
       const message = error instanceof Error ? error.message : '文件列表加载失败'
       setFileError(message)
@@ -2291,6 +2306,113 @@ export function App() {
         current.map((task) => (task.id === taskID ? { ...task, status: 'error' } : task)),
       )
     }
+  }
+
+  const downloadFilesToDirectory = async (entries: FileEntry[], targetDirectory?: string) => {
+    const hostId = activeSession?.hostId ?? selectedHostId
+    if (!hostId || entries.length === 0) {
+      return
+    }
+
+    let directory = targetDirectory
+    if (!directory) {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: '选择下载保存目录',
+      })
+      directory = Array.isArray(selected) ? selected[0] : selected || undefined
+    }
+    if (!directory) {
+      return
+    }
+
+    const taskID = `${Date.now()}-download-selected`
+    setTransferTasks((current) => [
+      { id: taskID, name: `${entries.length} 个文件`, direction: 'download', progress: 5, status: 'running' },
+      ...current,
+    ])
+
+    try {
+      for (const [index, entry] of entries.entries()) {
+        const response = await apiFetch(`/files/${hostId}?download=1&path=${encodeURIComponent(entry.path)}`)
+        if (!response.ok) {
+          const detail = await response.text()
+          throw new Error(detail.trim() || `下载 ${entry.name} 失败：${response.status}`)
+        }
+        const bytes = Array.from(new Uint8Array(await response.arrayBuffer()))
+        const file: LocalDownloadFile = { name: entry.name, data: bytes }
+        await invoke('write_local_download_files', { directory, files: [file] })
+        setTransferTasks((current) =>
+          current.map((task) => (
+            task.id === taskID
+              ? { ...task, progress: Math.max(10, Math.round(((index + 1) / entries.length) * 100)) }
+              : task
+          )),
+        )
+      }
+      setTransferTasks((current) =>
+        current.map((task) => (task.id === taskID ? { ...task, progress: 100, status: 'done' } : task)),
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '批量下载失败'
+      setErrorMessage(message)
+      setTransferTasks((current) =>
+        current.map((task) => (task.id === taskID ? { ...task, status: 'error' } : task)),
+      )
+    }
+  }
+
+  const downloadSelectedFiles = async () => {
+    if (selectedFileEntries.length === 0) {
+      return
+    }
+    if (selectedFileEntries.length === 1) {
+      await downloadFile(selectedFileEntries[0])
+      return
+    }
+    if (isTauriRuntime) {
+      await downloadFilesToDirectory(selectedFileEntries)
+      return
+    }
+    for (const entry of selectedFileEntries) {
+      await downloadFile(entry)
+    }
+  }
+
+  const selectFileEntry = (entry: FileEntry, event: React.MouseEvent<HTMLButtonElement>) => {
+    if (entry.type !== 'file') {
+      return
+    }
+    const filePaths = fileEntries.filter((item) => item.type === 'file').map((item) => item.path)
+    const currentIndex = filePaths.indexOf(entry.path)
+    if (currentIndex < 0) {
+      return
+    }
+
+    if (event.shiftKey && lastSelectedFilePathRef.current) {
+      const anchorIndex = filePaths.indexOf(lastSelectedFilePathRef.current)
+      if (anchorIndex >= 0) {
+        const start = Math.min(anchorIndex, currentIndex)
+        const end = Math.max(anchorIndex, currentIndex)
+        const range = filePaths.slice(start, end + 1)
+        setSelectedFilePaths((current) => (
+          event.ctrlKey || event.metaKey ? Array.from(new Set([...current, ...range])) : range
+        ))
+        return
+      }
+    }
+
+    lastSelectedFilePathRef.current = entry.path
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedFilePaths((current) => (
+        current.includes(entry.path)
+          ? current.filter((path) => path !== entry.path)
+          : [...current, entry.path]
+      ))
+      return
+    }
+    setSelectedFilePaths([entry.path])
   }
 
   const openFilePreview = async (entry: FileEntry) => {
@@ -2638,12 +2760,41 @@ export function App() {
     if (entry.type !== 'file') {
       return
     }
-    const url = remoteFileDownloadUrl(entry)
+    const draggedEntries =
+      selectedFilePaths.includes(entry.path) && selectedFileEntries.length > 0 ? selectedFileEntries : [entry]
+    const urls = draggedEntries.map((item) => remoteFileDownloadUrl(item))
+    const [url] = urls
+    const downloadEntry = draggedEntries[0] ?? entry
     event.dataTransfer.clearData()
     event.dataTransfer.effectAllowed = 'copy'
-    event.dataTransfer.setData('text/uri-list', url)
-    event.dataTransfer.setData('text/plain', url)
-    event.dataTransfer.setData('DownloadURL', `application/octet-stream:${entry.name}:${url}`)
+    event.dataTransfer.dropEffect = 'copy'
+    event.dataTransfer.setData('text/uri-list', urls.join('\n'))
+    event.dataTransfer.setData('text/plain', urls.join('\n'))
+    if (!isTauriRuntime || !/Windows/i.test(window.navigator.userAgent)) {
+      event.dataTransfer.setData('DownloadURL', `application/octet-stream:${downloadEntry.name}:${url}`)
+    }
+  }
+
+  const handleRemoteFileDragEnd = (entry: FileEntry, event: React.DragEvent<HTMLButtonElement>) => {
+    if (!isTauriRuntime || entry.type !== 'file' || event.dataTransfer.dropEffect !== 'none') {
+      return
+    }
+    const draggedEntries =
+      selectedFilePaths.includes(entry.path) && selectedFileEntries.length > 0 ? selectedFileEntries : [entry]
+    window.setTimeout(() => {
+      void (async () => {
+        try {
+          const directory = await invoke<string | null>('active_explorer_directory')
+          if (directory) {
+            await downloadFilesToDirectory(draggedEntries, directory)
+          }
+        } catch (error) {
+          appendLog('debug', 'ui.files', 'explorer drag-out fallback skipped', {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      })()
+    }, 120)
   }
 
   const chooseUploadFiles = async () => {
@@ -3848,6 +3999,14 @@ export function App() {
                 <strong>远程文件</strong>
                 <div>
                   <button type="button" title="进入上级目录" onClick={() => void loadFiles(parentPath(filePath))}>上级</button>
+                  <button
+                    type="button"
+                    title={selectedFileEntries.length > 0 ? `下载选中的 ${selectedFileEntries.length} 个文件` : '先单击选择要下载的文件'}
+                    disabled={selectedFileEntries.length === 0}
+                    onClick={() => void downloadSelectedFiles()}
+                  >
+                    下载{selectedFileEntries.length > 0 ? `(${selectedFileEntries.length})` : ''}
+                  </button>
                   <button type="button" title="上传文件到当前目录" onClick={() => void chooseUploadFiles()}>上传</button>
                 </div>
               </div>
@@ -3943,16 +4102,21 @@ export function App() {
                   {fileEntries.map((entry) => (
                     <button
                       key={entry.path}
+                      aria-pressed={selectedFilePaths.includes(entry.path)}
+                      className={selectedFilePaths.includes(entry.path) ? 'selected' : ''}
                       draggable={entry.type === 'file'}
                       type="button"
-                      title={entry.type === 'directory' ? '双击进入目录' : '单击打开预览，右键下载，拖出快速下载'}
-                      onClick={() => {
+                      title={entry.type === 'directory' ? '双击进入目录' : '单击选择，Ctrl/Shift 多选，双击预览，右键下载，拖出快速下载'}
+                      onClick={(event) => {
                         if (entry.type === 'file') {
-                          void openFilePreview(entry)
+                          selectFileEntry(entry, event)
                         }
                       }}
                       onDragStart={(event) => {
                         setupRemoteFileDrag(entry, event)
+                      }}
+                      onDragEnd={(event) => {
+                        handleRemoteFileDragEnd(entry, event)
                       }}
                       onDoubleClick={() => {
                         if (entry.type === 'directory') {
