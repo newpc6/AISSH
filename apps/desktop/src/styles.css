@@ -737,6 +737,7 @@ button {
 
 .file-preview-tab {
   border-color: rgba(34, 211, 238, 0.2);
+  min-width: 210px;
 }
 
 .tab-title {
@@ -745,6 +746,30 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tab-file-title {
+  display: grid;
+  gap: 2px;
+}
+
+.tab-file-title small,
+.tab-file-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-file-title small {
+  color: #67e8f9;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.tab-file-title span {
+  color: #dbeafe;
+  line-height: 1.1;
 }
 
 .tab-status {

@@ -1430,9 +1430,6 @@ export function App() {
   }
 
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
-  const isTerminalViewActive =
-    !activeViewId.startsWith('file:') || !filePreviewTabs.some((tab) => `file:${tab.id}` === activeViewId)
-
   useEffect(() => {
     const rawSettings = window.localStorage.getItem('ai-ssh-settings')
     if (rawSettings) {
@@ -1459,7 +1456,7 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (authRequired || !isTerminalViewActive || !terminalRef.current || xtermRef.current) {
+    if (authRequired || !terminalRef.current || xtermRef.current) {
       return undefined
     }
 
@@ -1495,8 +1492,12 @@ export function App() {
 
     terminal.open(terminalRef.current)
     fitAddon.fit()
-    terminal.writeln('AI SSH workspace ready.')
-    terminal.writeln('选择左侧服务器并创建会话，或点击左侧 + 添加 SSH 连接。')
+    if (activeSessionIdRef.current) {
+      replaceTerminalWithCache(activeSessionIdRef.current)
+    } else {
+      terminal.writeln('AI SSH workspace ready.')
+      terminal.writeln('选择左侧服务器并创建会话，或点击左侧 + 添加 SSH 连接。')
+    }
 
     const onResize = () => {
       fitAddon.fit()
@@ -1529,7 +1530,7 @@ export function App() {
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  }, [authRequired, isTerminalViewActive])
+  }, [authRequired])
 
   useEffect(() => {
     const boot = async () => {
@@ -2951,7 +2952,7 @@ export function App() {
   }
 
   const activateSession = (session: SessionRecord) => {
-    if (session.id === activeSessionId) {
+    if (activeViewId === `session:${session.id}` && session.id === activeSessionId) {
       return
     }
 
@@ -3903,6 +3904,7 @@ export function App() {
               <div
                 key={tab.id}
                 className={`session-tab file-preview-tab ${activeViewId === `file:${tab.id}` ? 'active' : ''}`}
+                title={`${tab.hostName} · ${tab.path}`}
                 onClick={() => setActiveViewId(`file:${tab.id}`)}
                 role="button"
                 tabIndex={0}
@@ -3913,7 +3915,10 @@ export function App() {
                 }}
               >
                 <span className={`tab-status tab-status-${tab.status === 'error' ? 'error' : tab.status === 'loading' ? 'connecting' : 'connected'}`} title={previewKindLabel(tab.kind)} />
-                <span className="tab-title">{tab.name}</span>
+                <span className="tab-title tab-file-title">
+                  <small>{tab.hostName}</small>
+                  <span>{tab.name}</span>
+                </span>
                 <button
                   className="tab-close"
                   type="button"
@@ -3938,7 +3943,7 @@ export function App() {
               <div className="file-preview-header">
                 <div className="file-preview-title">
                   <strong>{activeFilePreview.name}</strong>
-                  <span>{activeFilePreview.path}</span>
+                  <span>{activeFilePreview.hostName} · {activeFilePreview.path}</span>
                 </div>
                 <small className="file-preview-meta">{previewKindLabel(activeFilePreview.kind)} · {formatBytes(activeFilePreview.size)} · {new Date(activeFilePreview.modifiedAt).toLocaleString()}</small>
                 <div className="file-preview-actions">
