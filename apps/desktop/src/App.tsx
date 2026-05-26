@@ -24,6 +24,9 @@ import '@xterm/xterm/css/xterm.css'
 import {
   type AIPredictionRequest,
   type AIPredictionResponse,
+  type AuthSettingsResponse,
+  type AuthSettingsUpdateRequest,
+  type AuthSetupRequest,
   type AuthStatusResponse,
   CORE_API_BASE,
   CORE_DEFAULT_PORT,
@@ -57,7 +60,7 @@ type LeftMode = 'servers' | 'files'
 type RightTool = 'ai' | 'history' | 'favorites'
 type HostDialogMode = 'create' | 'edit'
 type TopMenu = 'file' | 'edit' | 'session' | 'transfer' | 'tools' | 'settings' | ''
-type SettingsSection = 'general' | 'metrics' | 'ai'
+type SettingsSection = 'general' | 'security' | 'metrics' | 'ai'
 
 type MetricSample = ServerMetrics & {
   networkRxRateBytes: number
@@ -213,6 +216,13 @@ const defaultSettings: AppSettings = {
   aiPredictionCount: 3,
   aiTerminalContextLimit: 5000,
   aiCommandHistoryLimit: 20,
+}
+
+const emptySetupForm = {
+  username: 'admin',
+  password: '',
+  confirmPassword: '',
+  desktopLoginRequired: false,
 }
 
 function statusToLabel(state: LoadState) {
@@ -775,7 +785,10 @@ export function App() {
   const [healthState, setHealthState] = useState<LoadState>('idle')
   const [authState, setAuthState] = useState<LoadState>('loading')
   const [authRequired, setAuthRequired] = useState(true)
+  const [authInitialized, setAuthInitialized] = useState(true)
+  const [desktopLoginRequired, setDesktopLoginRequired] = useState(false)
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: '' })
+  const [setupForm, setSetupForm] = useState(emptySetupForm)
   const [loginError, setLoginError] = useState('')
   const [errorNotice, setErrorNotice] = useState<AppErrorNotice | null>(null)
   const [hosts, setHosts] = useState<HostRecord[]>([])
@@ -1145,7 +1158,14 @@ export function App() {
     const method = init?.method ?? 'GET'
     const requestPath = path.startsWith('/') ? path : `/${path}`
     const primaryUrl = resolveApiUrl(requestPath)
-    const requestInit: RequestInit = { ...init, credentials: 'include' }
+    const headers = new Headers(init?.headers)
+    if (isTauriRuntime) {
+      const token = await invoke<string>('desktop_login_token').catch(() => '')
+      if (token && !headers.has('X-AI-SSH-Desktop-Token')) {
+        headers.set('X-AI-SSH-Desktop-Token', token)
+      }
+    }
+    const requestInit: RequestInit = { ...init, headers, credentials: 'include' }
     appendLog('debug', 'ui.api', 'request started', { method, path: requestPath })
 
     try {
@@ -1187,7 +1207,21 @@ export function App() {
         throw new Error(`认证状态检查失败：${response.status}`)
       }
       const status = (await response.json()) as AuthStatusResponse
-      if (status.enabled && !status.authenticated && isTauriRuntime) {
+      const initialized = status.initialized ?? true
+      setAuthInitialized(initialized)
+      setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
+      setSetupForm((current) => ({
+        ...current,
+        username: status.username || current.username || 'admin',
+        desktopLoginRequired: Boolean(status.desktopLoginRequired),
+      }))
+      if (!initialized) {
+        setAuthRequired(true)
+        setAuthState('idle')
+        setLoginError('')
+        return
+      }
+      if (status.enabled && !status.authenticated && isTauriRuntime && !status.desktopLoginRequired) {
         const token = await invoke<string>('desktop_login_token')
         if (token) {
           const desktopResponse = await apiFetch('/auth/desktop', {
@@ -1199,6 +1233,7 @@ export function App() {
           if (desktopResponse.ok) {
             setAuthRequired(false)
             setAuthState('success')
+            setAuthInitialized(true)
             setLoginError('')
             return
           }
@@ -1211,6 +1246,57 @@ export function App() {
       setAuthRequired(true)
       setAuthState('error')
       setLoginError(error instanceof Error ? error.message : '认证状态检查失败')
+    }
+  }
+
+  const submitSetup = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setAuthState('loading')
+    setLoginError('')
+    try {
+      if (!setupForm.password.trim()) {
+        throw new Error('请设置登录密码')
+      }
+      if (setupForm.password !== setupForm.confirmPassword) {
+        throw new Error('两次输入的密码不一致')
+      }
+      const payload: AuthSetupRequest = {
+        username: setupForm.username.trim() || 'admin',
+        password: setupForm.password,
+        desktopLoginRequired: setupForm.desktopLoginRequired,
+      }
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      let endpoint = '/auth/setup'
+      if (isTauriRuntime) {
+        const token = await invoke<string>('desktop_login_token')
+        if (token) {
+          endpoint = '/auth/desktop-setup'
+          headers['X-AI-SSH-Desktop-Token'] = token
+        }
+      }
+      const response = await apiFetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        const detail = await readResponseErrorDetail(response)
+        throw new Error(detail || `初始化登录密码失败：${response.status}`)
+      }
+      const status = (await response.json()) as AuthStatusResponse
+      setAuthInitialized(status.initialized ?? true)
+      setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
+      setAuthRequired(status.enabled && !status.authenticated)
+      setAuthState(status.enabled && !status.authenticated ? 'idle' : 'success')
+      setLoginForm((current) => ({ ...current, username: payload.username, password: '' }))
+      setSetupForm({ ...emptySetupForm, username: payload.username, desktopLoginRequired: Boolean(status.desktopLoginRequired) })
+      await Promise.all([checkHealth(), loadHosts(), loadHostGroups()])
+    } catch (error) {
+      setAuthRequired(true)
+      setAuthState('error')
+      setLoginError(error instanceof Error ? error.message : '初始化登录密码失败')
     }
   }
 
@@ -1314,6 +1400,8 @@ export function App() {
   }
 
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
+  const isTerminalViewActive =
+    !activeViewId.startsWith('file:') || !filePreviewTabs.some((tab) => `file:${tab.id}` === activeViewId)
 
   useEffect(() => {
     const rawSettings = window.localStorage.getItem('ai-ssh-settings')
@@ -1337,6 +1425,12 @@ export function App() {
           error: error instanceof Error ? error.message : String(error),
         })
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (authRequired || !isTerminalViewActive || !terminalRef.current || xtermRef.current) {
+      return undefined
     }
 
     const terminal = new Terminal({
@@ -1369,12 +1463,10 @@ export function App() {
     xtermRef.current = terminal
     fitAddonRef.current = fitAddon
 
-    if (terminalRef.current) {
-      terminal.open(terminalRef.current)
-      fitAddon.fit()
-      terminal.writeln('AI SSH workspace ready.')
-      terminal.writeln('选择左侧服务器并创建会话，或点击左侧 + 添加 SSH 连接。')
-    }
+    terminal.open(terminalRef.current)
+    fitAddon.fit()
+    terminal.writeln('AI SSH workspace ready.')
+    terminal.writeln('选择左侧服务器并创建会话，或点击左侧 + 添加 SSH 连接。')
 
     const onResize = () => {
       fitAddon.fit()
@@ -1407,7 +1499,7 @@ export function App() {
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  }, [])
+  }, [authRequired, isTerminalViewActive])
 
   useEffect(() => {
     const boot = async () => {
@@ -1415,7 +1507,9 @@ export function App() {
       const authResponse = await apiFetch('/auth/status')
       if (authResponse.ok) {
         const status = (await authResponse.json()) as AuthStatusResponse
-        if (status.enabled && !status.authenticated) {
+        setAuthInitialized(status.initialized ?? true)
+        setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
+        if (!status.initialized || (status.enabled && !status.authenticated)) {
           return
         }
       }
@@ -1982,6 +2076,45 @@ export function App() {
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
     })
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
+  }
+
+  const saveAuthSettings = async () => {
+    try {
+      const payload: AuthSettingsUpdateRequest = { desktopLoginRequired }
+      const response = await apiFetch('/auth/settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        const detail = await readResponseErrorDetail(response)
+        throw new Error(detail || `保存安全设置失败：${response.status}`)
+      }
+      const data = (await response.json()) as AuthSettingsResponse
+      setDesktopLoginRequired(data.desktopLoginRequired)
+      return true
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '保存安全设置失败', {
+        title: '安全设置保存失败',
+        method: 'PUT',
+        path: '/auth/settings',
+        source: '安全设置',
+      })
+      return false
+    }
+  }
+
+  const saveAllSettings = async () => {
+    saveSettings()
+    if (authInitialized) {
+      const saved = await saveAuthSettings()
+      if (saved) {
+        setSettingsSavedMessage('偏好设置已保存')
+        window.setTimeout(() => setSettingsSavedMessage(''), 2200)
+      }
+    }
   }
 
   const updateLogLevel = async (level: LogLevel) => {
@@ -3227,13 +3360,68 @@ export function App() {
   const expandedMetricLabel = expandedMetric === 'cpuPercent' ? 'CPU 使用率' : '内存使用率'
 
   if (authRequired) {
+    if (!authInitialized) {
+      return (
+        <div className="login-shell">
+          <form className="login-panel" onSubmit={submitSetup}>
+            <div>
+              <span>AI SSH 初始化</span>
+              <h1>设置登录密码</h1>
+              <p>首次启动需要先设置网页登录密码。桌面客户端默认可直接进入，也可以勾选启动时要求登录。</p>
+            </div>
+            <label>
+              <span>用户名</span>
+              <input
+                autoComplete="username"
+                value={setupForm.username}
+                onChange={(event) => setSetupForm((current) => ({ ...current, username: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>密码</span>
+              <input
+                autoComplete="new-password"
+                type="password"
+                value={setupForm.password}
+                onChange={(event) => setSetupForm((current) => ({ ...current, password: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>确认密码</span>
+              <input
+                autoComplete="new-password"
+                type="password"
+                value={setupForm.confirmPassword}
+                onChange={(event) => setSetupForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+              />
+            </label>
+            {isTauriRuntime ? (
+              <label className="checkbox-row login-checkbox-row">
+                <input
+                  checked={setupForm.desktopLoginRequired}
+                  type="checkbox"
+                  onChange={(event) =>
+                    setSetupForm((current) => ({ ...current, desktopLoginRequired: event.target.checked }))
+                  }
+                />
+                <span>桌面客户端启动时也要求登录</span>
+              </label>
+            ) : null}
+            {loginError ? <div className="login-error">{loginError}</div> : null}
+            <button disabled={authState === 'loading'} type="submit">
+              {authState === 'loading' ? '保存中...' : '保存并进入'}
+            </button>
+          </form>
+        </div>
+      )
+    }
     return (
       <div className="login-shell">
         <form className="login-panel" onSubmit={submitLogin}>
           <div>
             <span>AI SSH Web</span>
             <h1>登录后继续</h1>
-            <p>网页访问需要先登录。桌面客户端会继续使用本机安全会话。</p>
+            <p>{isTauriRuntime ? '当前桌面客户端已设置为启动时要求登录。' : '网页访问需要先登录。'}</p>
           </div>
           <label>
             <span>用户名</span>
@@ -4371,6 +4559,7 @@ export function App() {
               <nav className="settings-nav">
                 {[
                   ['general', '通用'],
+                  ['security', '安全'],
                   ['metrics', '服务器指标'],
                   ['ai', 'AI 预测'],
                 ].map(([key, label]) => (
@@ -4402,6 +4591,22 @@ export function App() {
                       }
                     />
                   </label>
+                ) : null}
+
+                {settingsSection === 'security' ? (
+                  <>
+                    <label className="checkbox-row">
+                      <input
+                        checked={desktopLoginRequired}
+                        type="checkbox"
+                        onChange={(event) => setDesktopLoginRequired(event.target.checked)}
+                      />
+                      <span>桌面客户端启动时要求登录</span>
+                    </label>
+                    <p className="hint-text">
+                      网页访问始终需要登录；关闭此项后，本机安装版客户端会使用本机安全会话自动进入。
+                    </p>
+                  </>
                 ) : null}
 
                 {settingsSection === 'metrics' ? (
@@ -4562,7 +4767,7 @@ export function App() {
             {settingsSavedMessage ? <p className="success-text">{settingsSavedMessage}</p> : null}
             <div className="modal-actions">
               <button type="button" title="关闭偏好设置窗口" onClick={() => setIsSettingsDialogOpen(false)}>关闭</button>
-              <button className="primary-button" type="button" title="保存偏好设置" onClick={saveSettings}>保存</button>
+              <button className="primary-button" type="button" title="保存偏好设置" onClick={() => void saveAllSettings()}>保存</button>
             </div>
           </section>
         </div>

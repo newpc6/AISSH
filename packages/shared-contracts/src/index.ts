@@ -36,11 +36,27 @@ export interface AuthStatusResponse {
   authenticated: boolean
   username?: string
   enabled: boolean
+  initialized: boolean
+  desktopLoginRequired: boolean
 }
 
 export interface LoginRequest {
   username: string
   password: string
+}
+
+export interface AuthSetupRequest {
+  username: string
+  password: string
+  desktopLoginRequired?: boolean
+}
+
+export interface AuthSettingsResponse {
+  desktopLoginRequired: boolean
+}
+
+export interface AuthSettingsUpdateRequest {
+  desktopLoginRequired: boolean
 }
 
 export interface AppSettings {

@@ -109,6 +109,146 @@ func TestWebAuthProtectsAPIAndAllowsLogin(t *testing.T) {
 	}
 }
 
+func TestWebAuthRequiresSetupWhenPasswordMissing(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "1")
+	t.Setenv("AI_SSH_WEB_USER", "admin")
+	t.Setenv("AI_SSH_WEB_PASSWORD", "")
+	t.Setenv("AI_SSH_WEB_AUTH_PATH", filepath.Join(t.TempDir(), "web-auth.json"))
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	statusRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(statusRecorder, statusReq)
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", statusRecorder.Code)
+	}
+	var status webAuthStatusResponse
+	if err := json.NewDecoder(statusRecorder.Body).Decode(&status); err != nil {
+		t.Fatalf("decode auth status: %v", err)
+	}
+	if status.Initialized {
+		t.Fatalf("expected auth to be uninitialized")
+	}
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	unauthorizedRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(unauthorizedRecorder, unauthorizedReq)
+	if unauthorizedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected protected api status 401 before setup, got %d", unauthorizedRecorder.Code)
+	}
+
+	setupBody := bytes.NewBufferString(`{"username":"admin","password":"secret","desktopLoginRequired":true}`)
+	setupReq := httptest.NewRequest(http.MethodPost, "/api/auth/setup", setupBody)
+	setupReq.Header.Set("Content-Type", "application/json")
+	setupRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(setupRecorder, setupReq)
+	if setupRecorder.Code != http.StatusOK {
+		t.Fatalf("expected setup status 200, got %d body=%s", setupRecorder.Code, setupRecorder.Body.String())
+	}
+
+	authorizedReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	for _, cookie := range setupRecorder.Result().Cookies() {
+		authorizedReq.AddCookie(cookie)
+	}
+	authorizedRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(authorizedRecorder, authorizedReq)
+	if authorizedRecorder.Code != http.StatusOK {
+		t.Fatalf("expected authenticated api status 200 after setup, got %d", authorizedRecorder.Code)
+	}
+}
+
+func TestDesktopLoginCanBeDisabledBySetting(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "1")
+	t.Setenv("AI_SSH_WEB_USER", "admin")
+	t.Setenv("AI_SSH_WEB_PASSWORD", "")
+	t.Setenv("AI_SSH_WEB_AUTH_PATH", filepath.Join(t.TempDir(), "web-auth.json"))
+	t.Setenv("AI_SSH_DESKTOP_TOKEN", "desktop-token")
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	setupReq := httptest.NewRequest(http.MethodPost, "/api/auth/desktop-setup", bytes.NewBufferString(`{
+		"username":"admin",
+		"password":"secret",
+		"desktopLoginRequired":false
+	}`))
+	setupReq.Header.Set("Content-Type", "application/json")
+	setupReq.Header.Set("X-AI-SSH-Desktop-Token", "desktop-token")
+	setupRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(setupRecorder, setupReq)
+	if setupRecorder.Code != http.StatusOK {
+		t.Fatalf("expected desktop setup status 200, got %d body=%s", setupRecorder.Code, setupRecorder.Body.String())
+	}
+
+	desktopReq := httptest.NewRequest(http.MethodPost, "/api/auth/desktop", nil)
+	desktopReq.Header.Set("X-AI-SSH-Desktop-Token", "desktop-token")
+	desktopRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(desktopRecorder, desktopReq)
+	if desktopRecorder.Code != http.StatusOK {
+		t.Fatalf("expected desktop login status 200, got %d", desktopRecorder.Code)
+	}
+
+	desktopAPIReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	desktopAPIReq.Header.Set("X-AI-SSH-Desktop-Token", "desktop-token")
+	desktopAPIRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(desktopAPIRecorder, desktopAPIReq)
+	if desktopAPIRecorder.Code != http.StatusOK {
+		t.Fatalf("expected desktop token api status 200, got %d", desktopAPIRecorder.Code)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/auth/settings", bytes.NewBufferString(`{"desktopLoginRequired":true}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	for _, cookie := range desktopRecorder.Result().Cookies() {
+		updateReq.AddCookie(cookie)
+	}
+	updateRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(updateRecorder, updateReq)
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected auth settings update status 200, got %d body=%s", updateRecorder.Code, updateRecorder.Body.String())
+	}
+
+	blockedDesktopReq := httptest.NewRequest(http.MethodPost, "/api/auth/desktop", nil)
+	blockedDesktopReq.Header.Set("X-AI-SSH-Desktop-Token", "desktop-token")
+	blockedDesktopRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(blockedDesktopRecorder, blockedDesktopReq)
+	if blockedDesktopRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected desktop login 401 when login is required, got %d", blockedDesktopRecorder.Code)
+	}
+}
+
+func TestCORSAllowsCredentialedRequests(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/auth/desktop-setup", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:1420")
+	req.Header.Set("Access-Control-Request-Headers", "X-AI-SSH-Desktop-Token")
+	recorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected CORS preflight 204, got %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:1420" {
+		t.Fatalf("expected origin echo, got %q", got)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("expected credentials allowed, got %q", got)
+	}
+	if !strings.Contains(recorder.Header().Get("Access-Control-Allow-Headers"), "X-AI-SSH-Desktop-Token") {
+		t.Fatalf("expected desktop token header allowed, got %q", recorder.Header().Get("Access-Control-Allow-Headers"))
+	}
+}
+
 func TestAIPredictEndpointUsesOpenAICompatibleProvider(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {

@@ -48,6 +48,22 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		}
 		writeJSON(w, authenticator.status(r))
 	})
+	mux.HandleFunc("/api/auth/setup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var request webAuthSetupRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if err := authenticator.setup(w, request); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, authenticator.status(r))
+	})
 	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -60,6 +76,22 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		}
 		if !authenticator.login(w, request) {
 			http.Error(w, "用户名或密码错误", http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, authenticator.status(r))
+	})
+	mux.HandleFunc("/api/auth/desktop-setup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var request webAuthSetupRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if err := authenticator.setupFromDesktop(w, r, request); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
 		writeJSON(w, authenticator.status(r))
@@ -82,6 +114,35 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		}
 		authenticator.logout(w, r)
 		writeJSON(w, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("/api/auth/settings", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			response, ok := authenticator.settings(r)
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			writeJSON(w, response)
+		case http.MethodPut:
+			var request webAuthSettingsRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			response, ok, err := authenticator.updateSettings(r, request)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			writeJSON(w, response)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	})
 	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

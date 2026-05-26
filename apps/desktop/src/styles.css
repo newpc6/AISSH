@@ -81,6 +81,10 @@ button {
   gap: 7px;
 }
 
+.login-panel .login-checkbox-row {
+  display: flex;
+}
+
 .login-panel input {
   height: 40px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -88,6 +92,11 @@ button {
   background: #0b1118;
   color: #f8fafc;
   padding: 0 12px;
+}
+
+.login-panel .login-checkbox-row input {
+  height: 15px;
+  padding: 0;
 }
 
 .login-panel button {
