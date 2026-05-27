@@ -177,9 +177,9 @@ http://127.0.0.1:1420
 
 说明：
 
-- 当前服务器基础配置默认保存在 Go core 当前工作目录下的 `data/hosts.json`
-- 调试模式下，当前工作目录通常是项目或 `apps/core-go` 目录；打包后应由启动器把 Go core 工作目录设置为程序数据目录，这样配置会跟随该运行目录
-- 如果需要指定程序数据目录，可以在启动 Go core 前设置 `AI_SSH_HOME`，此时默认配置路径为 `%AI_SSH_HOME%\data\hosts.json`
+- 当前服务器基础配置默认保存在 Go core 可执行文件所在目录下的 `data/hosts.json`
+- 调试模式下默认路径是 `apps/core-go/bin/data/hosts.json`；Web 发布包默认路径是 `release/web/data/hosts.json`；绿色便携桌面版默认路径是 `release/portable/data/hosts.json`
+- 如果需要指定程序数据目录，可以在启动 Go core 前显式设置 `AI_SSH_HOME`，此时默认配置路径为 `%AI_SSH_HOME%\data\hosts.json`
 - 如果需要精确指定配置文件，可以设置 `AI_SSH_HOSTS_PATH`；它的优先级高于 `AI_SSH_HOME`
 - 密码和 SSH Key 默认会写入操作系统安全存储，不会明文写入本地 `hosts.json`
 - 普通导出不会携带密码和 SSH Key；选择“导出服务器列表（含加密凭据）”时，会生成一个带 `exportKey` 的加密 JSON，导入到其他电脑后会解密并写入目标电脑的系统安全存储
@@ -315,7 +315,7 @@ start-dev.bat
 
 说明：
 
-- 如果未配置 `AI_SSH_WEB_PASSWORD`，Go core 首次启动会自动生成初始密码并写入 `%AI_SSH_HOME%\data\web-auth.json`
+- 如果未配置 `AI_SSH_WEB_PASSWORD`，Go core 首次启动会自动生成初始密码并写入 Go core 可执行文件所在目录下的 `data/web-auth.json`
 - 桌面客户端会用本机一次性令牌自动登录内置窗口；普通浏览器仍需要输入账号密码
 - 打包版会把 `ai-ssh-core.exe` 和 Web 前端资源一起放进安装包，客户端启动后自动拉起 `0.0.0.0:18555` 服务；浏览器访问仍需要登录
 - 绿色便携版位于 `release/portable`，拷贝整个目录后双击 `AI SSH Portable.bat` 即可运行，数据默认保存在便携目录下的 `data`
@@ -365,7 +365,7 @@ apps/core-go/bin/ai-ssh-core.exe
 - `AI_SSH_WEB_USER`：网页登录用户名，默认 `admin`
 - `AI_SSH_WEB_PASSWORD`：网页登录密码；未设置时会自动生成并保存到 `data/web-auth.json`
 - `AI_SSH_WEB_AUTH=0`：关闭网页登录认证，仅限本机临时调试使用
-- `AI_SSH_HOME`：数据目录，影响 `data/hosts.json` 和 `data/web-auth.json`
+- `AI_SSH_HOME`：高级覆盖数据根目录；默认不需要设置，未设置时使用 Go core 可执行文件所在目录下的 `data/hosts.json` 和 `data/web-auth.json`
 
 ## 8. 构建检查
 

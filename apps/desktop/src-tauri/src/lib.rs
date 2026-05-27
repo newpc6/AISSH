@@ -163,13 +163,18 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
     let core_path = resolve_core_path(app)?;
-    let app_data_dir = resolve_app_data_dir(app)?;
-    std::fs::create_dir_all(&app_data_dir).map_err(|error| error.to_string())?;
+    let core_dir = core_path
+        .parent()
+        .ok_or_else(|| "无法解析 Go core 所在目录".to_string())?
+        .to_path_buf();
+    std::fs::create_dir_all(core_dir.join("data")).map_err(|error| error.to_string())?;
 
-    let mut command = std::process::Command::new(core_path);
+    let mut command = std::process::Command::new(&core_path);
+    let bind_host = std::env::var("AI_SSH_BIND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     command
-        .env("AI_SSH_HOME", app_data_dir)
-        .env("AI_SSH_BIND_HOST", "127.0.0.1")
+        .current_dir(&core_dir)
+        .env_remove("AI_SSH_HOME")
+        .env("AI_SSH_BIND_HOST", bind_host)
         .env(
             "AI_SSH_DESKTOP_TOKEN",
             std::env::var("AI_SSH_DESKTOP_TOKEN").unwrap_or_default(),
@@ -186,33 +191,10 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn resolve_app_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    if let Ok(path) = std::env::var("AI_SSH_HOME") {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            return Ok(std::path::PathBuf::from(trimmed));
-        }
-    }
-    if cfg!(debug_assertions) {
-        if let Some(repo_root) = find_debug_repo_root() {
-            return Ok(repo_root);
-        }
-    }
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            let portable_data = exe_dir.join("data");
-            if portable_data.is_dir() {
-                return Ok(portable_data);
-            }
-        }
-    }
-    app.path().app_data_dir().map_err(|error| error.to_string())
-}
-
 fn find_debug_repo_root() -> Option<std::path::PathBuf> {
     let mut current = std::env::current_dir().ok()?;
     loop {
-        if current.join("data").join("hosts.json").is_file()
+        if current.join("package.json").is_file()
             && current.join("apps").join("core-go").is_dir()
             && current.join("apps").join("desktop").is_dir()
         {

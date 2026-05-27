@@ -13,53 +13,30 @@ import (
 	"time"
 )
 
-func TestNewHostStoreDefaultsToCurrentDataDirectory(t *testing.T) {
-	previousHostsPath := os.Getenv("AI_SSH_HOSTS_PATH")
-	previousHome := os.Getenv("AI_SSH_HOME")
+func TestNewHostStoreDefaultsToExecutableDataDirectory(t *testing.T) {
 	t.Setenv("AI_SSH_HOSTS_PATH", "")
 	t.Setenv("AI_SSH_HOME", "")
-	defer func() {
-		_ = os.Setenv("AI_SSH_HOSTS_PATH", previousHostsPath)
-		_ = os.Setenv("AI_SSH_HOME", previousHome)
-	}()
 
-	workspace := t.TempDir()
-	current, err := os.Getwd()
+	exePath, err := os.Executable()
 	if err != nil {
-		t.Fatalf("expected cwd, got error: %v", err)
+		t.Fatalf("expected executable path, got error: %v", err)
 	}
-	if err := os.Chdir(workspace); err != nil {
-		t.Fatalf("expected chdir, got error: %v", err)
-	}
-	defer func() { _ = os.Chdir(current) }()
-
 	store := newHostStore()
-	expected := filepath.Join(workspace, "data", "hosts.json")
-	if store.path != expected {
+	expected := filepath.Join(filepath.Dir(exePath), "data", "hosts.json")
+	if filepath.Clean(store.path) != filepath.Clean(expected) {
 		t.Fatalf("expected host store path %q, got %q", expected, store.path)
 	}
 }
 
-func TestFindNearestHostStoreBaseDir(t *testing.T) {
+func TestNewHostStoreHonorsAIHome(t *testing.T) {
 	workspace := t.TempDir()
-	dataDir := filepath.Join(workspace, "data")
-	nested := filepath.Join(workspace, "apps", "desktop", "src-tauri")
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		t.Fatalf("expected data dir, got error: %v", err)
-	}
-	if err := os.MkdirAll(nested, 0o700); err != nil {
-		t.Fatalf("expected nested dir, got error: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dataDir, "hosts.json"), []byte(`{"hosts":[]}`), 0o600); err != nil {
-		t.Fatalf("expected hosts file, got error: %v", err)
-	}
+	t.Setenv("AI_SSH_HOSTS_PATH", "")
+	t.Setenv("AI_SSH_HOME", workspace)
 
-	baseDir, ok := findNearestHostStoreBaseDir(nested)
-	if !ok {
-		t.Fatalf("expected nearest host store base dir")
-	}
-	if filepath.Clean(baseDir) != filepath.Clean(workspace) {
-		t.Fatalf("expected base dir %q, got %q", workspace, baseDir)
+	store := newHostStore()
+	expected := filepath.Join(workspace, "data", "hosts.json")
+	if filepath.Clean(store.path) != filepath.Clean(expected) {
+		t.Fatalf("expected host store path %q, got %q", expected, store.path)
 	}
 }
 

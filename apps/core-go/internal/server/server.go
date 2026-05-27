@@ -322,31 +322,16 @@ func resolveHostStoreBaseDir() string {
 	if baseDir := strings.TrimSpace(os.Getenv("AI_SSH_HOME")); baseDir != "" {
 		return baseDir
 	}
+	if exePath, err := os.Executable(); err == nil {
+		if exeDir := filepath.Dir(exePath); exeDir != "" {
+			return exeDir
+		}
+	}
 	current, err := os.Getwd()
 	if err != nil {
 		return "."
 	}
-	if baseDir, ok := findNearestHostStoreBaseDir(current); ok {
-		return baseDir
-	}
 	return current
-}
-
-func findNearestHostStoreBaseDir(start string) (string, bool) {
-	current, err := filepath.Abs(start)
-	if err != nil {
-		current = start
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(current, "data", "hosts.json")); err == nil {
-			return current, true
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return "", false
-		}
-		current = parent
-	}
 }
 
 func (s *hostStore) load() ([]hostRecord, []hostGroup, error) {

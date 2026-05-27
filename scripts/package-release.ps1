@@ -66,14 +66,20 @@ function Write-WebLauncher {
   $startPs1Content = @'
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $env:AI_SSH_HOME) { $env:AI_SSH_HOME = Join-Path $scriptDir "data" }
+$dataDir = Join-Path $scriptDir "data"
+Remove-Item Env:\AI_SSH_HOME -ErrorAction SilentlyContinue
 if (-not $env:AI_SSH_WEB_ROOT) { $env:AI_SSH_WEB_ROOT = Join-Path $scriptDir "web" }
 if (-not $env:AI_SSH_BIND_HOST) { $env:AI_SSH_BIND_HOST = "0.0.0.0" }
 if (-not $env:AI_SSH_CORE_PORT) { $env:AI_SSH_CORE_PORT = "18555" }
-New-Item -ItemType Directory -Force -Path $env:AI_SSH_HOME | Out-Null
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 Write-Host "AI SSH Web: http://$($env:AI_SSH_BIND_HOST):$($env:AI_SSH_CORE_PORT)"
-Write-Host "Data: $env:AI_SSH_HOME"
-& (Join-Path $scriptDir "__CORE_EXE__")
+Write-Host "Data: $dataDir"
+Push-Location $scriptDir
+try {
+  & (Join-Path $scriptDir "__CORE_EXE__")
+} finally {
+  Pop-Location
+}
 '@
   $startPs1Content = $startPs1Content.Replace("__CORE_EXE__", $coreExeName)
   $startPs1Content | Set-Content -Encoding utf8 -Path $startPs1
@@ -81,14 +87,18 @@ Write-Host "Data: $env:AI_SSH_HOME"
   $startCmdContent = @'
 @echo off
 set "SCRIPT_DIR=%~dp0"
-if "%AI_SSH_HOME%"=="" set "AI_SSH_HOME=%SCRIPT_DIR%data"
+set "AI_SSH_HOME="
 if "%AI_SSH_WEB_ROOT%"=="" set "AI_SSH_WEB_ROOT=%SCRIPT_DIR%web"
 if "%AI_SSH_BIND_HOST%"=="" set "AI_SSH_BIND_HOST=0.0.0.0"
 if "%AI_SSH_CORE_PORT%"=="" set "AI_SSH_CORE_PORT=18555"
-if not exist "%AI_SSH_HOME%" mkdir "%AI_SSH_HOME%"
+if not exist "%SCRIPT_DIR%data" mkdir "%SCRIPT_DIR%data"
 echo AI SSH Web: http://%AI_SSH_BIND_HOST%:%AI_SSH_CORE_PORT%
-echo Data: %AI_SSH_HOME%
+echo Data: %SCRIPT_DIR%data
+pushd "%SCRIPT_DIR%"
 "%SCRIPT_DIR%__CORE_EXE__"
+set "EXIT_CODE=%ERRORLEVEL%"
+popd
+exit /b %EXIT_CODE%
 '@
   $startCmdContent = $startCmdContent.Replace("__CORE_EXE__", $coreExeName)
   $startCmdContent | Set-Content -Encoding ascii -Path $startCmd
@@ -97,13 +107,15 @@ echo Data: %AI_SSH_HOME%
 #!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-export AI_SSH_HOME="${AI_SSH_HOME:-$SCRIPT_DIR/data}"
+unset AI_SSH_HOME
+DATA_DIR="$SCRIPT_DIR/data"
 export AI_SSH_WEB_ROOT="${AI_SSH_WEB_ROOT:-$SCRIPT_DIR/web}"
 export AI_SSH_BIND_HOST="${AI_SSH_BIND_HOST:-0.0.0.0}"
 export AI_SSH_CORE_PORT="${AI_SSH_CORE_PORT:-18555}"
-mkdir -p "$AI_SSH_HOME"
+mkdir -p "$DATA_DIR"
 echo "AI SSH Web: http://$AI_SSH_BIND_HOST:$AI_SSH_CORE_PORT"
-echo "Data: $AI_SSH_HOME"
+echo "Data: $DATA_DIR"
+cd "$SCRIPT_DIR"
 exec "$SCRIPT_DIR/__CORE_EXE__"
 '@
   $startShContent = $startShContent.Replace("__CORE_EXE__", $coreExeName)
@@ -168,11 +180,11 @@ function Write-PortableLauncher {
 @echo off
 setlocal
 set "SCRIPT_DIR=%~dp0"
-set "AI_SSH_HOME=%SCRIPT_DIR%data"
-set "AI_SSH_CORE_PATH=%SCRIPT_DIR%resources\__CORE_EXE__"
+set "AI_SSH_HOME="
+set "AI_SSH_CORE_PATH=%SCRIPT_DIR%__CORE_EXE__"
 set "AI_SSH_WEB_ROOT=%SCRIPT_DIR%resources\web"
 set "AI_SSH_BIND_HOST=0.0.0.0"
-if not exist "%AI_SSH_HOME%" mkdir "%AI_SSH_HOME%"
+if not exist "%SCRIPT_DIR%data" mkdir "%SCRIPT_DIR%data"
 start "" "%SCRIPT_DIR%__DESKTOP_EXE__"
 '@
   $startCmdContent = $startCmdContent.Replace("__CORE_EXE__", $coreExeName).Replace("__DESKTOP_EXE__", $desktopExeName)
@@ -181,11 +193,12 @@ start "" "%SCRIPT_DIR%__DESKTOP_EXE__"
   $startPs1Content = @'
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$env:AI_SSH_HOME = Join-Path $scriptDir "data"
-$env:AI_SSH_CORE_PATH = Join-Path $scriptDir "resources\__CORE_EXE__"
+$dataDir = Join-Path $scriptDir "data"
+Remove-Item Env:\AI_SSH_HOME -ErrorAction SilentlyContinue
+$env:AI_SSH_CORE_PATH = Join-Path $scriptDir "__CORE_EXE__"
 $env:AI_SSH_WEB_ROOT = Join-Path $scriptDir "resources\web"
 $env:AI_SSH_BIND_HOST = "0.0.0.0"
-New-Item -ItemType Directory -Force -Path $env:AI_SSH_HOME | Out-Null
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 Start-Process -FilePath (Join-Path $scriptDir "__DESKTOP_EXE__")
 '@
   $startPs1Content = $startPs1Content.Replace("__CORE_EXE__", $coreExeName).Replace("__DESKTOP_EXE__", $desktopExeName)
@@ -200,7 +213,7 @@ function Write-PortableReadme {
     '## 包含内容',
     '',
     "- ``$desktopExeName``：桌面客户端主程序",
-    "- ``resources/$coreExeName``：内置 Go core 服务",
+    "- ``$coreExeName``：内置 Go core 服务，运行数据默认保存在同级 `data` 目录",
     '- `resources/web`：前端 Web 静态资源，客户端启动后浏览器也可访问同一个服务',
     '- `data`：便携版运行数据目录，主机列表、网页登录配置、日志等数据默认保存在这里',
     '- `AI SSH Portable.bat`：Windows 双击启动入口',
@@ -250,7 +263,7 @@ function Build-PortablePackage {
   New-Item -ItemType Directory -Force -Path $portableWebDir | Out-Null
   New-Item -ItemType Directory -Force -Path $portableDataDir | Out-Null
   Copy-Item -Force $desktopExe (Join-Path $portablePackageDir $desktopExeName)
-  Copy-Item -Force $coreExe (Join-Path $portableResourcesDir $coreExeName)
+  Copy-Item -Force $coreExe (Join-Path $portablePackageDir $coreExeName)
   Copy-Item -Recurse -Force (Join-Path $distDir "*") $portableWebDir
   Write-PortableLauncher
   Write-PortableReadme

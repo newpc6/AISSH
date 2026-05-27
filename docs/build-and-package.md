@@ -126,7 +126,7 @@ Windows 常见产物包括 `.msi` 和 `.exe` 安装包，具体取决于当前 T
 - 前端 Web 静态资源
 - 应用图标、卸载信息和系统安装元数据
 
-安装版运行数据使用系统应用数据目录，具体位置由 Tauri 的 app data dir 决定。桌面客户端启动后会自动拉起内置 Go core。客户端本身可直接进入；浏览器访问同一个 core 时仍需要网页登录。
+安装版桌面客户端启动后会自动拉起内置 Go core。Go core 默认使用自身可执行文件所在目录下的 `data` 保存运行数据，包括服务器列表、网页登录配置和日志。客户端本身可直接进入；浏览器访问同一个 core 时仍需要网页登录。
 
 ## 6. 桌面绿色便携版
 
@@ -143,7 +143,7 @@ release/ai-ssh-portable-windows-x64.zip
 AI SSH Portable.bat
 start-portable.ps1
 ai-ssh-desktop.exe
-resources/ai-ssh-core.exe
+ai-ssh-core.exe
 resources/web
 data
 README.md
@@ -171,7 +171,7 @@ release/web/data
 release/web/data/web-auth.json
 ```
 
-桌面安装版使用系统应用数据目录保存运行数据，具体位置由 Tauri 的 app data dir 决定。
+桌面安装版随内置 Go core 使用 core 可执行文件所在目录下的 `data` 保存运行数据。
 
 桌面绿色版默认数据目录：
 

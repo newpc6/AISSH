@@ -256,7 +256,7 @@
 73. 补齐 AI 通用助手和 Agent 任务执行 MVP，支持错误解释、命令生成、日志总结、运维问答、审核 / 自动模式和高风险确认
 74. 增强 Agent 命令执行等待，改为根据远端 prompt 返回判断完成，并支持可配置超时和输出摘要
 75. Agent 执行命令追加内部退出码标记，解析退出码后决定继续或暂停，并过滤内部标记避免污染历史命令
-76. 修复调试模式服务器列表路径漂移，Go core 自动向上查找项目 `data/hosts.json`，网页登录配置跟随同一数据根目录，Tauri 调试端优先使用项目根目录数据，并在 health / 日志暴露实际 host store 路径
+76. 修复调试模式服务器列表路径漂移，网页登录配置跟随服务器列表使用同一数据根目录，并在 health / 日志暴露实际 host store 路径
 77. 开发启动方式改为固定路径运行 Go core，`dev:core` 先编译到 `apps/core-go/bin/ai-ssh-core.exe` 再启动，避免 `go run` 产生临时 `go-build` 目录进程
 78. AI 助手接口增加 core 能力识别和旧 core 诊断，健康检查暴露 `ai-assist` / `ai-agent` 能力，前端健康检查与错误提示统一显示 `/api/ai/assist` 并提示旧 core 重启
 79. 将右侧 AI 界面合并为统一输入入口，由模型自动判断问答、解释、日志总结、命令生成或终端任务推进意图，并保留审核 / 自动模式
@@ -267,6 +267,7 @@
 84. 根目录增加 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri，便于一键调试并查看后端日志
 85. `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core，便于固定查看后端日志
 86. `npm run dev:core` 运行 core 前切换工作目录到 `apps/core-go/bin` 并清空本进程 `AI_SSH_HOME`，默认从 `apps/core-go/bin/data` 读取服务器列表和网页登录配置
+87. Go core 默认以自身可执行文件所在目录作为数据根目录；桌面端、Web 发布包和绿色便携版启动器均不再默认注入 `AI_SSH_HOME`，打包后统一读取程序目录下的 `data`
 
 ## 6. 工程规则
 
@@ -341,7 +342,7 @@
 - [x] 修复左侧服务器列表少量数据时不贴顶显示的问题
 - [x] 当前服务器面板支持 CPU / 内存折线趋势、多个磁盘挂载点和网络实时上下行带宽
 - [x] 顶部右侧移除重复导入导出按钮，文件菜单按服务器列表和软件配置分组导入导出
-- [x] 默认将 `hosts.json` 保存到 Go core 当前工作目录的 `data/hosts.json`，并支持 `AI_SSH_HOME` / `AI_SSH_HOSTS_PATH` 覆盖
+- [x] 默认将 `hosts.json` 保存到 Go core 可执行文件所在目录的 `data/hosts.json`，并支持 `AI_SSH_HOME` / `AI_SSH_HOSTS_PATH` 覆盖
 - [x] 支持服务器列表含加密凭据导出，导入后恢复密码/SSH Key 到目标电脑系统安全存储
 - [x] 无会话时不显示“未连接”伪 tab 和终端头部连接状态，只保留空状态快捷连接
 - [x] 历史命令过滤终端控制序列，记录数量扩展并支持右侧独立滚动
@@ -434,7 +435,7 @@
 - [x] Agent 执行命令后等待远端 prompt 返回再继续规划下一步，避免长命令只等待固定 1.8 秒；设置中可配置 Agent 命令等待超时
 - [x] Agent 步骤支持 running 状态和执行输出摘要，超时或会话断开时会暂停任务等待人工处理
 - [x] Agent 命令会追加内部完成标记解析退出码，退出码非 0 时暂停任务，步骤中展示退出码并保留输出摘要
-- [x] 调试模式下服务器列表优先使用项目根目录 `data/hosts.json`，避免从不同工作目录启动时读到 `%APPDATA%` 或临时目录导致列表看似丢失
+- [x] 调试模式下通过固定路径 `apps/core-go/bin/ai-ssh-core.exe` 启动 core，避免从不同工作目录启动时读到 `%APPDATA%` 或临时目录导致列表看似丢失
 - [x] Go core 的网页登录配置与服务器列表使用同一数据根目录，避免登录配置和主机列表分别落到不同目录
 - [x] Go core 健康检查和运行日志会暴露实际 host store 路径，便于排查连错数据目录
 - [x] `npm run dev:core` 和 `npm run serve:web` 改为先构建并运行固定路径 `apps/core-go/bin/ai-ssh-core.exe`，开发调试时由 `dev:core` 独立启动 core、`dev:tauri` 独立启动桌面端
@@ -449,6 +450,7 @@
 - [x] 增加根目录 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri
 - [x] `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core
 - [x] `npm run dev:core` 默认使用 `apps/core-go/bin` 作为 core 工作目录，读取 `apps/core-go/bin/data` 下的服务器列表和网页登录配置
+- [x] Go core 默认使用自身可执行文件所在目录下的 `data` 读写 `hosts.json` 和 `web-auth.json`；桌面端、Web 发布包和绿色便携版启动器不再默认设置 `AI_SSH_HOME`
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验
