@@ -264,6 +264,7 @@
 81. AI 设置新增可保存的中文系统提示词，默认值内置在前端设置和 Go core 提示词组合中
 82. 终端框选文本后显示“加入 AI”快捷按钮，可把选中文本追加到统一 AI 输入框继续处理
 83. 健康检查能力增加 `ai-stream` / `ai-unified`，前端和 Tauri 调试复用已有 core 时会避免使用不支持统一 AI 和流式 AI 的旧 core
+84. 根目录增加 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri，便于一键调试并查看后端日志
 
 ## 6. 工程规则
 
@@ -443,6 +444,7 @@
 - [x] AI 预测流式返回期间展示 thinking 和原始预测内容，解析成功后只展示正式命令候选卡片
 - [x] 终端选中文本后显示“加入 AI”快捷按钮，点击后把选中文本追加到统一 AI 输入框
 - [x] 健康检查能力增加 `ai-stream` / `ai-unified`，前端和 Tauri 调试复用已有 core 时会避免使用不支持流式 AI 或统一 AI 的旧 core
+- [x] 增加根目录 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验
