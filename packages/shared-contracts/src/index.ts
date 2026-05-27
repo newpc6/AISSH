@@ -243,6 +243,7 @@ export type AIAgentStepStatus = 'pending' | 'approved' | 'running' | 'executed' 
 export interface AIAgentStep {
   command: string
   status: AIAgentStepStatus
+  sessionId?: string
   explanation?: string
   riskLevel?: AIRiskLevel
   riskReason?: string

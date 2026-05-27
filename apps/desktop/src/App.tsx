@@ -4430,6 +4430,7 @@ export function App() {
       id: `step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       command,
       status: 'pending',
+      sessionId: activeSessionIdRef.current,
       explanation: response.agentReason || response.answer,
       riskLevel,
       riskReason: response.riskReason,
@@ -4569,6 +4570,7 @@ export function App() {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         command,
         status: 'pending',
+        sessionId,
         explanation: response.agentReason || response.answer,
         riskLevel,
         riskReason: response.riskReason,
@@ -5081,22 +5083,26 @@ export function App() {
     }
   }
 
-  const executeCommand = (command: string) => {
+  const executeCommand = (command: string, targetSessionId = activeSession?.id ?? '') => {
     const normalized = stripTerminalControlSequences(command).trim()
-    if (!normalized || !activeSession) {
+    const session = sessionsRef.current.find((item) => item.id === targetSessionId)
+    if (!normalized || !session) {
       return
     }
-    if (activeSession.status !== 'connected') {
+    if (session.status !== 'connected') {
       setErrorMessage('当前 SSH 会话已断开，请点击重连后继续执行')
       return
     }
     clearAIPrediction()
     xtermRef.current?.focus()
-    setActiveViewId(`session:${activeSession.id}`)
-    const input = `${commandBufferRef.current ? '\u0015' : ''}${normalized}\r`
-    commandBufferRef.current = ''
-    setSessionCommandDraft(activeSession.id, '')
-    queueSessionInput(activeSession.id, input)
+    setActiveViewId(`session:${session.id}`)
+    const sessionDraft = terminalCachesRef.current[session.id]?.commandDraft ?? ''
+    const input = `${sessionDraft ? '\u0015' : ''}${normalized}\r`
+    if (session.id === activeSessionIdRef.current) {
+      commandBufferRef.current = ''
+    }
+    setSessionCommandDraft(session.id, '')
+    queueSessionInput(session.id, input)
   }
 
   const copyCommand = async (command: string) => {
@@ -5146,6 +5152,7 @@ export function App() {
       id: `step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       command: normalized,
       status: 'pending',
+      sessionId: activeSessionIdRef.current,
       explanation: commandResponse?.answer || commandResponse?.agentReason || aiAssistantResponse?.answer || aiAssistantResponse?.agentReason || '用户已确认执行 AI 生成命令',
       riskLevel: normalizedRisk,
       riskReason: commandResponse?.riskReason || aiAssistantResponse?.riskReason,
@@ -5255,8 +5262,15 @@ export function App() {
 
   const executeAgentStep = async (stepId: string, fromAuto = false, confirmed = false) => {
     const step = agentStepsRef.current.find((item) => item.id === stepId)
-    if (!step || !activeSession || activeSession.status !== 'connected') {
+    const sessionId = step?.sessionId || activeSessionIdRef.current
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
+    if (!step || !session || session.status !== 'connected') {
       setAgentMessage('当前 SSH 会话不可执行命令')
+      appendLog('warn', 'ui.agent', 'agent command skipped because session is unavailable', {
+        stepID: stepId,
+        sessionID: sessionId,
+        status: session?.status,
+      })
       return
     }
     const riskLevel = step.riskLevel || classifyCommandRisk(step.command)
@@ -5266,12 +5280,11 @@ export function App() {
       setAgentMessage(fromAuto ? '检测到高风险命令，已暂停自动执行，请人工确认' : '检测到高风险命令，请确认后执行')
       return
     }
-    const beforeContext = terminalContextTail(terminalCachesRef.current[activeSession.id], 12000)
-    const sessionId = activeSession.id
+    const beforeContext = terminalContextTail(terminalCachesRef.current[sessionId], 12000)
     const marker = agentExitMarker(step.id)
     const timeoutMs = normalizeAppSettings(sessionSettingsRef.current).agentCommandTimeoutSeconds * 1000
     clearAgentWaiter()
-    updateAgentStep(step.id, { status: 'running', riskLevel })
+    updateAgentStep(step.id, { status: 'running', riskLevel, sessionId })
     setAgentState('loading')
     setAgentMessage('命令执行中，等待远端命令完成...')
     appendLog('info', 'ui.agent', 'agent command started', {
@@ -5287,7 +5300,7 @@ export function App() {
     }, timeoutMs)
     clearAIPrediction({ sessionId })
     agentWaiterRef.current = { stepId: step.id, sessionId, beforeContext, marker, rawOutput: '', timeoutId }
-    executeCommand(wrapAgentCommand(step.command, marker))
+    executeCommand(wrapAgentCommand(step.command, marker), sessionId)
   }
 
   const applyPrediction = () => {

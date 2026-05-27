@@ -151,6 +151,7 @@ type aiAssistRequest struct {
 type aiAgentStep struct {
 	Command     string `json:"command"`
 	Status      string `json:"status"`
+	SessionID   string `json:"sessionId,omitempty"`
 	Explanation string `json:"explanation,omitempty"`
 	RiskLevel   string `json:"riskLevel,omitempty"`
 	RiskReason  string `json:"riskReason,omitempty"`
