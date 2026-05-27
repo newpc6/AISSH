@@ -1,6 +1,9 @@
 package server
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParsePredictedCommandsRejectsBrokenStructuredContent(t *testing.T) {
 	commands := parsePredictedCommands(`{"commands":["docker ps -a`, 3)
@@ -41,6 +44,33 @@ func TestParseAssistResponseAcceptsAgentJSON(t *testing.T) {
 	response = normalizeAgentAssistResponse(response)
 	if response.AgentStatus != "command" || response.AgentCommand != "sudo apt update" || response.RiskLevel != "high" {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
+func TestFinalizeAssistResponseNormalizesCommandWithoutTask(t *testing.T) {
+	response := finalizeAssistResponse(aiAssistResponse{
+		AgentCommand: "which nginx",
+		Answer:       "检查 nginx 是否在 PATH 中。",
+	})
+
+	if response.AgentStatus != "command" {
+		t.Fatalf("expected command status, got %q", response.AgentStatus)
+	}
+	if len(response.Commands) != 1 || response.Commands[0] != "which nginx" {
+		t.Fatalf("expected command to be mirrored into commands, got %#v", response.Commands)
+	}
+	if response.RiskLevel != "low" {
+		t.Fatalf("expected low risk, got %q", response.RiskLevel)
+	}
+}
+
+func TestBuildAssistSystemPromptUsesCustomPromptAsUnifiedPrompt(t *testing.T) {
+	prompt := buildAssistSystemPrompt("优先给出简短结论。")
+	if !strings.Contains(prompt, "只有一个统一入口") {
+		t.Fatalf("expected unified entry guidance in prompt")
+	}
+	if !strings.Contains(prompt, "优先给出简短结论。") {
+		t.Fatalf("expected custom system prompt to be included")
 	}
 }
 

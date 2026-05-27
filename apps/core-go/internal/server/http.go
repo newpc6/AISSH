@@ -237,7 +237,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 
 		response, err := assistWithAI(r.Context(), request, logger)
 		if err != nil {
-			logger.error("ai", "assist failed", map[string]any{"task": request.Task, "error": err.Error()})
+			logger.error("ai", "assist failed", map[string]any{"error": err.Error()})
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}

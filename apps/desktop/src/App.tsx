@@ -40,7 +40,6 @@ import {
   type AIAgentStep,
   type AIAssistRequest,
   type AIAssistResponse,
-  type AIAssistTask,
   type AIChatConversation,
   type AIChatConversationCreateRequest,
   type AIChatConversationListResponse,
@@ -4318,7 +4317,6 @@ export function App() {
   }
 
   const requestAIAssistStream = async (
-    task: AIAssistTask,
     prompt: string,
     options: Partial<AIAssistRequest> = {},
     sessionId = activeSessionIdRef.current,
@@ -4335,7 +4333,6 @@ export function App() {
       baseUrl: normalized.aiBaseUrl,
       apiKey: normalized.aiApiKey,
       model: normalized.aiModel,
-      task,
       systemPrompt: normalized.aiSystemPrompt,
       prompt,
       terminalContext,
@@ -4352,7 +4349,7 @@ export function App() {
       hostAddress: host?.address,
       username: host?.username,
       agentMode: options.agentMode ?? agentModeRef.current,
-      agentGoal: options.agentGoal ?? (task === 'auto' ? prompt : resolveAgentGoal(prompt)),
+      agentGoal: options.agentGoal ?? resolveAgentGoal(prompt),
       agentSteps: options.agentSteps ?? agentStepsRef.current,
       ...options,
     }
@@ -4399,7 +4396,6 @@ export function App() {
 
   const requestAIUnifiedStream = (prompt: string, options: Partial<AIAssistRequest> = {}) => {
     return requestAIAssistStream(
-      'auto',
       prompt,
       {
         agentMode: agentModeRef.current,
@@ -4543,7 +4539,6 @@ export function App() {
     setAgentMessage('正在让 Agent 规划下一步...')
     try {
       const response = await requestAIAssistStream(
-        'agent_next',
         goal,
         {
           agentGoal: goal,

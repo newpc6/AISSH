@@ -133,7 +133,6 @@ type aiAssistRequest struct {
 	BaseURL         string        `json:"baseUrl"`
 	APIKey          string        `json:"apiKey,omitempty"`
 	Model           string        `json:"model"`
-	Task            string        `json:"task"`
 	SystemPrompt    string        `json:"systemPrompt,omitempty"`
 	Prompt          string        `json:"prompt"`
 	TerminalContext string        `json:"terminalContext,omitempty"`

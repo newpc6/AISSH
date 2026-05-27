@@ -273,7 +273,7 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: buildAssistSystemPrompt(normalized.Task, normalized.SystemPrompt),
+				Content: buildAssistSystemPrompt(normalized.SystemPrompt),
 			},
 			{
 				Role:    "user",
@@ -288,7 +288,6 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 	started := time.Now()
 	if logger != nil {
 		logger.debug("ai", "assist request prepared", map[string]any{
-			"task":                 normalized.Task,
 			"endpoint":             endpoint,
 			"model":                normalized.Model,
 			"terminalContextChars": len(normalized.TerminalContext),
@@ -313,7 +312,6 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 	if err != nil {
 		if logger != nil {
 			logger.error("ai", "assist provider request failed", map[string]any{
-				"task":       normalized.Task,
 				"endpoint":   endpoint,
 				"model":      normalized.Model,
 				"error":      err.Error(),
@@ -328,7 +326,6 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 	if err != nil {
 		if logger != nil {
 			logger.error("ai", "assist provider response read failed", map[string]any{
-				"task":       normalized.Task,
 				"endpoint":   endpoint,
 				"model":      normalized.Model,
 				"status":     response.StatusCode,
@@ -343,7 +340,6 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		bodySnippet := logTextSnippet(string(responseBody))
 		if logger != nil {
 			logger.error("ai", "assist provider returned non-success status", map[string]any{
-				"task":          normalized.Task,
 				"endpoint":      endpoint,
 				"model":         normalized.Model,
 				"status":        response.StatusCode,
@@ -362,7 +358,6 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 	if err := json.Unmarshal(responseBody, &chatResponse); err != nil {
 		if logger != nil {
 			logger.error("ai", "assist provider response decode failed", map[string]any{
-				"task":          normalized.Task,
 				"endpoint":      endpoint,
 				"model":         normalized.Model,
 				"status":        response.StatusCode,
@@ -383,7 +378,6 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 	if err != nil {
 		if logger != nil {
 			logger.error("ai", "assist provider returned invalid content", map[string]any{
-				"task":                  normalized.Task,
 				"endpoint":              endpoint,
 				"model":                 normalized.Model,
 				"status":                response.StatusCode,
@@ -402,10 +396,9 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		}
 		return aiAssistResponse{}, err
 	}
-	result = finalizeAssistResponse(normalized, result)
+	result = finalizeAssistResponse(result)
 	if logger != nil {
 		logger.info("ai", "assist completed", map[string]any{
-			"task":         normalized.Task,
 			"model":        normalized.Model,
 			"agentStatus":  result.AgentStatus,
 			"commandCount": len(result.Commands),
@@ -502,7 +495,7 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: buildAssistSystemPrompt(normalized.Task, normalized.SystemPrompt),
+				Content: buildAssistSystemPrompt(normalized.SystemPrompt),
 			},
 			{
 				Role:    "user",
@@ -534,7 +527,6 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 	if err != nil {
 		if logger != nil {
 			logger.error("ai", "stream assist returned invalid content", map[string]any{
-				"task":                  normalized.Task,
 				"endpoint":              endpoint,
 				"model":                 normalized.Model,
 				"finishReason":          finishReason,
@@ -547,7 +539,7 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 		}
 		return err
 	}
-	result = finalizeAssistResponse(normalized, result)
+	result = finalizeAssistResponse(result)
 	if text := contentExtractor.Finalize(result); text != "" {
 		if err := write(aiStreamEvent{Type: "content", Text: text}); err != nil {
 			return err
@@ -555,7 +547,6 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 	}
 	if logger != nil {
 		logger.info("ai", "stream assist completed", map[string]any{
-			"task":         normalized.Task,
 			"model":        normalized.Model,
 			"agentStatus":  result.AgentStatus,
 			"commandCount": len(result.Commands),
@@ -818,7 +809,6 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) {
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
-	request.Task = strings.TrimSpace(request.Task)
 	request.SystemPrompt = trimToLastRunes(strings.TrimSpace(request.SystemPrompt), aiAssistPromptLimit)
 	request.Prompt = trimToLastRunes(strings.TrimSpace(request.Prompt), aiAssistPromptLimit)
 	if request.BaseURL == "" {
@@ -826,12 +816,6 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	}
 	if request.Model == "" {
 		return request, errors.New("ai model is required")
-	}
-	if request.Task == "" {
-		request.Task = "auto"
-	}
-	if !validAssistTask(request.Task) {
-		return request, fmt.Errorf("unsupported ai assist task: %s", request.Task)
 	}
 	if request.Prompt == "" && request.AgentGoal == "" && request.SelectedText == "" && request.TerminalContext == "" {
 		return request, errors.New("ai prompt or context is required")
@@ -860,15 +844,6 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	return request, nil
 }
 
-func validAssistTask(task string) bool {
-	switch task {
-	case "auto", "explain_error", "generate_command", "summarize_logs", "ops_qa", "agent_next":
-		return true
-	default:
-		return false
-	}
-}
-
 func trimToLastRunes(value string, limit int) string {
 	if limit <= 0 {
 		return value
@@ -893,40 +868,39 @@ func redactSensitiveText(value string) string {
 	return redacted
 }
 
-func buildAssistSystemPrompt(task string, customPrompt string) string {
-	base := `你是 AI SSH 的统一运维助手。所有回答必须使用中文。你会看到终端上下文、历史命令、当前目录、主机信息、用户选中文本和用户目标。不要泄露或复述疑似密码、Token、密钥等敏感信息。必须只返回严格 JSON，不要 Markdown，不要把推理过程放进 content。你需要先判断用户意图：如果只是解释、总结、问答，就直接回答；如果需要驱动终端完成目标，就给出下一步命令并说明风险；如果信息不足，就提问。`
+func buildAssistSystemPrompt(customPrompt string) string {
+	base := `你是 AI SSH 的统一运维助手。所有回答必须使用中文。你会看到终端上下文、当前对话上下文、历史命令、当前目录、主机信息、用户选中文本、用户目标和 Agent 已执行步骤。
+
+你只有一个统一入口，必须自行判断用户意图：
+1. 如果用户是在问答、解释错误、总结日志、分析现象或询问建议，直接给出结论、依据和下一步建议，不要生成 agentCommand。
+2. 如果用户希望你驱动终端完成目标，或者已经有 Agent 执行步骤需要继续判断，每次只生成一个下一步命令，或者判断目标已完成，或者提出需要用户补充的问题。
+3. 如果 Agent 已执行步骤 JSON 中已有 output 和 exitCode，必须优先把它作为最新事实判断任务是否完成；不要只根据终端上下文或用户最初输入判断。
+4. 如果执行结果已经足以回答用户目标，例如命令返回路径、版本号、服务状态、明确的不存在信息或退出码已经说明结果，必须返回 agentStatus:"done"，在 answer 中直接给出结论和依据，不要继续生成无必要命令。
+5. 不要输出交互式编辑器命令，不要输出需要长时间阻塞的命令。优先使用可验证、可回滚、保守的命令推进。
+6. 安装、删除、重启、改配置、开放端口、sudo、rm、chmod 777、curl|sh、dd、mkfs 等命令必须标记 riskLevel:"high"，并说明原因。
+7. 不要泄露或复述疑似密码、Token、密钥等敏感信息。
+
+你必须只返回严格 JSON object，不要包裹 Markdown 代码块；answer、summary、agentReason 字段的字符串内容可以使用 Markdown。不要把隐藏推理过程放进 content。返回字段为：
+{"answer":"给用户看的回答或说明","summary":"可选一句话摘要","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"风险原因","agentStatus":"command|done|question","agentCommand":"需要驱动终端时的一条下一步命令","agentReason":"为什么这样做"}
+
+普通问答、解释和总结通常返回 answer，可附带 commands 作为用户可手动采用的草稿，但不要设置 agentCommand。需要继续驱动终端时返回 agentStatus:"command" 和 agentCommand；任务已完成时返回 agentStatus:"done"；信息不足时返回 agentStatus:"question"。`
 	if customPrompt != "" {
 		base += "\n用户自定义系统提示词：\n" + customPrompt
 	}
-	switch task {
-	case "auto":
-		return base + `返回 {"answer":"给用户看的说明","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因","agentStatus":"command|done|question","agentCommand":"如果需要驱动终端则给一个下一步命令","agentReason":"为什么这样做"}。只有当用户明显要求执行、安装、配置、排障推进或完成目标时，才设置 agentStatus 为 command；普通问答、解释和总结不要给 agentCommand。危险命令必须标 high。`
-	case "explain_error":
-		return base + `任务是解释错误。返回 {"answer":"易懂解释","summary":"一句话摘要","warnings":["风险或注意事项"],"commands":["可选排查命令"]}。`
-	case "generate_command":
-		return base + `任务是把自然语言转换成 shell 命令草稿。生成的命令不能自动执行。返回 {"answer":"说明","commands":["命令1"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因"}。危险命令必须标 high。`
-	case "summarize_logs":
-		return base + `任务是总结日志。返回 {"answer":"总结","summary":"一句话结论","warnings":["异常点"],"commands":["可选排查命令"]}。`
-	case "agent_next":
-		return base + `任务是驱动终端完成用户目标。每次只给一个下一步命令，或者判断目标已完成，或者提出需要用户补充的问题。必须优先阅读 Agent 已执行步骤 JSON 中的 output 和 exitCode；如果最后一步已经足以回答目标，例如查询命令返回路径、版本号、服务状态、明确的不存在信息或退出码已经说明结果，必须返回 agentStatus:"done"，在 answer 中直接给出结论和依据，不要继续生成无必要命令。不要输出交互式编辑器命令，不要输出需要长时间阻塞的命令。优先用可验证、可回滚、保守的命令推进。返回 {"agentStatus":"command|done|question","agentCommand":"下一步命令","agentReason":"为什么执行这一步","answer":"给用户看的说明","riskLevel":"low|medium|high","riskReason":"风险原因","warnings":["注意事项"]}。安装、删除、重启、改配置、开放端口、sudo、rm、chmod 777、curl|sh、dd、mkfs 等必须标 high。`
-	default:
-		return base + `任务是围绕当前 SSH 会话做运维问答。返回 {"answer":"回答","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因"}。`
-	}
+	return base
 }
 
-func finalizeAssistResponse(request aiAssistRequest, result aiAssistResponse) aiAssistResponse {
-	if request.Task == "agent_next" {
-		result = normalizeAgentAssistResponse(result)
+func finalizeAssistResponse(result aiAssistResponse) aiAssistResponse {
+	result.AgentStatus = strings.TrimSpace(result.AgentStatus)
+	result.AgentCommand = strings.TrimSpace(result.AgentCommand)
+	if result.AgentStatus != "" && result.AgentStatus != "command" && result.AgentStatus != "done" && result.AgentStatus != "question" {
+		result.AgentStatus = ""
 	}
-	if request.Task == "auto" {
-		result.AgentStatus = strings.TrimSpace(result.AgentStatus)
-		result.AgentCommand = strings.TrimSpace(result.AgentCommand)
-		if result.AgentStatus == "" && result.AgentCommand != "" {
-			result.AgentStatus = "command"
-		}
-		if result.AgentStatus == "command" {
-			result = normalizeAgentAssistResponse(result)
-		}
+	if result.AgentStatus == "" && result.AgentCommand != "" {
+		result.AgentStatus = "command"
+	}
+	if result.AgentStatus == "command" || result.AgentCommand != "" {
+		result = normalizeAgentAssistResponse(result)
 	}
 	result.Commands = cleanPredictedCommands(result.Commands, 8)
 	result.Warnings = cleanStringList(result.Warnings, 8)
@@ -948,8 +922,7 @@ func finalizeAssistResponse(request aiAssistRequest, result aiAssistResponse) ai
 func buildAssistPrompt(request aiAssistRequest) string {
 	history, _ := json.Marshal(request.CommandHistory)
 	steps, _ := json.Marshal(request.AgentSteps)
-	return fmt.Sprintf(`任务类型：%s
-用户输入：%s
+	return fmt.Sprintf(`用户输入：%s
 Agent 模式：%s
 Agent 目标：%s
 Agent 已执行步骤 JSON：%s
@@ -967,7 +940,6 @@ Agent 已执行步骤 JSON：%s
 %s
 
 请严格按系统要求返回 JSON。`,
-		request.Task,
 		emptyAsDash(request.Prompt),
 		emptyAsDash(request.AgentMode),
 		emptyAsDash(request.AgentGoal),

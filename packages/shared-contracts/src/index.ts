@@ -235,7 +235,6 @@ export interface AIPredictionResponse {
   commands: string[]
 }
 
-export type AIAssistTask = 'auto' | 'explain_error' | 'generate_command' | 'summarize_logs' | 'ops_qa' | 'agent_next'
 export type AIAgentMode = 'review' | 'auto'
 export type AIRiskLevel = 'low' | 'medium' | 'high'
 export type AIAgentStatus = 'command' | 'done' | 'question'
@@ -256,7 +255,6 @@ export interface AIAssistRequest {
   baseUrl: string
   apiKey?: string
   model: string
-  task: AIAssistTask
   systemPrompt?: string
   prompt: string
   terminalContext?: string
