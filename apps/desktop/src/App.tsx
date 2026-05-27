@@ -247,6 +247,9 @@ const MAX_PREDICTION_PANEL_HEIGHT = 520
 const MIN_RIGHT_SERVER_INFO_HEIGHT = 88
 const DEFAULT_RIGHT_SERVER_INFO_HEIGHT = 420
 const MAX_RIGHT_SERVER_INFO_HEIGHT = 720
+const MIN_RIGHT_PANEL_WIDTH = 360
+const DEFAULT_RIGHT_PANEL_WIDTH = 440
+const MAX_RIGHT_PANEL_WIDTH = 720
 const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified', 'ai-chat-history']
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
@@ -314,6 +317,7 @@ const defaultSettings: AppSettings = {
   metricsExpandedPointLimit: 20,
   terminalRetainedLines: 1000,
   rightServerInfoPanelHeight: DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
+  rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
   aiEnabled: true,
   aiBaseUrl: '',
   aiApiKey: '',
@@ -688,6 +692,10 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
         Number(value.rightServerInfoPanelHeight ?? defaultSettings.rightServerInfoPanelHeight) || DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
       ),
     ),
+    rightPanelWidth: Math.max(
+      MIN_RIGHT_PANEL_WIDTH,
+      Math.min(MAX_RIGHT_PANEL_WIDTH, Number(value.rightPanelWidth ?? defaultSettings.rightPanelWidth) || DEFAULT_RIGHT_PANEL_WIDTH),
+    ),
     aiEnabled: value.aiEnabled ?? defaultSettings.aiEnabled,
     aiPredictionCount: Math.max(
       1,
@@ -872,6 +880,13 @@ function clampRightServerInfoPanelHeight(value: number) {
     return DEFAULT_RIGHT_SERVER_INFO_HEIGHT
   }
   return Math.min(MAX_RIGHT_SERVER_INFO_HEIGHT, Math.max(MIN_RIGHT_SERVER_INFO_HEIGHT, Math.round(value)))
+}
+
+function clampRightPanelWidth(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_RIGHT_PANEL_WIDTH
+  }
+  return Math.min(MAX_RIGHT_PANEL_WIDTH, Math.max(MIN_RIGHT_PANEL_WIDTH, Math.round(value)))
 }
 
 function emptyTerminalCache(): TerminalCache {
@@ -1212,6 +1227,7 @@ export function App() {
   const [agentSteps, setAgentSteps] = useState<AIAgentPlanStep[]>([])
   const [pendingAgentStepId, setPendingAgentStepId] = useState('')
   const [rightServerInfoPanelHeight, setRightServerInfoPanelHeight] = useState(DEFAULT_RIGHT_SERVER_INFO_HEIGHT)
+  const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH)
   const [predictionGhostPosition, setPredictionGhostPosition] = useState<PredictionGhostPosition | null>(null)
   const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
   const [filePreviewTabs, setFilePreviewTabs] = useState<FilePreviewTab[]>([])
@@ -2202,6 +2218,7 @@ export function App() {
     const normalized = normalizeAppSettings(settings)
     sessionSettingsRef.current = normalized
     setRightServerInfoPanelHeight(clampRightServerInfoPanelHeight(normalized.rightServerInfoPanelHeight))
+    setRightPanelWidth(clampRightPanelWidth(normalized.rightPanelWidth))
   }, [settings])
 
   useEffect(() => {
@@ -2526,6 +2543,7 @@ export function App() {
       settings: normalizeAppSettings(settings),
       leftRailWidth,
       rightServerInfoPanelHeight,
+      rightPanelWidth,
       hostGroups,
       favoriteCommands: normalizeFavoriteCommands(favoriteCommands),
       exportedAt: new Date().toISOString(),
@@ -2544,6 +2562,7 @@ export function App() {
         settings?: Partial<AppSettings>
         leftRailWidth?: number
         rightServerInfoPanelHeight?: number
+        rightPanelWidth?: number
         favoriteCommands?: unknown
       }
       if (parsed.settings) {
@@ -2556,6 +2575,11 @@ export function App() {
         const height = clampRightServerInfoPanelHeight(parsed.rightServerInfoPanelHeight)
         setRightServerInfoPanelHeight(height)
         setSettings((current) => normalizeAppSettings({ ...current, rightServerInfoPanelHeight: height }))
+      }
+      if (typeof parsed.rightPanelWidth === 'number') {
+        const width = clampRightPanelWidth(parsed.rightPanelWidth)
+        setRightPanelWidth(width)
+        setSettings((current) => normalizeAppSettings({ ...current, rightPanelWidth: width }))
       }
       if (Array.isArray((parsed as { hostGroups?: HostGroup[] }).hostGroups)) {
         setHostGroups(normalizeHostGroups((parsed as { hostGroups: HostGroup[] }).hostGroups, hosts))
@@ -2714,6 +2738,7 @@ export function App() {
       metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
       terminalRetainedLines: normalized.terminalRetainedLines,
       rightServerInfoPanelHeight: normalized.rightServerInfoPanelHeight,
+      rightPanelWidth: normalized.rightPanelWidth,
       aiEnabled: normalized.aiEnabled,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
@@ -4040,7 +4065,18 @@ export function App() {
     return data.messages
   }
 
+  const isConversationEmpty = (conversationId = activeAIConversationIdRef.current) =>
+    Boolean(conversationId) && conversationId === activeAIConversationIdRef.current && aiMessagesRef.current.length === 0
+
   const createAIConversation = async (title = '新对话') => {
+    if (isConversationEmpty()) {
+      return aiConversations.find((item) => item.id === activeAIConversationIdRef.current) ?? {
+        id: activeAIConversationIdRef.current,
+        title,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    }
     const body: AIChatConversationCreateRequest = { title }
     const response = await apiFetch('/ai/chats', {
       method: 'POST',
@@ -4061,6 +4097,37 @@ export function App() {
     agentStepsRef.current = []
     agentGoalRef.current = ''
     return conversation
+  }
+
+  const deleteAIConversation = async (conversationId: string) => {
+    const conversation = aiConversations.find((item) => item.id === conversationId)
+    const confirmed = window.confirm(`确认删除对话“${conversation?.title ?? '未命名对话'}”吗？\n\n对应的本地消息记录也会从数据库删除。`)
+    if (!confirmed) {
+      return
+    }
+    const response = await apiFetch(`/ai/chats/${conversationId}`, { method: 'DELETE' })
+    if (!response.ok) {
+      setAiAssistantError((await readResponseErrorDetail(response)) || `删除 AI 对话失败：${response.status}`)
+      return
+    }
+    const nextConversations = aiConversations.filter((item) => item.id !== conversationId)
+    setAiConversations(nextConversations)
+    if (conversationId === activeAIConversationIdRef.current) {
+      setActiveAIConversationId('')
+      activeAIConversationIdRef.current = ''
+      setAiMessages([])
+      aiMessagesRef.current = []
+      resetAIStreamBuffers()
+      setAiAssistantResponse(null)
+      setAgentSteps([])
+      agentStepsRef.current = []
+      agentGoalRef.current = ''
+      if (nextConversations.length > 0) {
+        await selectAIConversation(nextConversations[0].id)
+      } else {
+        await createAIConversation('新对话')
+      }
+    }
   }
 
   const ensureAIConversation = async (title = '新对话') => {
@@ -5188,11 +5255,17 @@ export function App() {
           {typeof displayedStep?.exitCode === 'number' ? <small>退出码：{displayedStep.exitCode}</small> : null}
           {displayedStep?.output ? <pre className="agent-step-output">{displayedStep.output}</pre> : null}
           {displayedStep ? (
-            <div>
-              <button type="button" title={`复制 AI 命令：${displayedStep.command}`} onClick={() => void copyCommand(displayedStep.command)}>
-                复制
+            <div className="agent-step-actions">
+              <button
+                className="ai-icon-button"
+                type="button"
+                title={`复制 AI 命令：${displayedStep.command}`}
+                onClick={() => void copyCommand(displayedStep.command)}
+              >
+                ⧉
               </button>
               <button
+                className="ai-icon-button"
                 disabled={!canExecuteStep}
                 type="button"
                 title={`执行 AI 命令：${displayedStep.command}`}
@@ -5202,15 +5275,20 @@ export function App() {
                   void executeAgentStep(displayedStep.id)
                 }}
               >
-                执行
+                ↵
               </button>
               {displayedStep.status === 'executed' ? (
-                <button type="button" title="让 AI 根据该步骤输出继续判断" onClick={() => void requestAgentNextStep(agentStepsRef.current, activeSessionIdRef.current)}>
-                  继续
+                <button
+                  className="ai-icon-button"
+                  type="button"
+                  title="让 AI 根据该步骤输出继续判断"
+                  onClick={() => void requestAgentNextStep(agentStepsRef.current, activeSessionIdRef.current)}
+                >
+                  ↻
                 </button>
               ) : null}
-              <button type="button" title="跳过这一步" onClick={() => updateAgentStep(displayedStep.id, { status: 'skipped' })}>
-                跳过
+              <button className="ai-icon-button" type="button" title="跳过这一步" onClick={() => updateAgentStep(displayedStep.id, { status: 'skipped' })}>
+                ⤼
               </button>
             </div>
           ) : null}
@@ -5414,6 +5492,32 @@ export function App() {
       window.localStorage.setItem(
         'ai-ssh-settings',
         JSON.stringify(normalizeAppSettings({ ...sessionSettingsRef.current, rightServerInfoPanelHeight: height })),
+      )
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
+
+  const startRightPanelWidthResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = rightPanelWidth
+    let nextWidth = startWidth
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      nextWidth = clampRightPanelWidth(startWidth + startX - moveEvent.clientX)
+      setRightPanelWidth(nextWidth)
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      const width = clampRightPanelWidth(nextWidth)
+      setSettings((current) => normalizeAppSettings({ ...current, rightPanelWidth: width }))
+      window.localStorage.setItem(
+        'ai-ssh-settings',
+        JSON.stringify(normalizeAppSettings({ ...sessionSettingsRef.current, rightPanelWidth: width })),
       )
     }
 
@@ -5759,7 +5863,8 @@ export function App() {
         style={{
           '--left-rail-width': `${leftRailWidth}px`,
           '--right-server-info-height': `${rightServerInfoPanelHeight}px`,
-          gridTemplateColumns: `${leftRailWidth}px minmax(560px, 1fr) 440px`,
+          '--right-panel-width': `${rightPanelWidth}px`,
+          gridTemplateColumns: `${leftRailWidth}px minmax(560px, 1fr) ${rightPanelWidth}px`,
         } as React.CSSProperties}
       >
         <aside className="left-rail">
@@ -6408,6 +6513,15 @@ export function App() {
           </section>
         </main>
 
+        <div
+          aria-label="拖动调整右侧区域宽度"
+          className="right-rail-width-resizer"
+          role="separator"
+          tabIndex={0}
+          title="拖动调整右侧当前服务器和 AI 区域宽度"
+          onPointerDown={startRightPanelWidthResize}
+        />
+
         <aside className="right-rail">
           <section
             className={`info-panel ${isServerInfoCollapsed ? 'collapsed' : ''}`}
@@ -6544,25 +6658,27 @@ export function App() {
                   </div>
                   <div className="agent-actions">
                     <button
+                      className="ai-icon-button"
                       type="button"
                       title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'}
                       onClick={() => setIsAIHistoryOpen((current) => !current)}
                     >
-                      {isAIHistoryOpen ? '收起历史' : '历史对话'}
+                      {isAIHistoryOpen ? '◧' : '☰'}
                     </button>
-                    <button type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
-                      新建对话
+                    <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
+                      ＋
                     </button>
                     <button
-                      className="primary-button"
+                      className="ai-icon-button primary-button"
                       disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
                       type="button"
                       title="发送给统一 AI 助手"
                       onClick={() => void runUnifiedAI()}
                     >
-                      {aiAssistantState === 'loading' ? '思考中...' : '发送'}
+                      {aiAssistantState === 'loading' ? '…' : '➤'}
                     </button>
                     <button
+                      className="ai-icon-button"
                       type="button"
                       title="清空当前 AI 输入框"
                       onClick={() => {
@@ -6570,13 +6686,13 @@ export function App() {
                         setAiAssistantError('')
                       }}
                     >
-                      清空输入
+                      ⌫
                     </button>
-                    <button disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={continueAgentTask}>
-                      继续
+                    <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={continueAgentTask}>
+                      ↻
                     </button>
-                    <button type="button" title="停止自动推进任务" onClick={stopAgentTask}>
-                      停止
+                    <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={stopAgentTask}>
+                      ■
                     </button>
                   </div>
                 </div>
@@ -6586,22 +6702,31 @@ export function App() {
                     <aside className="ai-chat-sidebar">
                       <div className="ai-chat-sidebar-head">
                         <strong>历史对话</strong>
-                        <button type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
+                        <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
                           +
                         </button>
                       </div>
                       <div className="ai-chat-list">
                         {aiConversations.map((conversation) => (
-                          <button
-                            className={conversation.id === activeAIConversationId ? 'active' : ''}
-                            key={conversation.id}
-                            type="button"
-                            title={`切换到 ${conversation.title}`}
-                            onClick={() => void selectAIConversation(conversation.id)}
-                          >
-                            <span>{conversation.title}</span>
-                            <small>{new Date(conversation.updatedAt).toLocaleString()}</small>
-                          </button>
+                          <div className={`ai-chat-item ${conversation.id === activeAIConversationId ? 'active' : ''}`} key={conversation.id}>
+                            <button
+                              className="ai-chat-select"
+                              type="button"
+                              title={`切换到 ${conversation.title}`}
+                              onClick={() => void selectAIConversation(conversation.id)}
+                            >
+                              <span>{conversation.title}</span>
+                              <small>{new Date(conversation.updatedAt).toLocaleString()}</small>
+                            </button>
+                            <button
+                              className="ai-chat-delete ai-icon-button"
+                              type="button"
+                              title={`删除对话：${conversation.title}`}
+                              onClick={() => void deleteAIConversation(conversation.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </aside>
@@ -7143,6 +7268,21 @@ export function App() {
                           setSettings((current) => ({
                             ...current,
                             rightServerInfoPanelHeight: Number(event.target.value) || DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>右侧区域默认宽度（像素）</span>
+                      <input
+                        min={MIN_RIGHT_PANEL_WIDTH}
+                        max={MAX_RIGHT_PANEL_WIDTH}
+                        type="number"
+                        value={settings.rightPanelWidth ?? defaultSettings.rightPanelWidth}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            rightPanelWidth: Number(event.target.value) || DEFAULT_RIGHT_PANEL_WIDTH,
                           }))
                         }
                       />

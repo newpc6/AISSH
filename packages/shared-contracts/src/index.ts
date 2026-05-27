@@ -67,6 +67,7 @@ export interface AppSettings {
   metricsExpandedPointLimit: number
   terminalRetainedLines: number
   rightServerInfoPanelHeight: number
+  rightPanelWidth: number
   aiEnabled: boolean
   aiBaseUrl: string
   aiApiKey: string

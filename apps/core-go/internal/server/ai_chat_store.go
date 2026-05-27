@@ -138,6 +138,25 @@ func (s *aiChatStore) updateConversation(id string, request aiChatConversationUp
 	return s.getConversation(id)
 }
 
+func (s *aiChatStore) deleteConversation(id string) error {
+	db, err := s.ensureDB()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(id) == "" {
+		return errors.New("conversation id is required")
+	}
+	result, err := db.Exec(`DELETE FROM conversations WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *aiChatStore) getConversation(id string) (aiChatConversation, error) {
 	db, err := s.ensureDB()
 	if err != nil {

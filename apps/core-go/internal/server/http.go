@@ -293,6 +293,14 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		}
 		conversationID := parts[0]
 		if len(parts) == 1 {
+			if r.Method == http.MethodDelete {
+				if err := aiChats.deleteConversation(conversationID); err != nil {
+					http.Error(w, err.Error(), http.StatusNotFound)
+					return
+				}
+				writeJSON(w, map[string]string{"status": "ok"})
+				return
+			}
 			if r.Method != http.MethodPatch {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
