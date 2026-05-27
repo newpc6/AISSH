@@ -202,6 +202,17 @@ type AIAgentPlanStep = AIAgentStep & {
   id: string
 }
 
+type ConfirmDialogState = {
+  title: string
+  section?: string
+  message: string
+  detail?: string
+  confirmText?: string
+  cancelText?: string
+  danger?: boolean
+  onConfirm: () => void | Promise<void>
+} | null
+
 type AgentCommandWaiter = {
   stepId: string
   sessionId: string
@@ -1226,7 +1237,7 @@ export function App() {
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [favoriteCommands, setFavoriteCommands] = useState<string[]>([])
   const [favoriteCommandDraft, setFavoriteCommandDraft] = useState('')
-  const [pendingFavoriteDelete, setPendingFavoriteDelete] = useState('')
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>(null)
   const [aiPredictionBySession, setAiPredictionBySession] = useState<Record<string, AIPredictionSessionState>>({})
   const [isPredictionDockCollapsed, setIsPredictionDockCollapsed] = useState(false)
   const [predictionPanelHeight, setPredictionPanelHeight] = useState(DEFAULT_PREDICTION_PANEL_HEIGHT)
@@ -1873,15 +1884,33 @@ export function App() {
     window.localStorage.setItem(FAVORITE_COMMANDS_STORAGE_KEY, JSON.stringify(normalized))
   }
 
+  const requestConfirm = (dialog: NonNullable<ConfirmDialogState>) => {
+    setConfirmDialog(dialog)
+  }
+
+  const closeConfirmDialog = () => {
+    setConfirmDialog(null)
+  }
+
+  const confirmAndRun = () => {
+    if (!confirmDialog) {
+      return
+    }
+    const action = confirmDialog.onConfirm
+    setConfirmDialog(null)
+    void action()
+  }
+
   const toggleFavoriteCommand = (command: string) => {
     const normalized = stripTerminalControlSequences(command).trim()
     if (!normalized) {
       return
     }
-    const next = favoriteCommands.includes(normalized)
-      ? favoriteCommands.filter((item) => item !== normalized)
-      : [normalized, ...favoriteCommands.filter((item) => item !== normalized)]
-    persistFavoriteCommands(next)
+    if (favoriteCommands.includes(normalized)) {
+      confirmDeleteFavoriteCommand(normalized)
+      return
+    }
+    persistFavoriteCommands([normalized, ...favoriteCommands.filter((item) => item !== normalized)])
   }
 
   const deleteFavoriteCommand = (command: string) => {
@@ -1890,7 +1919,50 @@ export function App() {
       return
     }
     persistFavoriteCommands(favoriteCommands.filter((item) => item !== normalized))
-    setPendingFavoriteDelete('')
+  }
+
+  const confirmDeleteFavoriteCommand = (command: string) => {
+    const normalized = stripTerminalControlSequences(command).trim()
+    if (!normalized) {
+      return
+    }
+    requestConfirm({
+      section: '收藏命令',
+      title: '删除收藏',
+      message: '确定删除这条收藏命令吗？',
+      detail: normalized,
+      confirmText: '删除',
+      danger: true,
+      onConfirm: () => deleteFavoriteCommand(normalized),
+    })
+  }
+
+  const confirmRemoveTransferTask = (task: { id: string; name: string; direction: 'upload' | 'download' }) => {
+    requestConfirm({
+      section: '传输任务',
+      title: '移除传输记录',
+      message: `确定移除「${task.name}」这条${task.direction === 'upload' ? '上传' : '下载'}记录吗？`,
+      confirmText: '移除',
+      danger: true,
+      onConfirm: () => setTransferTasks((current) => current.filter((item) => item.id !== task.id)),
+    })
+  }
+
+  const confirmDeleteGroupDraft = (index: number, group: string) => {
+    const name = group.trim() || '未命名分组'
+    requestConfirm({
+      section: 'SSH 分组',
+      title: '删除分组',
+      message: `确定删除分组「${name}」吗？`,
+      detail: '这里只会删除当前分组配置草稿，保存后才会写入配置。',
+      confirmText: '删除',
+      danger: true,
+      onConfirm: () => {
+        setGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
+        setOriginalGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
+        setGroupDialogMessage('')
+      },
+    })
   }
 
   const addFavoriteCommand = () => {
@@ -2615,12 +2687,8 @@ export function App() {
     }
   }
 
-  const deleteHost = async (host: HostRecord) => {
+  const removeHost = async (host: HostRecord) => {
     setOpenHostMenuId('')
-    const confirmed = window.confirm(`确定删除服务器「${host.name}」吗？`)
-    if (!confirmed) {
-      return
-    }
 
     const response = await apiFetch(`/hosts/${host.id}`, { method: 'DELETE' })
     if (!response.ok) {
@@ -2638,6 +2706,19 @@ export function App() {
     if (activeSession?.hostId === host.id) {
       setActiveSession('')
     }
+  }
+
+  const confirmDeleteHost = (host: HostRecord) => {
+    setOpenHostMenuId('')
+    requestConfirm({
+      section: 'SSH 连接',
+      title: '删除服务器',
+      message: `确定删除服务器「${host.name}」吗？`,
+      detail: `${host.username}@${host.address}:${host.port}`,
+      confirmText: '删除',
+      danger: true,
+      onConfirm: () => removeHost(host),
+    })
   }
 
   const duplicateHost = async (host: HostRecord) => {
@@ -3126,7 +3207,7 @@ export function App() {
     setSelectedFilePaths([entry.path])
   }
 
-  const openFilePreview = async (entry: FileEntry) => {
+  const openFilePreview = async (entry: FileEntry, confirmed = false) => {
     const session = activeSession
     const hostId = session?.hostId ?? selectedHostId
     if (!hostId || entry.type !== 'file') {
@@ -3134,11 +3215,15 @@ export function App() {
     }
 
     const kind = detectPreviewKind(entry)
-    if (entry.size > FILE_PREVIEW_CONFIRM_BYTES) {
-      const confirmed = window.confirm(`文件 ${entry.name} 大小为 ${formatBytes(entry.size)}，确定要打开预览吗？`)
-      if (!confirmed) {
-        return
-      }
+    if (entry.size > FILE_PREVIEW_CONFIRM_BYTES && !confirmed) {
+      requestConfirm({
+        section: '远程文件',
+        title: '打开大文件预览',
+        message: `文件 ${entry.name} 大小为 ${formatBytes(entry.size)}，确定要打开预览吗？`,
+        confirmText: '打开',
+        onConfirm: () => openFilePreview(entry, true),
+      })
+      return
     }
 
     const tabID = `${hostId}:${entry.path}`
@@ -4135,12 +4220,7 @@ export function App() {
     return conversation
   }
 
-  const deleteAIConversation = async (conversationId: string) => {
-    const conversation = aiConversations.find((item) => item.id === conversationId)
-    const confirmed = window.confirm(`确认删除对话“${conversation?.title ?? '未命名对话'}”吗？\n\n对应的本地消息记录也会从数据库删除。`)
-    if (!confirmed) {
-      return
-    }
+  const removeAIConversation = async (conversationId: string) => {
     const response = await apiFetch(`/ai/chats/${conversationId}`, { method: 'DELETE' })
     if (!response.ok) {
       setAiAssistantError((await readResponseErrorDetail(response)) || `删除 AI 对话失败：${response.status}`)
@@ -4164,6 +4244,19 @@ export function App() {
         await createAIConversation('新对话')
       }
     }
+  }
+
+  const confirmDeleteAIConversation = (conversationId: string) => {
+    const conversation = aiConversations.find((item) => item.id === conversationId)
+    requestConfirm({
+      section: 'AI 对话',
+      title: '删除历史对话',
+      message: `确认删除对话“${conversation?.title ?? '未命名对话'}”吗？`,
+      detail: '对应的本地消息记录也会从数据库删除。',
+      confirmText: '删除',
+      danger: true,
+      onConfirm: () => removeAIConversation(conversationId),
+    })
   }
 
   const ensureAIConversation = async (title = '新对话') => {
@@ -4861,12 +4954,7 @@ export function App() {
     }
   }
 
-  const closeSession = async (session: SessionRecord) => {
-    const confirmed = window.confirm(`确定关闭「${session.hostName}」会话吗？`)
-    if (!confirmed) {
-      return
-    }
-
+  const closeSessionNow = async (session: SessionRecord) => {
     closeSessionStream(session.id)
     await apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
     const remainingSessions = sessions.filter((item) => item.id !== session.id)
@@ -4892,6 +4980,17 @@ export function App() {
         xtermRef.current?.clear()
       }
     }
+  }
+
+  const closeSession = async (session: SessionRecord) => {
+    requestConfirm({
+      section: 'SSH 会话',
+      title: '关闭会话',
+      message: `确定关闭「${session.hostName}」会话吗？`,
+      confirmText: '关闭',
+      danger: true,
+      onConfirm: () => closeSessionNow(session),
+    })
   }
 
   const reconnectSession = async (session: SessionRecord) => {
@@ -5025,17 +5124,23 @@ export function App() {
     }
   }
 
-  const executeAICommand = async (command: string, riskLevel?: AIRiskLevel) => {
+  const executeAICommand = async (command: string, riskLevel?: AIRiskLevel, confirmed = false) => {
     const normalized = stripTerminalControlSequences(command).trim()
     if (!normalized) {
       return
     }
     const normalizedRisk = riskLevel || classifyCommandRisk(normalized)
-    if (normalizedRisk === 'high') {
-      const confirmed = window.confirm(`AI 生成的命令风险较高，确认执行吗？\n\n${normalized}`)
-      if (!confirmed) {
-        return
-      }
+    if (normalizedRisk === 'high' && !confirmed) {
+      requestConfirm({
+        section: 'AI 命令',
+        title: '确认高风险命令',
+        message: 'AI 生成的命令风险较高，确认执行吗？',
+        detail: normalized,
+        confirmText: '确认执行',
+        danger: true,
+        onConfirm: () => executeAICommand(normalized, riskLevel, true),
+      })
+      return
     }
     const goal = resolveAgentGoal(`执行命令并根据结果回答用户：${normalized}`)
     agentGoalRef.current = goal
@@ -6012,7 +6117,7 @@ export function App() {
                             <button type="button" title="编辑服务器配置" onClick={() => openEditHostDialog(host)}>编辑</button>
                             <button type="button" title="连接此服务器" onClick={() => void createSession(host.id)}>连接</button>
                             <button type="button" title="复制一份服务器配置" onClick={() => void duplicateHost(host)}>复制配置</button>
-                            <button className="danger-item" type="button" title="删除此服务器" onClick={() => void deleteHost(host)}>
+                            <button className="danger-item" type="button" title="删除此服务器" onClick={() => confirmDeleteHost(host)}>
                               删除
                             </button>
                           </div>
@@ -6204,7 +6309,7 @@ export function App() {
                           className="transfer-close"
                           type="button"
                           title={`移除 ${task.name} 传输记录`}
-                          onClick={() => setTransferTasks((current) => current.filter((item) => item.id !== task.id))}
+                          onClick={() => confirmRemoveTransferTask(task)}
                         >
                           ×
                         </button>
@@ -6728,7 +6833,7 @@ export function App() {
                               className="ai-chat-delete ai-icon-button"
                               type="button"
                               title={`删除对话：${conversation.title}`}
-                              onClick={() => void deleteAIConversation(conversation.id)}
+                              onClick={() => confirmDeleteAIConversation(conversation.id)}
                             >
                               ×
                             </button>
@@ -6938,7 +7043,7 @@ export function App() {
                         className="favorite-command-button danger"
                         type="button"
                         title={`删除收藏命令：${command}`}
-                        onClick={() => setPendingFavoriteDelete(command)}
+                        onClick={() => confirmDeleteFavoriteCommand(command)}
                       >
                         ×
                       </button>
@@ -7188,11 +7293,7 @@ export function App() {
                       disabled={usedCount > 0 || groupDrafts.length <= 1}
                       title={usedCount > 0 ? '该分组正在被服务器使用，不能删除' : '删除空分组'}
                       type="button"
-                      onClick={() => {
-                        setGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
-                        setOriginalGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
-                        setGroupDialogMessage('')
-                      }}
+                      onClick={() => confirmDeleteGroupDraft(index, group)}
                     >
                       删除
                     </button>
@@ -7633,22 +7734,27 @@ export function App() {
         </div>
       ) : null}
 
-      {pendingFavoriteDelete ? (
+      {confirmDialog ? (
         <div className="modal-backdrop">
           <section className="confirm-modal">
             <div className="modal-header">
               <div>
-                <p className="section-label">收藏命令</p>
-                <h3>删除收藏</h3>
+                {confirmDialog.section ? <p className="section-label">{confirmDialog.section}</p> : null}
+                <h3>{confirmDialog.title}</h3>
               </div>
-              <button type="button" title="关闭删除确认" onClick={() => setPendingFavoriteDelete('')}>×</button>
+              <button type="button" title="关闭确认" onClick={closeConfirmDialog}>×</button>
             </div>
-            <p className="confirm-copy">确定删除这条收藏命令吗？</p>
-            <code className="confirm-command">{pendingFavoriteDelete}</code>
+            <p className="confirm-copy">{confirmDialog.message}</p>
+            {confirmDialog.detail ? <code className="confirm-command">{confirmDialog.detail}</code> : null}
             <div className="modal-actions">
-              <button type="button" title="取消删除收藏命令" onClick={() => setPendingFavoriteDelete('')}>取消</button>
-              <button className="danger-button" type="button" title="确认删除收藏命令" onClick={() => deleteFavoriteCommand(pendingFavoriteDelete)}>
-                删除
+              <button type="button" title="取消操作" onClick={closeConfirmDialog}>{confirmDialog.cancelText ?? '取消'}</button>
+              <button
+                className={confirmDialog.danger ? 'danger-button' : 'primary-button'}
+                type="button"
+                title="确认操作"
+                onClick={confirmAndRun}
+              >
+                {confirmDialog.confirmText ?? '确认'}
               </button>
             </div>
           </section>
