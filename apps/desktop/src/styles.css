@@ -1437,15 +1437,16 @@ button {
 .unified-ai-box {
   min-height: 0;
   display: grid;
-  grid-template-rows: max-content minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) max-content;
   gap: 8px;
 }
 
 .ai-unified-input {
+  min-height: 0;
   display: grid;
   gap: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .ai-unified-input textarea {
@@ -1486,6 +1487,29 @@ button {
   color: #cbd5e1;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.ai-message-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-message-header strong,
+.ai-message-header span {
+  min-width: 0;
+  color: #bfdbfe;
+  font-size: 12px;
+}
+
+.ai-message-header time,
+.ai-stream-card summary time {
+  flex: 0 0 auto;
+  color: #7f93ad;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .markdown-body {
@@ -1719,6 +1743,10 @@ button {
 }
 
 .ai-stream-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   color: #93c5fd;
   cursor: pointer;
   font-size: 12px;

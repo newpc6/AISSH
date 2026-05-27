@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Terminal } from '@xterm/xterm'
@@ -537,6 +537,15 @@ function formatMetricDateTime(value: string) {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+function formatFullDateTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
 function formatMemorySummary(metrics: ServerMetrics | null) {
@@ -5176,12 +5185,20 @@ export function App() {
     </div>
   )
 
+  const renderAIMessageHeader = (label: string, createdAt: string, extra?: ReactNode) => (
+    <header className="ai-message-header">
+      <strong>{label}</strong>
+      <time dateTime={createdAt}>{formatFullDateTime(createdAt)}</time>
+      {extra}
+    </header>
+  )
+
   const renderAIResponseMessage = (message: AIChatMessageDraft, label: string) => {
     const response = message.response
     const commands = normalizeAssistCommands(response?.commands)
     return (
       <article className={`ai-response-card ai-message-card ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
-        <strong>{label}</strong>
+        {renderAIMessageHeader(label, message.createdAt)}
         {message.content ? renderMarkdown(message.content) : null}
         {response?.agentStatus === 'command' && response.riskLevel ? (
           <span className={`risk-badge risk-${response.riskLevel}`}>{riskLabel(response.riskLevel)}</span>
@@ -5225,7 +5242,7 @@ export function App() {
     if (message.kind === 'user') {
       return (
         <article className="ai-message-card user-message" key={message.id}>
-          <strong>我</strong>
+          {renderAIMessageHeader('我', message.createdAt)}
           {renderMarkdown(message.content)}
         </article>
       )
@@ -5233,7 +5250,10 @@ export function App() {
     if (message.kind === 'thinking') {
       return (
         <details className="ai-stream-card ai-message-card" key={message.id} open>
-          <summary>思考</summary>
+          <summary>
+            <span>思考</span>
+            <time dateTime={message.createdAt}>{formatFullDateTime(message.createdAt)}</time>
+          </summary>
           {renderMarkdown(message.content, '思考中...')}
         </details>
       )
@@ -5241,7 +5261,7 @@ export function App() {
     if (message.kind === 'content') {
       return (
         <article className="ai-stream-card ai-message-card" key={message.id}>
-          <strong>实时输出</strong>
+          {renderAIMessageHeader('实时输出', message.createdAt)}
           {renderMarkdown(message.content)}
         </article>
       )
@@ -5252,7 +5272,7 @@ export function App() {
     if (message.kind === 'agent_result') {
       return (
         <article className="ai-response-card agent-final-card ai-message-card" key={message.id}>
-          <strong>执行结论</strong>
+          {renderAIMessageHeader('执行结论', message.createdAt)}
           {renderMarkdown(message.content)}
           {message.response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
         </article>
@@ -5270,8 +5290,9 @@ export function App() {
         activeSession.status === 'connected'
       return (
         <article className={`agent-step ai-message-card risk-${displayedStep?.riskLevel ?? 'low'}`} key={message.id}>
-          <header>
+          <header className="ai-message-header">
             <span>{riskLabel(displayedStep?.riskLevel)}</span>
+            <time dateTime={message.createdAt}>{formatFullDateTime(message.createdAt)}</time>
             <small>{displayedStep?.status ?? 'pending'}</small>
           </header>
           <code>{displayedStep?.command ?? message.content}</code>
@@ -5323,13 +5344,18 @@ export function App() {
     if (message.kind === 'error') {
       return (
         <article className="ai-message-card ai-error-card" key={message.id}>
-          <strong>错误</strong>
+          {renderAIMessageHeader('错误', message.createdAt)}
           {renderMarkdown(message.content)}
         </article>
       )
     }
     if (message.kind === 'status') {
-      return <p className="hint-text ai-status-line" key={message.id}>{message.content}</p>
+      return (
+        <article className="ai-message-card ai-status-line" key={message.id}>
+          {renderAIMessageHeader('状态', message.createdAt)}
+          {renderMarkdown(message.content)}
+        </article>
+      )
     }
     return <div key={message.id}>{renderAIResponseMessage(message, 'AI')}</div>
   }
@@ -6659,6 +6685,57 @@ export function App() {
 
             {rightTool === 'ai' ? (
               <div className={`ai-box unified-ai-box ${isAIHistoryOpen ? 'history-open' : ''}`}>
+                <div className="ai-conversation-shell">
+                  {isAIHistoryOpen ? (
+                    <aside className="ai-chat-sidebar">
+                      <div className="ai-chat-sidebar-head">
+                        <strong>历史对话</strong>
+                        <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
+                          +
+                        </button>
+                      </div>
+                      <div className="ai-chat-list">
+                        {aiConversations.map((conversation) => (
+                          <div className={`ai-chat-item ${conversation.id === activeAIConversationId ? 'active' : ''}`} key={conversation.id}>
+                            <button
+                              className="ai-chat-select"
+                              type="button"
+                              title={`切换到 ${conversation.title}`}
+                              onClick={() => void selectAIConversation(conversation.id)}
+                            >
+                              <span>{conversation.title}</span>
+                              <small>{formatFullDateTime(conversation.updatedAt)}</small>
+                            </button>
+                            <button
+                              className="ai-chat-delete ai-icon-button"
+                              type="button"
+                              title={`删除对话：${conversation.title}`}
+                              onClick={() => void deleteAIConversation(conversation.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </aside>
+                  ) : null}
+                  <div className="ai-message-list" ref={aiMessageListRef}>
+                    {!settings.aiEnabled ? <p className="hint-text">AI 功能已关闭，可在设置中开启。</p> : null}
+                    {!isAIProviderConfigured && settings.aiEnabled ? (
+                      <p className="hint-text">请先在设置里填写大模型地址和模型，保存后再使用 AI。</p>
+                    ) : null}
+                    {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
+                    {aiMessages.length === 0 ? <p className="hint-text">当前对话暂无消息，可以直接输入问题或目标。</p> : null}
+                    {aiMessages.map((message) => renderAIMessage(message))}
+                    {aiAssistantState === 'loading' ? (
+                      <div className="prediction-loading">
+                        <span aria-hidden="true" className="file-loading-spinner" />
+                        <span>AI 正在实时返回，消息会按时间追加...</span>
+                      </div>
+                    ) : null}
+                    {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
+                  </div>
+                </div>
                 <div className="ai-unified-input">
                   <textarea
                     placeholder="直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作"
@@ -6719,58 +6796,6 @@ export function App() {
                     <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={stopAgentTask}>
                       ■
                     </button>
-                  </div>
-                </div>
-
-                <div className="ai-conversation-shell">
-                  {isAIHistoryOpen ? (
-                    <aside className="ai-chat-sidebar">
-                      <div className="ai-chat-sidebar-head">
-                        <strong>历史对话</strong>
-                        <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
-                          +
-                        </button>
-                      </div>
-                      <div className="ai-chat-list">
-                        {aiConversations.map((conversation) => (
-                          <div className={`ai-chat-item ${conversation.id === activeAIConversationId ? 'active' : ''}`} key={conversation.id}>
-                            <button
-                              className="ai-chat-select"
-                              type="button"
-                              title={`切换到 ${conversation.title}`}
-                              onClick={() => void selectAIConversation(conversation.id)}
-                            >
-                              <span>{conversation.title}</span>
-                              <small>{new Date(conversation.updatedAt).toLocaleString()}</small>
-                            </button>
-                            <button
-                              className="ai-chat-delete ai-icon-button"
-                              type="button"
-                              title={`删除对话：${conversation.title}`}
-                              onClick={() => void deleteAIConversation(conversation.id)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </aside>
-                  ) : null}
-                  <div className="ai-message-list" ref={aiMessageListRef}>
-                    {!settings.aiEnabled ? <p className="hint-text">AI 功能已关闭，可在设置中开启。</p> : null}
-                    {!isAIProviderConfigured && settings.aiEnabled ? (
-                      <p className="hint-text">请先在设置里填写大模型地址和模型，保存后再使用 AI。</p>
-                    ) : null}
-                    {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
-                    {aiMessages.length === 0 ? <p className="hint-text">当前对话暂无消息，可以直接输入问题或目标。</p> : null}
-                    {aiMessages.map((message) => renderAIMessage(message))}
-                    {aiAssistantState === 'loading' ? (
-                      <div className="prediction-loading">
-                        <span aria-hidden="true" className="file-loading-spinner" />
-                        <span>AI 正在实时返回，消息会按时间追加...</span>
-                      </div>
-                    ) : null}
-                    {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
                   </div>
                 </div>
               </div>
