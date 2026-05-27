@@ -226,7 +226,6 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
 
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const AI_PREDICT_STREAM_API_PATH = '/api/ai/predict/stream'
-const AI_ASSIST_API_PATH = '/api/ai/assist'
 const AI_ASSIST_STREAM_API_PATH = '/api/ai/assist/stream'
 const PREDICTION_PANEL_HEIGHT_STORAGE_KEY = 'ai-ssh-prediction-panel-height'
 const MIN_PREDICTION_PANEL_HEIGHT = 160
@@ -3758,9 +3757,9 @@ export function App() {
     }
   }
 
-  const buildAIContextPayload = () => {
+  const buildAIContextPayload = (sessionId = activeSessionIdRef.current) => {
     const normalized = normalizeAppSettings(sessionSettingsRef.current)
-    const session = sessionsRef.current.find((item) => item.id === activeSessionIdRef.current)
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
     const host = hostsRef.current.find((item) => item.id === session?.hostId)
     return {
       normalized,
@@ -3783,8 +3782,13 @@ export function App() {
     )
   }
 
-  const requestAIAssist = async (task: AIAssistTask, prompt: string, options: Partial<AIAssistRequest> = {}) => {
-    const { normalized, session, host, terminalContext, commandHistory } = buildAIContextPayload()
+  const requestAIAssistStream = async (
+    task: AIAssistTask,
+    prompt: string,
+    options: Partial<AIAssistRequest> = {},
+    sessionId = activeSessionIdRef.current,
+  ): Promise<AIAssistResponse> => {
+    const { normalized, session, host, terminalContext, commandHistory } = buildAIContextPayload(sessionId)
     if (!normalized.aiEnabled) {
       throw new Error('AI 功能已关闭，请先在设置中开启')
     }
@@ -3806,51 +3810,9 @@ export function App() {
       hostName: session?.hostName,
       hostAddress: host?.address,
       username: host?.username,
-      ...options,
-    }
-    const response = await apiFetch(AI_ASSIST_API_PATH, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
-    if (!response.ok) {
-      const detail = await readResponseErrorDetail(response)
-      throw new Error(detail || `AI 助手请求失败：${response.status}`)
-    }
-    return (await response.json()) as AIAssistResponse
-  }
-
-  const requestAIUnifiedStream = async (
-    prompt: string,
-    options: Partial<AIAssistRequest> = {},
-  ): Promise<AIAssistResponse> => {
-    const { normalized, session, host, terminalContext, commandHistory } = buildAIContextPayload()
-    if (!normalized.aiEnabled) {
-      throw new Error('AI 功能已关闭，请先在设置中开启')
-    }
-    if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
-      throw new Error('请先在设置中填写大模型地址和模型')
-    }
-    const payload: AIAssistRequest = {
-      baseUrl: normalized.aiBaseUrl,
-      apiKey: normalized.aiApiKey,
-      model: normalized.aiModel,
-      task: 'auto',
-      systemPrompt: normalized.aiSystemPrompt,
-      prompt,
-      terminalContext,
-      selectedText: window.getSelection()?.toString() ?? '',
-      commandHistory,
-      currentCommand: commandBufferRef.current,
-      cwd: filePathRef.current,
-      hostName: session?.hostName,
-      hostAddress: host?.address,
-      username: host?.username,
-      agentMode: agentModeRef.current,
-      agentGoal: prompt,
-      agentSteps: agentStepsRef.current,
+      agentMode: options.agentMode ?? agentModeRef.current,
+      agentGoal: options.agentGoal ?? (task === 'auto' ? prompt : resolveAgentGoal(prompt)),
+      agentSteps: options.agentSteps ?? agentStepsRef.current,
       ...options,
     }
     const response = await apiFetch(AI_ASSIST_STREAM_API_PATH, {
@@ -3890,11 +3852,25 @@ export function App() {
     return finalResponse
   }
 
+  const requestAIUnifiedStream = (prompt: string, options: Partial<AIAssistRequest> = {}) => {
+    return requestAIAssistStream(
+      'auto',
+      prompt,
+      {
+        agentMode: agentModeRef.current,
+        agentGoal: prompt,
+        agentSteps: agentStepsRef.current,
+        ...options,
+      },
+    )
+  }
+
   const addAgentStepFromAIResponse = (response: AIAssistResponse) => {
     const command = stripTerminalControlSequences(response.agentCommand || firstString(response.commands)).trim()
     if (response.agentStatus === 'done') {
       agentRunningRef.current = false
       setAgentState('success')
+      setAgentFinalResponse(response)
       setAgentMessage('')
       return
     }
@@ -3902,6 +3878,7 @@ export function App() {
       if (response.agentStatus === 'question') {
         agentRunningRef.current = false
         setAgentState('idle')
+        setAgentFinalResponse(response)
         setAgentMessage('')
       }
       return
@@ -3977,26 +3954,37 @@ export function App() {
     }
   }
 
-  const requestAgentNextStep = async (steps = agentStepsRef.current) => {
+  const requestAgentNextStep = async (steps = agentStepsRef.current, sessionId = activeSessionIdRef.current) => {
     const goal = resolveAgentGoal()
     if (!goal) {
       setAgentMessage('请先输入任务目标，或先让 AI 生成一个命令')
       agentRunningRef.current = false
       return
     }
-    if (!activeSession || activeSession.status !== 'connected') {
-      setAgentMessage('请先连接一个 SSH 会话')
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
+    if (!session || session.status !== 'connected') {
+      appendLog('warn', 'ui.agent', 'agent next step skipped because session is unavailable', {
+        sessionID: sessionId,
+        status: session?.status,
+      })
       return
     }
     setAgentState('loading')
     setAgentFinalResponse(null)
+    setAiStreamThinking('')
+    setAiStreamContent('')
     setAgentMessage('正在让 Agent 规划下一步...')
     try {
-      const response = await requestAIAssist('agent_next', goal, {
-        agentGoal: goal,
-        agentMode: agentModeRef.current,
-        agentSteps: steps,
-      })
+      const response = await requestAIAssistStream(
+        'agent_next',
+        goal,
+        {
+          agentGoal: goal,
+          agentMode: agentModeRef.current,
+          agentSteps: steps,
+        },
+        sessionId,
+      )
       if (response.agentStatus === 'done') {
         setAgentState('success')
         setAgentFinalResponse(response)
@@ -4043,7 +4031,7 @@ export function App() {
       setErrorMessage(message, {
         title: 'Agent 请求失败',
         method: 'POST',
-        path: displayApiPath(AI_ASSIST_API_PATH),
+        path: displayApiPath(AI_ASSIST_STREAM_API_PATH),
         source: 'AI 大模型',
       })
     }
@@ -4603,13 +4591,13 @@ export function App() {
     const exitCode = marker ? extractAgentExitCode(rawOutput, marker) : undefined
     const output = marker ? stripAgentMarker(rawOutput, marker) : rawOutput
     const exitedWithError = exitCode !== undefined && exitCode !== 0
-    const failed = timedOut || exitedWithError
+    const failed = timedOut
     updateAgentStep(stepId, {
       status: failed ? 'failed' : 'executed',
       output: output.trim().slice(-8000),
       exitCode,
     })
-    appendLog(failed ? 'warn' : 'info', 'ui.agent', failed ? 'agent command failed or timed out' : 'agent command completed', {
+    appendLog(timedOut ? 'warn' : 'info', 'ui.agent', timedOut ? 'agent command timed out' : 'agent command completed', {
       stepID: stepId,
       sessionID: sessionId,
       outputChars: output.length,
@@ -4628,7 +4616,7 @@ export function App() {
           ? `命令退出码 ${exitCode}，正在让 AI 根据输出判断结论或下一步...`
           : '命令已完成，正在规划下一步...',
       )
-      void requestAgentNextStep(agentStepsRef.current)
+      void requestAgentNextStep(agentStepsRef.current, sessionId)
     } else {
       setAgentState('success')
       setAgentMessage(exitedWithError ? `命令已完成，退出码 ${exitCode}` : '命令已完成')

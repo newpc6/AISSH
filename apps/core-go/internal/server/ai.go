@@ -809,6 +809,7 @@ func buildAssistPrompt(request aiAssistRequest) string {
 Agent 模式：%s
 Agent 目标：%s
 Agent 已执行步骤 JSON：%s
+流程要求：如果 Agent 已执行步骤 JSON 中已有 output 和 exitCode，必须把它作为最新事实判断任务是否完成；不要只根据终端上下文或用户输入判断。执行结果能回答目标时直接返回 done 和 answer；不足时才返回下一步 command。
 当前主机：%s
 连接信息：%s@%s
 当前目录：%s
