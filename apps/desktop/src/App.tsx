@@ -228,6 +228,10 @@ const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const AI_PREDICT_STREAM_API_PATH = '/api/ai/predict/stream'
 const AI_ASSIST_API_PATH = '/api/ai/assist'
 const AI_ASSIST_STREAM_API_PATH = '/api/ai/assist/stream'
+const PREDICTION_PANEL_HEIGHT_STORAGE_KEY = 'ai-ssh-prediction-panel-height'
+const MIN_PREDICTION_PANEL_HEIGHT = 160
+const DEFAULT_PREDICTION_PANEL_HEIGHT = 300
+const MAX_PREDICTION_PANEL_HEIGHT = 520
 const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified']
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
@@ -823,6 +827,13 @@ function stripVisibleAgentMarkers(output: string) {
     .join('\r\n')
 }
 
+function clampPredictionPanelHeight(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_PREDICTION_PANEL_HEIGHT
+  }
+  return Math.min(MAX_PREDICTION_PANEL_HEIGHT, Math.max(MIN_PREDICTION_PANEL_HEIGHT, Math.round(value)))
+}
+
 function emptyTerminalCache(): TerminalCache {
   return {
     chunks: [],
@@ -1142,6 +1153,7 @@ export function App() {
   const [pendingFavoriteDelete, setPendingFavoriteDelete] = useState('')
   const [aiPredictionBySession, setAiPredictionBySession] = useState<Record<string, AIPredictionSessionState>>({})
   const [isPredictionDockCollapsed, setIsPredictionDockCollapsed] = useState(false)
+  const [predictionPanelHeight, setPredictionPanelHeight] = useState(DEFAULT_PREDICTION_PANEL_HEIGHT)
   const [expandedPredictionThinkingSessionId, setExpandedPredictionThinkingSessionId] = useState('')
   const [aiUnifiedPrompt, setAiUnifiedPrompt] = useState('')
   const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
@@ -1852,6 +1864,10 @@ export function App() {
           error: error instanceof Error ? error.message : String(error),
         })
       }
+    }
+    const rawPredictionPanelHeight = window.localStorage.getItem(PREDICTION_PANEL_HEIGHT_STORAGE_KEY)
+    if (rawPredictionPanelHeight) {
+      setPredictionPanelHeight(clampPredictionPanelHeight(Number(rawPredictionPanelHeight)))
     }
   }, [])
 
@@ -4700,6 +4716,31 @@ export function App() {
     window.addEventListener('pointerup', handlePointerUp)
   }
 
+  const startPredictionPanelResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = predictionPanelHeight
+    let nextHeight = startHeight
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      nextHeight = clampPredictionPanelHeight(startHeight + startY - moveEvent.clientY)
+      setPredictionPanelHeight(nextHeight)
+      window.requestAnimationFrame(() => {
+        fitAddonRef.current?.fit()
+        syncTerminalSize()
+      })
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.localStorage.setItem(PREDICTION_PANEL_HEIGHT_STORAGE_KEY, String(nextHeight))
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
+
   const renderMetricChart = (key: MetricChartKey, label: string, compact = true) => {
     const width = compact ? 220 : 760
     const height = compact ? 74 : 260
@@ -5523,7 +5564,20 @@ export function App() {
               ) : null}
             </div>
             {activeSession && !isFilePreviewActive ? (
-              <div className={`terminal-prediction-dock ${isPredictionDockCollapsed ? 'collapsed' : ''}`}>
+              <div
+                className={`terminal-prediction-dock ${isPredictionDockCollapsed ? 'collapsed' : ''}`}
+                style={{ '--prediction-panel-height': `${predictionPanelHeight}px` } as React.CSSProperties}
+              >
+                {!isPredictionDockCollapsed ? (
+                  <div
+                    aria-label="拖动调整 AI 预测区域高度"
+                    className="prediction-panel-resizer"
+                    role="separator"
+                    tabIndex={0}
+                    title="拖动调整 AI 预测区域高度"
+                    onPointerDown={startPredictionPanelResize}
+                  />
+                ) : null}
                 <div className="terminal-prediction-header">
                   <div>
                     <strong>AI 预测</strong>

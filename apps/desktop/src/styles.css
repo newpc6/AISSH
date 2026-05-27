@@ -1001,8 +1001,9 @@ button {
 }
 
 .terminal-prediction-dock {
+  position: relative;
   min-height: 0;
-  height: 300px;
+  height: var(--prediction-panel-height, 300px);
   max-height: min(38vh, 360px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1013,6 +1014,33 @@ button {
   border-radius: 0 0 8px 8px;
   background: #0d1520;
   overflow: hidden;
+}
+
+.prediction-panel-resizer {
+  position: absolute;
+  z-index: 5;
+  top: -5px;
+  left: 12px;
+  right: 12px;
+  height: 10px;
+  cursor: row-resize;
+}
+
+.prediction-panel-resizer::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 72px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(103, 232, 249, 0.42);
+  transform: translateX(-50%);
+}
+
+.prediction-panel-resizer:hover::before,
+.prediction-panel-resizer:focus::before {
+  background: rgba(103, 232, 249, 0.78);
 }
 
 .terminal-prediction-dock.collapsed {
