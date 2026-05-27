@@ -5522,26 +5522,34 @@ export function App() {
                 </button>
               ) : null}
             </div>
-            {activeSession && !isFilePreviewActive && (
-              activePrediction.state === 'loading' ||
-              activePrediction.thinking ||
-              activePrediction.streamingContent ||
-              activePrediction.error ||
-              activePredictions.length > 0
-            ) ? (
+            {activeSession && !isFilePreviewActive ? (
               <div className={`terminal-prediction-dock ${isPredictionDockCollapsed ? 'collapsed' : ''}`}>
                 <div className="terminal-prediction-header">
                   <div>
                     <strong>AI 预测</strong>
                     <span>{activeSession.hostName}</span>
                   </div>
+                  <label className="prediction-toggle" title="开启后只针对手动输入的命令预测下一步">
+                    <input
+                      checked={settings.aiPredictionEnabled}
+                      disabled={!settings.aiEnabled}
+                      onChange={(event) => {
+                        setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
+                        if (!event.target.checked) {
+                          clearAIPrediction()
+                        }
+                      }}
+                      type="checkbox"
+                    />
+                    <span>自动预测</span>
+                  </label>
                   <button
-                    className="panel-icon-button"
+                    className="prediction-collapse-button"
                     type="button"
                     title={isPredictionDockCollapsed ? '展开 AI 预测区域' : '收起 AI 预测区域'}
                     onClick={() => setIsPredictionDockCollapsed((current) => !current)}
                   >
-                    {isPredictionDockCollapsed ? '▴' : '▾'}
+                    <span aria-hidden="true">{isPredictionDockCollapsed ? '▴' : '▾'}</span>
                   </button>
                 </div>
                 {!isPredictionDockCollapsed ? (
@@ -5779,20 +5787,6 @@ export function App() {
                     <label title="AI 给出低风险命令后自动执行，高风险命令仍会暂停确认">
                       <input checked={agentMode === 'auto'} type="radio" onChange={() => setAgentMode('auto')} />
                       <span>自动模式</span>
-                    </label>
-                    <label className="toggle-row compact-toggle" title="开启后根据终端上下文自动预测下一步命令">
-                      <input
-                        checked={settings.aiPredictionEnabled}
-                        disabled={!settings.aiEnabled}
-                        onChange={(event) => {
-                          setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
-                          if (!event.target.checked) {
-                            clearAIPrediction()
-                          }
-                        }}
-                        type="checkbox"
-                      />
-                      <span>自动预测</span>
                     </label>
                   </div>
                   <div className="agent-actions">

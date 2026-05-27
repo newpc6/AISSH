@@ -1002,8 +1002,8 @@ button {
 
 .terminal-prediction-dock {
   min-height: 0;
-  height: 420px;
-  max-height: min(46vh, 500px);
+  height: 300px;
+  max-height: min(38vh, 360px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
@@ -1016,10 +1016,10 @@ button {
 }
 
 .terminal-prediction-dock.collapsed {
-  height: 42px;
+  height: 50px;
   grid-template-rows: auto;
   padding-bottom: 8px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .terminal-prediction-header {
@@ -1043,6 +1043,46 @@ button {
   color: #8ca0b8;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.prediction-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: #cbd5e1;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.prediction-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: #22d3ee;
+}
+
+.prediction-collapse-button {
+  width: 34px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(103, 232, 249, 0.42);
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.12);
+  color: #cffafe;
+  cursor: pointer;
+}
+
+.prediction-collapse-button span {
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.prediction-collapse-button:hover {
+  border-color: rgba(103, 232, 249, 0.72);
+  background: rgba(34, 211, 238, 0.2);
 }
 
 .terminal-prediction-body {
