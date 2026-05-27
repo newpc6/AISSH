@@ -31,6 +31,7 @@ export interface LogsResponse {
 
 export interface LogSettings {
   level: LogLevel
+  logHealthChecks: boolean
 }
 
 export interface AuthStatusResponse {
@@ -61,6 +62,7 @@ export interface AuthSettingsUpdateRequest {
 }
 
 export interface AppSettings {
+  healthCheckIntervalSeconds: number
   metricsRefreshIntervalSeconds: number
   metricsHistoryWindowMinutes: number
   metricsCompactPointLimit: number

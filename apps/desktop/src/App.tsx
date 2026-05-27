@@ -250,6 +250,7 @@ const MAX_RIGHT_SERVER_INFO_HEIGHT = 720
 const MIN_RIGHT_PANEL_WIDTH = 360
 const DEFAULT_RIGHT_PANEL_WIDTH = 440
 const MAX_RIGHT_PANEL_WIDTH = 720
+const DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS = 10
 const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified', 'ai-chat-history']
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
@@ -311,6 +312,7 @@ const emptyHostForm: HostUpsertRequest = {
 }
 
 const defaultSettings: AppSettings = {
+  healthCheckIntervalSeconds: DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
   metricsRefreshIntervalSeconds: 2,
   metricsHistoryWindowMinutes: 5,
   metricsCompactPointLimit: 5,
@@ -665,6 +667,13 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
   return {
     ...defaultSettings,
     ...value,
+    healthCheckIntervalSeconds: Math.max(
+      3,
+      Math.min(
+        300,
+        Number(value.healthCheckIntervalSeconds ?? defaultSettings.healthCheckIntervalSeconds) || DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
+      ),
+    ),
     metricsRefreshIntervalSeconds: Math.max(
       1,
       Number(value.metricsRefreshIntervalSeconds ?? defaultSettings.metricsRefreshIntervalSeconds) || 2,
@@ -1201,6 +1210,7 @@ export function App() {
   const [isLogDialogOpen, setIsLogDialogOpen] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
+  const [logHealthChecks, setLogHealthChecks] = useState(false)
   const [logSearch, setLogSearch] = useState('')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [favoriteCommands, setFavoriteCommands] = useState<string[]>([])
@@ -2118,9 +2128,9 @@ export function App() {
 
     const interval = window.setInterval(() => {
       void checkCoreHealth()
-    }, 3000)
+    }, normalizeAppSettings(settings).healthCheckIntervalSeconds * 1000)
     return () => window.clearInterval(interval)
-  }, [])
+  }, [settings.healthCheckIntervalSeconds])
 
   useEffect(() => {
     if (!openTopMenu) {
@@ -2652,6 +2662,7 @@ export function App() {
     if (settingsResponse.ok) {
       const settings = (await settingsResponse.json()) as LogSettings
       setLogLevel(settings.level)
+      setLogHealthChecks(Boolean(settings.logHealthChecks))
     }
   }
 
@@ -2732,6 +2743,7 @@ export function App() {
     setSettingsSavedMessage('偏好设置已保存')
     setErrorMessage('')
     appendLog('info', 'ui.settings', 'settings saved', {
+      healthCheckIntervalSeconds: normalized.healthCheckIntervalSeconds,
       metricsRefreshIntervalSeconds: normalized.metricsRefreshIntervalSeconds,
       metricsHistoryWindowMinutes: normalized.metricsHistoryWindowMinutes,
       metricsCompactPointLimit: normalized.metricsCompactPointLimit,
@@ -2790,17 +2802,22 @@ export function App() {
     }
   }
 
-  const updateLogLevel = async (level: LogLevel) => {
-    setLogLevel(level)
+  const updateLogSettings = async (nextSettings: Partial<LogSettings>) => {
+    const payload: LogSettings = {
+      level: nextSettings.level ?? logLevel,
+      logHealthChecks: nextSettings.logHealthChecks ?? logHealthChecks,
+    }
+    setLogLevel(payload.level)
+    setLogHealthChecks(payload.logHealthChecks)
     const response = await apiFetch('/logs/settings', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ level }),
+      body: JSON.stringify(payload),
     })
     if (!response.ok) {
-      setErrorMessage(`设置日志级别失败：${response.status}`)
+      setErrorMessage(`设置日志参数失败：${response.status}`)
     }
     await loadLogs()
   }
@@ -7166,13 +7183,21 @@ export function App() {
                 <span>展示级别</span>
                 <select
                   value={logLevel}
-                  onChange={(event) => void updateLogLevel(event.target.value as LogLevel)}
+                  onChange={(event) => void updateLogSettings({ level: event.target.value as LogLevel })}
                 >
                   <option value="debug">debug</option>
                   <option value="info">info</option>
                   <option value="warn">warn</option>
                   <option value="error">error</option>
                 </select>
+              </label>
+              <label className="checkbox-row compact-checkbox">
+                <input
+                  checked={logHealthChecks}
+                  type="checkbox"
+                  onChange={(event) => void updateLogSettings({ logHealthChecks: event.target.checked })}
+                />
+                <span>记录健康检查</span>
               </label>
               <label>
                 <span>搜索</span>
@@ -7243,6 +7268,21 @@ export function App() {
               <div className="settings-content">
                 {settingsSection === 'general' ? (
                   <>
+                    <label>
+                      <span>健康检查间隔（秒）</span>
+                      <input
+                        min="3"
+                        max="300"
+                        type="number"
+                        value={settings.healthCheckIntervalSeconds ?? defaultSettings.healthCheckIntervalSeconds}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            healthCheckIntervalSeconds: Number(event.target.value) || DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
+                          }))
+                        }
+                      />
+                    </label>
                     <label>
                       <span>每个 SSH 标签保留终端行数</span>
                       <input

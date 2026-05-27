@@ -180,7 +180,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
 				return
 			}
-			logger.setLevel(request.Level)
+			logger.updateSettings(request)
 			writeJSON(w, logger.settings())
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -412,7 +412,7 @@ func TestHostsEndpoint(t *testing.T) {
 func TestLogsEndpoints(t *testing.T) {
 	srv := newTestServer(t)
 
-	settingsBody := bytes.NewBufferString(`{"level":"debug"}`)
+	settingsBody := bytes.NewBufferString(`{"level":"debug","logHealthChecks":true}`)
 	settingsReq := httptest.NewRequest(http.MethodPut, "/api/logs/settings", settingsBody)
 	settingsReq.Header.Set("Content-Type", "application/json")
 	settingsRecorder := httptest.NewRecorder()
@@ -439,6 +439,50 @@ func TestLogsEndpoints(t *testing.T) {
 	if len(response["logs"]) == 0 {
 		t.Fatal("expected logs after settings request")
 	}
+}
+
+func TestHealthCheckLogsAreConfigurable(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
+	logger := newAppLogger()
+	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")}, newMemoryCredentialStore(), logger))
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	healthRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(healthRecorder, healthReq)
+	if healthRecorder.Code != http.StatusOK {
+		t.Fatalf("expected health status 200, got %d", healthRecorder.Code)
+	}
+	if hasHTTPLogPath(logger.list(20), "/api/health") {
+		t.Fatal("expected successful health check to skip request logs by default")
+	}
+
+	settingsBody := bytes.NewBufferString(`{"level":"info","logHealthChecks":true}`)
+	settingsReq := httptest.NewRequest(http.MethodPut, "/api/logs/settings", settingsBody)
+	settingsReq.Header.Set("Content-Type", "application/json")
+	settingsRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(settingsRecorder, settingsReq)
+	if settingsRecorder.Code != http.StatusOK {
+		t.Fatalf("expected log settings status 200, got %d", settingsRecorder.Code)
+	}
+
+	healthRecorder = httptest.NewRecorder()
+	srv.Handler.ServeHTTP(healthRecorder, healthReq)
+	if healthRecorder.Code != http.StatusOK {
+		t.Fatalf("expected health status 200 after enabling logs, got %d", healthRecorder.Code)
+	}
+
+	if !hasHTTPLogPath(logger.list(20), "/api/health") {
+		t.Fatal("expected health check request log after enabling logHealthChecks")
+	}
+}
+
+func hasHTTPLogPath(entries []logEntry, path string) bool {
+	for _, entry := range entries {
+		if entry.Source == "http" && entry.Fields["path"] == path {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {

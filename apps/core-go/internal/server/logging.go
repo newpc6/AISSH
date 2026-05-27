@@ -31,15 +31,17 @@ type logEntry struct {
 }
 
 type logSettingsRequest struct {
-	Level logLevel `json:"level"`
+	Level           logLevel `json:"level"`
+	LogHealthChecks bool     `json:"logHealthChecks"`
 }
 
 type appLogger struct {
-	mu      sync.Mutex
-	level   logLevel
-	entries []logEntry
-	max     int
-	output  *log.Logger
+	mu              sync.Mutex
+	level           logLevel
+	logHealthChecks bool
+	entries         []logEntry
+	max             int
+	output          *log.Logger
 }
 
 type statusRecorder struct {
@@ -49,9 +51,10 @@ type statusRecorder struct {
 
 func newAppLogger() *appLogger {
 	return &appLogger{
-		level:  normalizeLogLevel(os.Getenv("AI_SSH_LOG_LEVEL")),
-		max:    500,
-		output: log.New(os.Stdout, "", 0),
+		level:           normalizeLogLevel(os.Getenv("AI_SSH_LOG_LEVEL")),
+		logHealthChecks: parseBoolEnv("AI_SSH_LOG_HEALTH_CHECKS", false),
+		max:             500,
+		output:          log.New(os.Stdout, "", 0),
 	}
 }
 
@@ -90,10 +93,20 @@ func (l *appLogger) setLevel(level logLevel) {
 	l.info("core", "log level updated", map[string]any{"level": l.level})
 }
 
+func (l *appLogger) updateSettings(settings logSettingsRequest) {
+	l.mu.Lock()
+	l.level = normalizeLogLevel(string(settings.Level))
+	l.logHealthChecks = settings.LogHealthChecks
+	level := l.level
+	logHealthChecks := l.logHealthChecks
+	l.mu.Unlock()
+	l.info("core", "log settings updated", map[string]any{"level": level, "logHealthChecks": logHealthChecks})
+}
+
 func (l *appLogger) settings() logSettingsRequest {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return logSettingsRequest{Level: l.level}
+	return logSettingsRequest{Level: l.level, LogHealthChecks: l.logHealthChecks}
 }
 
 func (l *appLogger) debug(source string, message string, fields map[string]any) {
@@ -164,6 +177,13 @@ func (l *appLogger) middleware(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 
+		l.mu.Lock()
+		logHealthChecks := l.logHealthChecks
+		l.mu.Unlock()
+		if !logHealthChecks && isHealthCheckPath(r.URL.Path) && status < 400 {
+			return
+		}
+
 		level := logLevelInfo
 		if status >= 500 {
 			level = logLevelError
@@ -179,6 +199,10 @@ func (l *appLogger) middleware(next http.Handler) http.Handler {
 			"remoteAddr": r.RemoteAddr,
 		})
 	})
+}
+
+func isHealthCheckPath(path string) bool {
+	return path == "/health" || path == "/api/health"
 }
 
 func (r *statusRecorder) WriteHeader(status int) {
