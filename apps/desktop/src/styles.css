@@ -1002,14 +1002,23 @@ button {
 
 .terminal-prediction-dock {
   min-height: 0;
-  max-height: 220px;
+  height: 420px;
+  max-height: min(46vh, 500px);
   display: grid;
-  gap: 8px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-top: 0;
   border-radius: 0 0 8px 8px;
   background: #0d1520;
+  overflow: hidden;
+}
+
+.terminal-prediction-dock.collapsed {
+  height: 42px;
+  grid-template-rows: auto;
+  padding-bottom: 8px;
   overflow: auto;
 }
 
@@ -1022,12 +1031,26 @@ button {
   font-size: 12px;
 }
 
+.terminal-prediction-header div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
 .terminal-prediction-header span {
   min-width: 0;
   overflow: hidden;
   color: #8ca0b8;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.terminal-prediction-body {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
 }
 
 .terminal-prediction-list {

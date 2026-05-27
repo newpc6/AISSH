@@ -196,6 +196,7 @@ type AgentCommandWaiter = {
   sessionId: string
   beforeContext: string
   marker: string
+  rawOutput: string
   timeoutId: number
 }
 
@@ -811,8 +812,15 @@ function extractAgentExitCode(output: string, marker: string) {
 function stripAgentMarker(output: string, marker: string) {
   return output
     .split(/\r?\n/)
-    .filter((line) => !line.includes(marker))
+    .filter((line) => !line.includes(marker) && !line.includes(`printf '\\n${marker}`))
     .join('\n')
+}
+
+function stripVisibleAgentMarkers(output: string) {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '\\n__AI_SSH_AGENT_DONE_/.test(line))
+    .join('\r\n')
 }
 
 function emptyTerminalCache(): TerminalCache {
@@ -1133,6 +1141,8 @@ export function App() {
   const [favoriteCommandDraft, setFavoriteCommandDraft] = useState('')
   const [pendingFavoriteDelete, setPendingFavoriteDelete] = useState('')
   const [aiPredictionBySession, setAiPredictionBySession] = useState<Record<string, AIPredictionSessionState>>({})
+  const [isPredictionDockCollapsed, setIsPredictionDockCollapsed] = useState(false)
+  const [expandedPredictionThinkingSessionId, setExpandedPredictionThinkingSessionId] = useState('')
   const [aiUnifiedPrompt, setAiUnifiedPrompt] = useState('')
   const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
   const [aiAssistantResponse, setAiAssistantResponse] = useState<AIAssistResponse | null>(null)
@@ -1434,17 +1444,24 @@ export function App() {
 
   const appendSessionTerminalOutput = (sessionId: string, data: string) => {
     const maxLines = sessionSettingsRef.current.terminalRetainedLines
+    if (agentWaiterRef.current?.sessionId === sessionId) {
+      agentWaiterRef.current.rawOutput += data
+    }
+    const visibleData = stripVisibleAgentMarkers(data)
+    if (!visibleData) {
+      return
+    }
     setTerminalCaches((current) => {
       const next = {
         ...current,
-        [sessionId]: appendTerminalCache(current[sessionId], data, maxLines),
+        [sessionId]: appendTerminalCache(current[sessionId], visibleData, maxLines),
       }
       terminalCachesRef.current = next
       return next
     })
 
     if (activeSessionIdRef.current === sessionId) {
-      xtermRef.current?.write(data)
+      xtermRef.current?.write(visibleData)
       schedulePredictionGhostPositionUpdate()
       if (
         pendingAIPredictionCommandRef.current[sessionId] &&
@@ -2162,6 +2179,8 @@ export function App() {
   const primaryPrediction = commandBufferRef.current.trim()
     ? ''
     : (activePredictions[activePredictionIndex] ?? activePredictions[0] ?? '')
+  const isPredictionThinkingExpanded =
+    activePrediction.state === 'loading' || expandedPredictionThinkingSessionId === activeSession?.id
   const isAIProviderConfigured = Boolean(settings.aiBaseUrl.trim() && settings.aiModel.trim())
   const visibleLogs = useMemo(
     () => {
@@ -3428,16 +3447,23 @@ export function App() {
     previousMetricsRef.current = metrics
   }
 
-  const recordCommand = (command: string) => {
+  const recordCommand = (sessionId: string, command: string) => {
     const normalized = stripTerminalControlSequences(command).trim()
     if (!shouldRecordCommand(normalized)) {
       return
     }
-    const session = sessionsRef.current.find((item) => item.id === activeSessionIdRef.current)
-    const hostId = session?.hostId ?? activeSession?.hostId
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
+    const hostId = session?.hostId
+    const isAgentExecuting = Boolean(agentWaiterRef.current?.sessionId === session?.id)
 
     const inferredPath = inferRemotePathFromCommand(normalized, filePathRef.current)
-    if (inferredPath && trackTerminalPathRef.current && hostId && hostId !== 'local-demo') {
+    if (
+      inferredPath &&
+      trackTerminalPathRef.current &&
+      hostId &&
+      hostId !== 'local-demo' &&
+      activeSessionIdRef.current === sessionId
+    ) {
       setTrackedFilePath(inferredPath)
       if (leftModeRef.current === 'files') {
         void loadFiles(inferredPath, hostId)
@@ -3447,8 +3473,12 @@ export function App() {
     const nextHistory = [normalized, ...commandHistoryRef.current].slice(0, 200)
     commandHistoryRef.current = nextHistory
     setCommandHistory(nextHistory)
-    if (sessionSettingsRef.current.aiEnabled && sessionSettingsRef.current.aiPredictionEnabled && aiEnabledRef.current) {
-      const sessionId = activeSessionIdRef.current
+    if (
+      !isAgentExecuting &&
+      sessionSettingsRef.current.aiEnabled &&
+      sessionSettingsRef.current.aiPredictionEnabled &&
+      aiEnabledRef.current
+    ) {
       pendingAIPredictionCommandRef.current[sessionId] = normalized
       updateAIPredictionForSession(sessionId, {
         predictions: [],
@@ -3488,7 +3518,14 @@ export function App() {
     const normalized = normalizeAppSettings(sessionSettingsRef.current)
     const session = sessionsRef.current.find((item) => item.id === sessionId)
     const host = hostsRef.current.find((item) => item.id === session?.hostId)
-    if (!normalized.aiEnabled || !aiEnabledRef.current || !normalized.aiPredictionEnabled || !session || !host) {
+    if (
+      !normalized.aiEnabled ||
+      !aiEnabledRef.current ||
+      !normalized.aiPredictionEnabled ||
+      !session ||
+      !host ||
+      agentWaiterRef.current?.sessionId === sessionId
+    ) {
       clearAIPrediction({ sessionId })
       return
     }
@@ -4129,7 +4166,7 @@ export function App() {
       }
 
       if (payload.type === 'command' && payload.data) {
-        recordCommand(payload.data)
+        recordCommand(session.id, payload.data)
       }
 
       if (payload.type === 'error') {
@@ -4427,12 +4464,13 @@ export function App() {
   }
 
   const finishAgentStep = (stepId: string, sessionId: string, beforeContext: string, timedOut = false, marker = '') => {
+    const latestContext = terminalContextTail(terminalCachesRef.current[sessionId], 20000)
+    const capturedRawOutput = agentWaiterRef.current?.stepId === stepId ? agentWaiterRef.current.rawOutput : ''
+    const rawOutput = capturedRawOutput || (latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext)
     if (agentWaiterRef.current?.stepId === stepId) {
       window.clearTimeout(agentWaiterRef.current.timeoutId)
       agentWaiterRef.current = null
     }
-    const latestContext = terminalContextTail(terminalCachesRef.current[sessionId], 20000)
-    const rawOutput = latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext
     const exitCode = marker ? extractAgentExitCode(rawOutput, marker) : undefined
     const output = marker ? stripAgentMarker(rawOutput, marker) : rawOutput
     const failed = timedOut || (exitCode !== undefined && exitCode !== 0)
@@ -4510,7 +4548,8 @@ export function App() {
         finishAgentStep(step.id, sessionId, beforeContext, true, marker)
       }
     }, timeoutMs)
-    agentWaiterRef.current = { stepId: step.id, sessionId, beforeContext, marker, timeoutId }
+    clearAIPrediction({ sessionId })
+    agentWaiterRef.current = { stepId: step.id, sessionId, beforeContext, marker, rawOutput: '', timeoutId }
     executeCommand(wrapAgentCommand(step.command, marker))
   }
 
@@ -5490,84 +5529,107 @@ export function App() {
               activePrediction.error ||
               activePredictions.length > 0
             ) ? (
-              <div className="terminal-prediction-dock">
+              <div className={`terminal-prediction-dock ${isPredictionDockCollapsed ? 'collapsed' : ''}`}>
                 <div className="terminal-prediction-header">
-                  <strong>AI 预测</strong>
-                  <span>{activeSession.hostName}</span>
+                  <div>
+                    <strong>AI 预测</strong>
+                    <span>{activeSession.hostName}</span>
+                  </div>
+                  <button
+                    className="panel-icon-button"
+                    type="button"
+                    title={isPredictionDockCollapsed ? '展开 AI 预测区域' : '收起 AI 预测区域'}
+                    onClick={() => setIsPredictionDockCollapsed((current) => !current)}
+                  >
+                    {isPredictionDockCollapsed ? '▴' : '▾'}
+                  </button>
                 </div>
-                {activePrediction.state === 'loading' ? (
-                  <div className="prediction-loading">
-                    <span aria-hidden="true" className="file-loading-spinner" />
-                    <span>正在流式预测下一步命令...</span>
+                {!isPredictionDockCollapsed ? (
+                  <div className="terminal-prediction-body">
+                    {activePrediction.state === 'loading' ? (
+                      <div className="prediction-loading">
+                        <span aria-hidden="true" className="file-loading-spinner" />
+                        <span>正在流式预测下一步命令...</span>
+                      </div>
+                    ) : null}
+                    {activePrediction.thinking ? (
+                      <details
+                        className="ai-stream-card compact-stream"
+                        open={isPredictionThinkingExpanded}
+                        onToggle={(event) => {
+                          if (activePrediction.state === 'loading') {
+                            return
+                          }
+                          setExpandedPredictionThinkingSessionId(event.currentTarget.open ? activeSession.id : '')
+                        }}
+                      >
+                        <summary>预测 thinking</summary>
+                        <pre>{activePrediction.thinking}</pre>
+                      </details>
+                    ) : null}
+                    {activePrediction.streamingContent && activePredictions.length === 0 ? (
+                      <article className="ai-stream-card compact-stream">
+                        <strong>预测内容</strong>
+                        <pre>{activePrediction.streamingContent}</pre>
+                      </article>
+                    ) : null}
+                    {activePrediction.error ? <p className="error-text">{activePrediction.error}</p> : null}
+                    {activePredictions.length > 0 ? (
+                      <div className="terminal-prediction-list">
+                        {activePredictions.map((command, index) => {
+                          const favorited = isFavoriteCommand(command)
+                          return (
+                            <div
+                              className={`command-row prediction-row ${index === activePredictionIndex ? 'primary' : ''}`}
+                              key={`${index}-${command}`}
+                            >
+                              <button
+                                className="command-main"
+                                type="button"
+                                title={`切换到第 ${index + 1} 条 AI 预测命令`}
+                                onClick={() => {
+                                  aiPredictionCursorRef.current[activeSession.id] = index
+                                  aiPredictionCycleStartedRef.current[activeSession.id] = true
+                                  setActivePredictionIndex(index)
+                                }}
+                              >
+                                <strong>{index === activePredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
+                                <code>{command}</code>
+                              </button>
+                              <button
+                                className={`favorite-command-button ${favorited ? 'active' : ''}`}
+                                type="button"
+                                title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                                onClick={() => toggleFavoriteCommand(command)}
+                              >
+                                {favorited ? '★' : '☆'}
+                              </button>
+                              <button
+                                className="copy-command-button"
+                                type="button"
+                                title={`复制命令：${command}`}
+                                onClick={() => void copyCommand(command)}
+                              >
+                                ⧉
+                              </button>
+                              <button
+                                className="execute-command-button"
+                                disabled={!activeSession || activeSession.status !== 'connected'}
+                                type="button"
+                                title={`执行 AI 预测命令：${command}`}
+                                onClick={() => executeCommand(command)}
+                              >
+                                ↵
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                    {activePredictions.length > 0 ? (
+                      <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
+                    ) : null}
                   </div>
-                ) : null}
-                {activePrediction.thinking ? (
-                  <details className="ai-stream-card compact-stream">
-                    <summary>预测 thinking</summary>
-                    <pre>{activePrediction.thinking}</pre>
-                  </details>
-                ) : null}
-                {activePrediction.streamingContent && activePredictions.length === 0 ? (
-                  <article className="ai-stream-card compact-stream">
-                    <strong>预测内容</strong>
-                    <pre>{activePrediction.streamingContent}</pre>
-                  </article>
-                ) : null}
-                {activePrediction.error ? <p className="error-text">{activePrediction.error}</p> : null}
-                {activePredictions.length > 0 ? (
-                  <div className="terminal-prediction-list">
-                    {activePredictions.map((command, index) => {
-                      const favorited = isFavoriteCommand(command)
-                      return (
-                        <div
-                          className={`command-row prediction-row ${index === activePredictionIndex ? 'primary' : ''}`}
-                          key={`${index}-${command}`}
-                        >
-                          <button
-                            className="command-main"
-                            type="button"
-                            title={`切换到第 ${index + 1} 条 AI 预测命令`}
-                            onClick={() => {
-                              aiPredictionCursorRef.current[activeSession.id] = index
-                              aiPredictionCycleStartedRef.current[activeSession.id] = true
-                              setActivePredictionIndex(index)
-                            }}
-                          >
-                            <strong>{index === activePredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
-                            <code>{command}</code>
-                          </button>
-                          <button
-                            className={`favorite-command-button ${favorited ? 'active' : ''}`}
-                            type="button"
-                            title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
-                            onClick={() => toggleFavoriteCommand(command)}
-                          >
-                            {favorited ? '★' : '☆'}
-                          </button>
-                          <button
-                            className="copy-command-button"
-                            type="button"
-                            title={`复制命令：${command}`}
-                            onClick={() => void copyCommand(command)}
-                          >
-                            ⧉
-                          </button>
-                          <button
-                            className="execute-command-button"
-                            disabled={!activeSession || activeSession.status !== 'connected'}
-                            type="button"
-                            title={`执行 AI 预测命令：${command}`}
-                            onClick={() => executeCommand(command)}
-                          >
-                            ↵
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : null}
-                {activePredictions.length > 0 ? (
-                  <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
                 ) : null}
               </div>
             ) : null}
