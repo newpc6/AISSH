@@ -8,15 +8,15 @@
   ],
   "scripts": {
     "dev:desktop": "npm run dev -w apps/desktop",
-    "dev:tauri": "npm run tauri:dev -w apps/desktop",
+    "dev:tauri": "npm run build:core && npm run tauri:dev -w apps/desktop",
     "build:desktop": "npm run build -w apps/desktop",
     "build:core": "go build -o apps/core-go/bin/ai-ssh-core.exe ./apps/core-go/cmd/server",
     "build:tauri": "powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1 && npm run tauri:build -w apps/desktop",
     "package:release": "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1",
     "package:web": "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -SkipDesktop",
     "typecheck:desktop": "npm run typecheck -w apps/desktop",
-    "dev:core": "go run ./apps/core-go/cmd/server",
-    "serve:web": "npm run build:desktop && powershell -ExecutionPolicy Bypass -Command \"$env:AI_SSH_WEB_ROOT='apps/desktop/dist'; go run ./apps/core-go/cmd/server\"",
+    "dev:core": "powershell -ExecutionPolicy Bypass -File scripts/start-core.ps1",
+    "serve:web": "npm run build:desktop && powershell -ExecutionPolicy Bypass -File scripts/start-core.ps1 -WebRoot apps/desktop/dist",
     "test:core": "go test ./apps/core-go/..."
   }
 }

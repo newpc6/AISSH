@@ -94,10 +94,29 @@ func TestHealthEndpoint(t *testing.T) {
 	if response["status"] != "ok" {
 		t.Fatalf("expected status ok, got %v", response["status"])
 	}
+	capabilities, ok := response["capabilities"].([]any)
+	if !ok {
+		t.Fatalf("expected capabilities, got %v", response["capabilities"])
+	}
+	if !containsCapability(capabilities, "ai-assist") ||
+		!containsCapability(capabilities, "ai-agent") ||
+		!containsCapability(capabilities, "ai-stream") ||
+		!containsCapability(capabilities, "ai-unified") {
+		t.Fatalf("expected ai capabilities, got %v", response["capabilities"])
+	}
 	hostStore, ok := response["hostStore"].(string)
 	if !ok || filepath.Base(hostStore) != "hosts.json" {
 		t.Fatalf("expected health response to include host store path, got %v", response["hostStore"])
 	}
+}
+
+func containsCapability(capabilities []any, expected string) bool {
+	for _, capability := range capabilities {
+		if capability == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWebAuthProtectsAPIAndAllowsLogin(t *testing.T) {

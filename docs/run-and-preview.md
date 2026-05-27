@@ -82,6 +82,12 @@ npm install
 npm run dev:core
 ```
 
+说明：
+
+- `npm run dev:core` 会先编译 Go core 到固定路径 `apps/core-go/bin/ai-ssh-core.exe`
+- 随后从这个固定路径启动服务，不再使用 `go run` 的临时目录可执行文件
+- 默认会把 `AI_SSH_HOME` 设置为项目根目录，因此会读取项目下的 `data/hosts.json` 和 `data/web-auth.json`
+
 启动后预期输出类似：
 
 ```text
@@ -215,20 +221,22 @@ http://127.0.0.1:1420
 
 当前可以通过顶部 `设置` 下拉菜单打开偏好设置：
 
-- 设置弹窗分为 `通用`、`服务器指标`、`AI 预测` 三个菜单
+- 设置弹窗分为 `通用`、`安全`、`服务器指标`、`AI` 四个菜单
 - 在 `服务器指标` 中设置服务器信息刷新频率，默认 2 秒
 - 设置 CPU / 内存折线图的时间范围，默认 5 分钟
 - 设置 CPU / 内存图表圆点数量，小图默认 5 个，放大图默认 20 个
 - 在 `通用` 中设置每个 SSH 标签保留的终端行数，默认 1000 行
-- 在 `AI 预测` 中设置 AI 大模型地址、API Key、模型名和预测命令数量，预测数量默认 3 条。AI 地址按 OpenAI 兼容接口的 base URL 填写，例如 `https://api.openai.com/v1` 或本地兼容服务 `http://127.0.0.1:11434/v1`
+- 在 `AI` 中设置 AI 大模型地址、API Key、模型名、系统提示词、预测命令数量、终端上下文字符数和历史命令条数，预测数量默认 3 条。AI 地址按 OpenAI 兼容接口的 base URL 填写，例如 `https://api.openai.com/v1` 或本地兼容服务 `http://127.0.0.1:11434/v1`
 - 开启或关闭 AI 命令预测
 - 修改后点击 `保存`，弹窗内会显示保存成功提示
 
 说明：
 
-- 当前 AI 预测会读取当前会话终端上下文、当前输入草稿和最近命令历史，通过 Go core 调用 OpenAI 兼容 `/chat/completions`
+- 当前右侧 AI 是统一输入入口，会自动判断用户是在问答、解释、总结日志、生成命令，还是要驱动终端完成任务；审核 / 自动模式在同一个面板中切换
+- 当前 AI 预测和统一 AI 助手都会通过 Go core 调用 OpenAI 兼容 `/chat/completions`，流式接口会实时展示 thinking / content，结束后再展示正式命令候选或助手结果
 - 地址填写 base URL，不需要填写到 `/chat/completions`；Go core 会在 base URL 后拼接对应接口路径
 - 预测返回多条命令，第一条会作为 Tab 默认候选，并在终端区域用浅灰色提示；按 Tab 会填入命令，仍需按回车执行
+- 在终端里框选文本后，终端区域会出现“加入 AI”按钮，点击后会把选中文本追加到右侧 AI 输入框
 - 当前偏好设置保存在浏览器前端本地存储 `localStorage` 的 `ai-ssh-settings` 中；导出软件配置会包含这些设置，后续会迁移到统一的软件配置存储
 
 ### 会话切换与重连
@@ -267,6 +275,7 @@ powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1
 
 - 脚本会编译 `ai-ssh-core.exe`
 - 脚本会把前端 `dist` 复制到 Tauri resources，用于客户端启动后的浏览器 Web 访问
+- 现在 `npm run dev:tauri` 也会先执行 `npm run build:core`，并优先使用 `apps/core-go/bin/ai-ssh-core.exe`
 
 如果你不想让 Tauri 自动启动 core，可以设置：
 
@@ -439,15 +448,17 @@ cargo --version
 
 日常开发建议：
 
-1. 先运行 `npm run build:desktop`
-2. 再运行 `powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1`
-3. 运行 `npm run dev:tauri`
+1. 直接运行 `npm run dev:tauri`
+2. 如果 resources 中的 core 或 Web 资源需要刷新，再运行 `powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1`
+3. 重启 `npm run dev:tauri`
 
 如果只是想快速看前端页面：
 
 1. 一个终端运行 `npm run dev:core`
 2. 一个终端运行 `npm run dev:desktop`
 3. 浏览器打开 <http://127.0.0.1:1420>
+
+`npm run dev:core` 启动的进程路径应为 `apps/core-go/bin/ai-ssh-core.exe`；如果任务管理器里看到 `go-build...server.exe`，说明还有旧的 `go run` 进程没关。
 
 如果要模拟服务器 Web 部署：
 

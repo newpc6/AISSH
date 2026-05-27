@@ -134,6 +134,7 @@ type aiAssistRequest struct {
 	APIKey          string        `json:"apiKey,omitempty"`
 	Model           string        `json:"model"`
 	Task            string        `json:"task"`
+	SystemPrompt    string        `json:"systemPrompt,omitempty"`
 	Prompt          string        `json:"prompt"`
 	TerminalContext string        `json:"terminalContext,omitempty"`
 	SelectedText    string        `json:"selectedText,omitempty"`

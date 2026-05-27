@@ -1245,15 +1245,7 @@ button {
   padding: 0 12px;
 }
 
-.ai-mode-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.ai-mode-tabs button,
 .agent-actions button,
-.ai-assistant-panel button,
 .agent-step button {
   min-height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1263,42 +1255,47 @@ button {
   cursor: pointer;
 }
 
-.ai-mode-tabs button.active,
-.ai-assistant-panel .primary-button,
 .agent-actions .primary-button {
   border-color: rgba(79, 140, 255, 0.6);
   background: rgba(79, 140, 255, 0.16);
   color: #dbeafe;
 }
 
-.ai-assistant-panel,
-.agent-panel {
+.unified-ai-box {
   min-height: 0;
   display: grid;
   gap: 8px;
+  align-content: start;
 }
 
-.ai-assistant-panel select,
-.ai-assistant-panel textarea,
-.agent-panel textarea {
+.ai-unified-input {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ai-unified-input textarea {
   width: 100%;
   min-width: 0;
+  min-height: 96px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 7px;
   background: rgba(8, 12, 18, 0.72);
   color: #edf2f7;
   outline: none;
   padding: 8px 10px;
-}
-
-.ai-assistant-panel textarea,
-.agent-panel textarea {
-  min-height: 78px;
   resize: vertical;
 }
 
+.ai-unified-input textarea:focus {
+  border-color: rgba(79, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+
 .ai-response-card,
-.agent-step {
+.agent-step,
+.ai-stream-card {
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -1308,11 +1305,34 @@ button {
 }
 
 .ai-response-card p,
-.agent-step p {
+.agent-step p,
+.ai-stream-card pre {
   margin: 0;
   color: #cbd5e1;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.ai-stream-card summary {
+  color: #93c5fd;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ai-stream-card strong {
+  color: #bfdbfe;
+  font-size: 12px;
+}
+
+.ai-stream-card pre {
+  max-height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.compact-stream pre {
+  max-height: 92px;
 }
 
 .ai-response-card small,
@@ -1379,6 +1399,10 @@ button {
   font-size: 12px;
 }
 
+.compact-toggle {
+  margin-left: auto;
+}
+
 .agent-step-list {
   min-height: 0;
   display: grid;
@@ -1428,6 +1452,25 @@ button {
 .terminal-ghost-prediction:hover {
   color: rgba(226, 232, 240, 0.74);
   background: rgba(15, 23, 32, 0.7);
+}
+
+.terminal-selection-ai-button {
+  position: absolute;
+  z-index: 7;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(103, 232, 249, 0.32);
+  border-radius: 7px;
+  background: rgba(15, 23, 32, 0.92);
+  color: #cffafe;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
+}
+
+.terminal-selection-ai-button:hover {
+  border-color: rgba(103, 232, 249, 0.62);
+  background: rgba(14, 116, 144, 0.36);
 }
 
 .terminal-ghost-prediction span {
@@ -1866,6 +1909,18 @@ button {
   outline: none;
 }
 
+.settings-modal textarea {
+  width: 100%;
+  min-height: 120px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 12, 18, 0.72);
+  color: #edf2f7;
+  padding: 9px 10px;
+  outline: none;
+  resize: vertical;
+}
+
 .host-modal textarea {
   min-height: 82px;
   resize: vertical;
@@ -1878,7 +1933,8 @@ button {
 .group-modal input:focus,
 .log-toolbar input:focus,
 .log-toolbar select:focus,
-.settings-modal input:focus {
+.settings-modal input:focus,
+.settings-modal textarea:focus {
   border-color: rgba(79, 140, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }

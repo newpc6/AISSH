@@ -69,7 +69,10 @@ fn read_local_upload_files(paths: Vec<String>) -> Result<Vec<LocalUploadFile>, S
 }
 
 #[tauri::command]
-fn write_local_download_files(directory: String, files: Vec<LocalDownloadFile>) -> Result<(), String> {
+fn write_local_download_files(
+    directory: String,
+    files: Vec<LocalDownloadFile>,
+) -> Result<(), String> {
     let target_dir = std::path::PathBuf::from(&directory);
     if !target_dir.is_dir() {
         return Err(format!("{directory} 不是可写入的文件夹"));
@@ -154,7 +157,9 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
     if std::env::var("AI_SSH_DESKTOP_NO_CORE").is_ok() {
         return Ok(());
     }
-    if core_accepts_desktop_token(&std::env::var("AI_SSH_DESKTOP_TOKEN").unwrap_or_default()) {
+    if core_accepts_desktop_token(&std::env::var("AI_SSH_DESKTOP_TOKEN").unwrap_or_default())
+        && core_has_required_capabilities()
+    {
         return Ok(());
     }
     let core_path = resolve_core_path(app)?;
@@ -201,9 +206,7 @@ fn resolve_app_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
             }
         }
     }
-    app.path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())
+    app.path().app_data_dir().map_err(|error| error.to_string())
 }
 
 fn find_debug_repo_root() -> Option<std::path::PathBuf> {
@@ -273,7 +276,8 @@ fn fill_random(buffer: &mut [u8]) -> Result<(), String> {
     let mut file = std::fs::File::open("C:\\Windows\\System32\\drivers\\etc\\hosts")
         .map_err(|error| error.to_string())?;
     let mut seed = Vec::new();
-    file.read_to_end(&mut seed).map_err(|error| error.to_string())?;
+    file.read_to_end(&mut seed)
+        .map_err(|error| error.to_string())?;
     let now = format!("{:?}{:?}", std::time::SystemTime::now(), std::process::id());
     let bytes = now.as_bytes();
     for (index, slot) in buffer.iter_mut().enumerate() {
@@ -317,6 +321,17 @@ fn resolve_core_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Strin
         "ai-ssh-core"
     };
     let mut candidates = Vec::new();
+    if cfg!(debug_assertions) {
+        if let Some(repo_root) = find_debug_repo_root() {
+            candidates.push(
+                repo_root
+                    .join("apps")
+                    .join("core-go")
+                    .join("bin")
+                    .join(exe_name),
+            );
+        }
+    }
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join(exe_name));
         candidates.push(resource_dir.join("bin").join(exe_name));
@@ -377,4 +392,31 @@ fn core_accepts_desktop_token(token: &str) -> bool {
         return false;
     }
     response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
+}
+
+fn core_has_required_capabilities() -> bool {
+    let Some(response) = local_core_http(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:18555\r\nConnection: close\r\n\r\n",
+    ) else {
+        return false;
+    };
+    response.starts_with("HTTP/1.1 200")
+        && response.contains("\"ai-assist\"")
+        && response.contains("\"ai-agent\"")
+        && response.contains("\"ai-stream\"")
+        && response.contains("\"ai-unified\"")
+}
+
+fn local_core_http(request: &str) -> Option<String> {
+    let mut stream = std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], 18555)),
+        std::time::Duration::from_millis(200),
+    )
+    .ok()?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+    let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(500)));
+    std::io::Write::write_all(&mut stream, request.as_bytes()).ok()?;
+    let mut response = String::new();
+    std::io::Read::read_to_string(&mut stream, &mut response).ok()?;
+    Some(response)
 }

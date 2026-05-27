@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -20,6 +21,7 @@ type openAIChatRequest struct {
 	Temperature    float64               `json:"temperature"`
 	MaxTokens      int                   `json:"max_tokens,omitempty"`
 	ResponseFormat *openAIResponseFormat `json:"response_format,omitempty"`
+	Stream         bool                  `json:"stream,omitempty"`
 }
 
 type openAIResponseFormat struct {
@@ -39,7 +41,25 @@ type openAIChatResponse struct {
 	} `json:"choices"`
 }
 
+type openAIChatStreamResponse struct {
+	Choices []struct {
+		Delta        openAIChatMessage `json:"delta"`
+		FinishReason string            `json:"finish_reason"`
+	} `json:"choices"`
+}
+
+type aiStreamEvent struct {
+	Type         string            `json:"type"`
+	Text         string            `json:"text,omitempty"`
+	Commands     []string          `json:"commands,omitempty"`
+	Response     *aiAssistResponse `json:"response,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	FinishReason string            `json:"finishReason,omitempty"`
+}
+
 var numberedCommandPattern = regexp.MustCompile(`^\s*(?:[-*]|\d+[.)])\s*`)
+
+type aiStreamWriter func(aiStreamEvent) error
 
 const (
 	aiDefaultPredictionCount = 3
@@ -245,7 +265,7 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: buildAssistSystemPrompt(normalized.Task),
+				Content: buildAssistSystemPrompt(normalized.Task, normalized.SystemPrompt),
 			},
 			{
 				Role:    "user",
@@ -374,23 +394,7 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		}
 		return aiAssistResponse{}, err
 	}
-	if normalized.Task == "agent_next" {
-		result = normalizeAgentAssistResponse(result)
-	}
-	result.Commands = cleanPredictedCommands(result.Commands, 8)
-	result.Warnings = cleanStringList(result.Warnings, 8)
-	if result.Answer == "" && result.Summary != "" {
-		result.Answer = result.Summary
-	}
-	if result.Answer == "" && result.AgentReason != "" {
-		result.Answer = result.AgentReason
-	}
-	if result.RiskLevel == "" {
-		result.RiskLevel = classifyCommandRisk(firstNonEmpty(result.AgentCommand, firstString(result.Commands)))
-	}
-	if result.RiskReason == "" && result.RiskLevel == "high" {
-		result.RiskReason = "命令可能修改系统、安装软件、删除文件或影响服务，需要人工确认。"
-	}
+	result = finalizeAssistResponse(normalized, result)
 	if logger != nil {
 		logger.info("ai", "assist completed", map[string]any{
 			"task":         normalized.Task,
@@ -402,6 +406,245 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		})
 	}
 	return result, nil
+}
+
+func streamPredictedCommands(ctx context.Context, request aiPredictionRequest, logger *appLogger, write aiStreamWriter) error {
+	normalized, err := normalizeAIRequest(request)
+	if err != nil {
+		return err
+	}
+	endpoint, err := chatCompletionsURL(normalized.BaseURL)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(openAIChatRequest{
+		Model:          normalized.Model,
+		Temperature:    0,
+		MaxTokens:      aiMaxTokens,
+		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
+		Stream:         true,
+		Messages: []openAIChatMessage{
+			{
+				Role:    "system",
+				Content: "你是 SSH 终端命令预测助手。所有内容必须使用中文。必须预测用户接下来最可能人工确认执行的 shell 命令，因为最终是否应用由用户确认。你只能在最终 content 中返回严格 JSON，不能返回 Markdown、解释或空内容。即使不确定，也要给出保守的查看型命令。不要执行任何操作，不要返回危险或破坏性命令。响应格式必须是 {\"commands\":[\"命令1\",\"命令2\"]}。",
+			},
+			{
+				Role:    "user",
+				Content: buildPredictionPrompt(normalized),
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	started := time.Now()
+	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, body, logger, func(event aiStreamEvent) error {
+		if event.Type == "thinking" || event.Type == "content" {
+			return write(event)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	commands := parsePredictedCommands(content, normalized.PredictionCount)
+	if len(commands) == 0 {
+		if logger != nil {
+			logger.error("ai", "stream prediction returned no commands", map[string]any{
+				"endpoint":              endpoint,
+				"model":                 normalized.Model,
+				"finishReason":          finishReason,
+				"contentChars":          len(content),
+				"contentSnippet":        logTextSnippet(content),
+				"reasoningContentChars": len(reasoning),
+				"reasoningSnippet":      logTextSnippet(reasoning),
+				"durationMs":            time.Since(started).Milliseconds(),
+			})
+		}
+		return errors.New("ai provider returned no commands; see run logs for streamed content")
+	}
+	if logger != nil {
+		logger.debug("ai", "stream prediction parsed commands", map[string]any{
+			"endpoint":     endpoint,
+			"model":        normalized.Model,
+			"finishReason": finishReason,
+			"commandCount": len(commands),
+			"durationMs":   time.Since(started).Milliseconds(),
+		})
+	}
+	return write(aiStreamEvent{Type: "done", Commands: commands, FinishReason: finishReason})
+}
+
+func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogger, write aiStreamWriter) error {
+	normalized, err := normalizeAIAssistRequest(request)
+	if err != nil {
+		return err
+	}
+	endpoint, err := chatCompletionsURL(normalized.BaseURL)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(openAIChatRequest{
+		Model:          normalized.Model,
+		Temperature:    0,
+		MaxTokens:      aiAssistMaxTokens,
+		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
+		Stream:         true,
+		Messages: []openAIChatMessage{
+			{
+				Role:    "system",
+				Content: buildAssistSystemPrompt(normalized.Task, normalized.SystemPrompt),
+			},
+			{
+				Role:    "user",
+				Content: buildAssistPrompt(normalized),
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	started := time.Now()
+	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, body, logger, func(event aiStreamEvent) error {
+		if event.Type == "thinking" || event.Type == "content" {
+			return write(event)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	result, err := parseAssistResponse(content)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "stream assist returned invalid content", map[string]any{
+				"task":                  normalized.Task,
+				"endpoint":              endpoint,
+				"model":                 normalized.Model,
+				"finishReason":          finishReason,
+				"contentChars":          len(content),
+				"contentSnippet":        logTextSnippet(content),
+				"reasoningContentChars": len(reasoning),
+				"reasoningSnippet":      logTextSnippet(reasoning),
+				"durationMs":            time.Since(started).Milliseconds(),
+			})
+		}
+		return err
+	}
+	result = finalizeAssistResponse(normalized, result)
+	if logger != nil {
+		logger.info("ai", "stream assist completed", map[string]any{
+			"task":         normalized.Task,
+			"model":        normalized.Model,
+			"agentStatus":  result.AgentStatus,
+			"commandCount": len(result.Commands),
+			"riskLevel":    result.RiskLevel,
+			"durationMs":   time.Since(started).Milliseconds(),
+		})
+	}
+	return write(aiStreamEvent{Type: "done", Response: &result, FinishReason: finishReason})
+}
+
+func streamOpenAIChat(ctx context.Context, endpoint string, apiKey string, model string, body []byte, logger *appLogger, write aiStreamWriter) (string, string, string, error) {
+	started := time.Now()
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", "", "", err
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		httpRequest.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	client := &http.Client{Timeout: aiRequestTimeout}
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "stream provider request failed", map[string]any{
+				"endpoint":   endpoint,
+				"model":      model,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
+		return "", "", "", err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		responseBody, bodyTruncated, readErr := readLimitedAIResponseBody(response.Body)
+		if readErr != nil {
+			return "", "", "", readErr
+		}
+		bodySnippet := logTextSnippet(string(responseBody))
+		if logger != nil {
+			logger.error("ai", "stream provider returned non-success status", map[string]any{
+				"endpoint":      endpoint,
+				"model":         model,
+				"status":        response.StatusCode,
+				"bodySnippet":   bodySnippet,
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		if bodySnippet != "" {
+			return "", "", "", fmt.Errorf("ai provider returned status %d: %s", response.StatusCode, bodySnippet)
+		}
+		return "", "", "", fmt.Errorf("ai provider returned status %d", response.StatusCode)
+	}
+
+	var contentBuilder strings.Builder
+	var reasoningBuilder strings.Builder
+	finishReason := ""
+	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), aiProviderBodyReadLimit)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "[DONE]" {
+			break
+		}
+		var chunk openAIChatStreamResponse
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			if logger != nil {
+				logger.warn("ai", "stream provider chunk decode failed", map[string]any{
+					"endpoint": endpoint,
+					"model":    model,
+					"chunk":    logTextSnippet(payload),
+					"error":    err.Error(),
+				})
+			}
+			continue
+		}
+		for _, choice := range chunk.Choices {
+			if choice.Delta.ReasoningContent != "" {
+				reasoningBuilder.WriteString(choice.Delta.ReasoningContent)
+				if err := write(aiStreamEvent{Type: "thinking", Text: choice.Delta.ReasoningContent}); err != nil {
+					return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
+				}
+			}
+			if choice.Delta.Content != "" {
+				contentBuilder.WriteString(choice.Delta.Content)
+				if err := write(aiStreamEvent{Type: "content", Text: choice.Delta.Content}); err != nil {
+					return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
+				}
+			}
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
+	}
+	return contentBuilder.String(), reasoningBuilder.String(), finishReason, nil
 }
 
 func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error) {
@@ -432,6 +675,7 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
 	request.Task = strings.TrimSpace(request.Task)
+	request.SystemPrompt = trimToLastRunes(strings.TrimSpace(request.SystemPrompt), aiAssistPromptLimit)
 	request.Prompt = trimToLastRunes(strings.TrimSpace(request.Prompt), aiAssistPromptLimit)
 	if request.BaseURL == "" {
 		return request, errors.New("ai base url is required")
@@ -440,7 +684,7 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 		return request, errors.New("ai model is required")
 	}
 	if request.Task == "" {
-		request.Task = "ops_qa"
+		request.Task = "auto"
 	}
 	if !validAssistTask(request.Task) {
 		return request, fmt.Errorf("unsupported ai assist task: %s", request.Task)
@@ -474,7 +718,7 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 
 func validAssistTask(task string) bool {
 	switch task {
-	case "explain_error", "generate_command", "summarize_logs", "ops_qa", "agent_next":
+	case "auto", "explain_error", "generate_command", "summarize_logs", "ops_qa", "agent_next":
 		return true
 	default:
 		return false
@@ -505,9 +749,14 @@ func redactSensitiveText(value string) string {
 	return redacted
 }
 
-func buildAssistSystemPrompt(task string) string {
-	base := `你是 AI SSH 的运维助手。所有回答必须使用中文。你会看到终端上下文、历史命令、当前目录、主机信息和用户目标。不要泄露或复述疑似密码、Token、密钥等敏感信息。必须只返回严格 JSON，不要 Markdown，不要把推理过程放进 content。`
+func buildAssistSystemPrompt(task string, customPrompt string) string {
+	base := `你是 AI SSH 的统一运维助手。所有回答必须使用中文。你会看到终端上下文、历史命令、当前目录、主机信息、用户选中文本和用户目标。不要泄露或复述疑似密码、Token、密钥等敏感信息。必须只返回严格 JSON，不要 Markdown，不要把推理过程放进 content。你需要先判断用户意图：如果只是解释、总结、问答，就直接回答；如果需要驱动终端完成目标，就给出下一步命令并说明风险；如果信息不足，就提问。`
+	if customPrompt != "" {
+		base += "\n用户自定义系统提示词：\n" + customPrompt
+	}
 	switch task {
+	case "auto":
+		return base + `返回 {"answer":"给用户看的说明","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因","agentStatus":"command|done|question","agentCommand":"如果需要驱动终端则给一个下一步命令","agentReason":"为什么这样做"}。只有当用户明显要求执行、安装、配置、排障推进或完成目标时，才设置 agentStatus 为 command；普通问答、解释和总结不要给 agentCommand。危险命令必须标 high。`
 	case "explain_error":
 		return base + `任务是解释错误。返回 {"answer":"易懂解释","summary":"一句话摘要","warnings":["风险或注意事项"],"commands":["可选排查命令"]}。`
 	case "generate_command":
@@ -519,6 +768,37 @@ func buildAssistSystemPrompt(task string) string {
 	default:
 		return base + `任务是围绕当前 SSH 会话做运维问答。返回 {"answer":"回答","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因"}。`
 	}
+}
+
+func finalizeAssistResponse(request aiAssistRequest, result aiAssistResponse) aiAssistResponse {
+	if request.Task == "agent_next" {
+		result = normalizeAgentAssistResponse(result)
+	}
+	if request.Task == "auto" {
+		result.AgentStatus = strings.TrimSpace(result.AgentStatus)
+		result.AgentCommand = strings.TrimSpace(result.AgentCommand)
+		if result.AgentStatus == "" && result.AgentCommand != "" {
+			result.AgentStatus = "command"
+		}
+		if result.AgentStatus == "command" {
+			result = normalizeAgentAssistResponse(result)
+		}
+	}
+	result.Commands = cleanPredictedCommands(result.Commands, 8)
+	result.Warnings = cleanStringList(result.Warnings, 8)
+	if result.Answer == "" && result.Summary != "" {
+		result.Answer = result.Summary
+	}
+	if result.Answer == "" && result.AgentReason != "" {
+		result.Answer = result.AgentReason
+	}
+	if result.RiskLevel == "" {
+		result.RiskLevel = classifyCommandRisk(firstNonEmpty(result.AgentCommand, firstString(result.Commands)))
+	}
+	if result.RiskReason == "" && result.RiskLevel == "high" {
+		result.RiskReason = "命令可能修改系统、安装软件、删除文件或影响服务，需要人工确认。"
+	}
+	return result
 }
 
 func buildAssistPrompt(request aiAssistRequest) string {

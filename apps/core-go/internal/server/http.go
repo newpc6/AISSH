@@ -36,6 +36,10 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				"health-check",
 				"api-contract",
 				"ssh-session-stream",
+				"ai-assist",
+				"ai-agent",
+				"ai-stream",
+				"ai-unified",
 			},
 		})
 	}
@@ -200,6 +204,22 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		logger.info("ai", "prediction completed", map[string]any{"count": len(response.Commands), "model": request.Model})
 		writeJSON(w, response)
 	})
+	mux.HandleFunc("/api/ai/predict/stream", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var request aiPredictionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		streamAIEvents(w, r, logger, func(write aiStreamWriter) error {
+			return streamPredictedCommands(r.Context(), request, logger, write)
+		})
+	})
 	mux.HandleFunc("/api/ai/assist", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -219,6 +239,22 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 		writeJSON(w, response)
+	})
+	mux.HandleFunc("/api/ai/assist/stream", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var request aiAssistRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		streamAIEvents(w, r, logger, func(write aiStreamWriter) error {
+			return streamAssistWithAI(r.Context(), request, logger, write)
+		})
 	})
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -638,6 +674,47 @@ func streamSessionEvents(w http.ResponseWriter, r *http.Request, session *termin
 			return
 		}
 	}
+}
+
+func streamAIEvents(w http.ResponseWriter, r *http.Request, logger *appLogger, run func(aiStreamWriter) error) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	writer := bufio.NewWriter(w)
+	write := func(event aiStreamEvent) error {
+		payload, _ := json.Marshal(event)
+		if _, err := writer.WriteString("event: ai\n"); err != nil {
+			return err
+		}
+		if _, err := writer.WriteString("data: "); err != nil {
+			return err
+		}
+		if _, err := writer.Write(payload); err != nil {
+			return err
+		}
+		if _, err := writer.WriteString("\n\n"); err != nil {
+			return err
+		}
+		if err := writer.Flush(); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+
+	if err := run(write); err != nil {
+		logger.error("ai", "stream failed", map[string]any{"path": r.URL.Path, "error": err.Error()})
+		_ = write(aiStreamEvent{Type: "error", Error: err.Error()})
+	}
+	_ = writer.Flush()
 }
 
 func writeSessionInput(w http.ResponseWriter, r *http.Request, session *terminalSession) {

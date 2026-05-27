@@ -11,6 +11,7 @@ export interface HealthResponse {
   version: string
   timestamp: string
   capabilities: string[]
+  hostStore?: string
 }
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -73,6 +74,7 @@ export interface AppSettings {
   aiPredictionCount: number
   aiTerminalContextLimit: number
   aiCommandHistoryLimit: number
+  aiSystemPrompt: string
   agentCommandTimeoutSeconds: number
 }
 
@@ -227,7 +229,7 @@ export interface AIPredictionResponse {
   commands: string[]
 }
 
-export type AIAssistTask = 'explain_error' | 'generate_command' | 'summarize_logs' | 'ops_qa' | 'agent_next'
+export type AIAssistTask = 'auto' | 'explain_error' | 'generate_command' | 'summarize_logs' | 'ops_qa' | 'agent_next'
 export type AIAgentMode = 'review' | 'auto'
 export type AIRiskLevel = 'low' | 'medium' | 'high'
 export type AIAgentStatus = 'command' | 'done' | 'question'
@@ -249,6 +251,7 @@ export interface AIAssistRequest {
   apiKey?: string
   model: string
   task: AIAssistTask
+  systemPrompt?: string
   prompt: string
   terminalContext?: string
   selectedText?: string
