@@ -156,6 +156,7 @@ type aiAgentStep struct {
 	RiskLevel   string `json:"riskLevel,omitempty"`
 	RiskReason  string `json:"riskReason,omitempty"`
 	Output      string `json:"output,omitempty"`
+	ExitCode    *int   `json:"exitCode,omitempty"`
 	CreatedAt   string `json:"createdAt,omitempty"`
 }
 
@@ -169,6 +170,44 @@ type aiAssistResponse struct {
 	AgentCommand string   `json:"agentCommand,omitempty"`
 	AgentReason  string   `json:"agentReason,omitempty"`
 	Summary      string   `json:"summary,omitempty"`
+}
+
+type aiChatConversation struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+type aiChatMessage struct {
+	ID             string            `json:"id"`
+	ConversationID string            `json:"conversationId"`
+	Kind           string            `json:"kind"`
+	Content        string            `json:"content"`
+	CreatedAt      string            `json:"createdAt"`
+	Response       *aiAssistResponse `json:"response,omitempty"`
+	Step           *aiAgentStep      `json:"step,omitempty"`
+}
+
+type aiChatConversationCreateRequest struct {
+	Title string `json:"title,omitempty"`
+}
+
+type aiChatConversationUpdateRequest struct {
+	Title string `json:"title,omitempty"`
+}
+
+type aiChatMessageCreateRequest struct {
+	Kind     string            `json:"kind"`
+	Content  string            `json:"content"`
+	Response *aiAssistResponse `json:"response,omitempty"`
+	Step     *aiAgentStep      `json:"step,omitempty"`
+}
+
+type aiChatMessageUpdateRequest struct {
+	Content  string            `json:"content,omitempty"`
+	Response *aiAssistResponse `json:"response,omitempty"`
+	Step     *aiAgentStep      `json:"step,omitempty"`
 }
 
 type sessionReconnectResponse struct {

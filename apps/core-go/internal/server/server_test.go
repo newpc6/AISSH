@@ -76,7 +76,8 @@ func TestHealthEndpoint(t *testing.T) {
 	if !containsCapability(capabilities, "ai-assist") ||
 		!containsCapability(capabilities, "ai-agent") ||
 		!containsCapability(capabilities, "ai-stream") ||
-		!containsCapability(capabilities, "ai-unified") {
+		!containsCapability(capabilities, "ai-unified") ||
+		!containsCapability(capabilities, "ai-chat-history") {
 		t.Fatalf("expected ai capabilities, got %v", response["capabilities"])
 	}
 	hostStore, ok := response["hostStore"].(string)

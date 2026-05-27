@@ -76,6 +76,7 @@ export interface AppSettings {
   aiPredictionTriggerDelayMs: number
   aiTerminalContextLimit: number
   aiCommandHistoryLimit: number
+  aiConversationContextLimit: number
   aiSystemPrompt: string
   agentCommandTimeoutSeconds: number
 }
@@ -278,6 +279,54 @@ export interface AIAssistResponse {
   agentCommand?: string
   agentReason?: string
   summary?: string
+}
+
+export type AIChatMessageKind = 'user' | 'thinking' | 'content' | 'assistant' | 'command' | 'agent_step' | 'agent_result' | 'status' | 'error'
+
+export interface AIChatConversation {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AIChatMessage {
+  id: string
+  conversationId: string
+  kind: AIChatMessageKind
+  content: string
+  createdAt: string
+  response?: AIAssistResponse
+  step?: AIAgentStep
+}
+
+export interface AIChatConversationListResponse {
+  conversations: AIChatConversation[]
+}
+
+export interface AIChatMessagesResponse {
+  messages: AIChatMessage[]
+}
+
+export interface AIChatConversationCreateRequest {
+  title?: string
+}
+
+export interface AIChatMessageCreateRequest {
+  kind: AIChatMessageKind
+  content: string
+  response?: AIAssistResponse
+  step?: AIAgentStep
+}
+
+export interface AIChatMessageUpdateRequest {
+  content?: string
+  response?: AIAssistResponse
+  step?: AIAgentStep
+}
+
+export interface AIChatConversationUpdateRequest {
+  title?: string
 }
 
 export type TerminalEventType = 'output' | 'status' | 'error' | 'cwd' | 'command' | 'prompt'

@@ -1397,9 +1397,8 @@ button {
 .unified-ai-box {
   min-height: 0;
   display: grid;
-  grid-auto-rows: max-content;
+  grid-template-rows: max-content minmax(0, 1fr);
   gap: 8px;
-  align-content: start;
 }
 
 .ai-unified-input {
@@ -1429,6 +1428,7 @@ button {
 
 .ai-response-card,
 .agent-step,
+.ai-message-card,
 .ai-stream-card {
   display: grid;
   gap: 8px;
@@ -1440,11 +1440,123 @@ button {
 
 .ai-response-card p,
 .agent-step p,
+.ai-message-card p,
 .ai-stream-card pre {
   margin: 0;
   color: #cbd5e1;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.ai-conversation-shell {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.unified-ai-box.history-open .ai-conversation-shell {
+  grid-template-columns: minmax(104px, 132px) minmax(0, 1fr);
+}
+
+.ai-chat-sidebar {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: max-content minmax(0, 1fr);
+  gap: 8px;
+  padding-right: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ai-chat-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ai-chat-sidebar-head strong {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.ai-chat-sidebar-head button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.ai-chat-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow: auto;
+}
+
+.ai-chat-list button {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #cbd5e1;
+  text-align: left;
+}
+
+.ai-chat-list button.active {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.ai-chat-list span,
+.ai-chat-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-chat-list small {
+  color: #7f93ad;
+  font-size: 10px;
+}
+
+.ai-message-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+  scroll-behavior: smooth;
+}
+
+.user-message {
+  border-color: rgba(96, 165, 250, 0.28);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.user-message strong,
+.ai-message-card strong {
+  color: #bfdbfe;
+  font-size: 12px;
+}
+
+.ai-error-card {
+  border-color: rgba(239, 68, 68, 0.32);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.ai-error-card strong {
+  color: #fca5a5;
+}
+
+.ai-status-line {
+  margin: 0;
 }
 
 .ai-stream-card summary {
@@ -2154,8 +2266,16 @@ button {
   height: 100%;
   min-height: 0;
   padding: 12px;
-  overflow: auto;
   align-content: start;
+}
+
+.history-list,
+.favorite-list {
+  overflow: auto;
+}
+
+.ai-box {
+  overflow: hidden;
 }
 
 .command-row.compact {

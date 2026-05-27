@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 	mux := http.NewServeMux()
 	logger := manager.logger
 	authenticator := newWebAuthenticator(logger)
+	aiChats := newAIChatStore(logger)
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -40,6 +42,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				"ai-agent",
 				"ai-stream",
 				"ai-unified",
+				"ai-chat-history",
 			},
 		})
 	}
@@ -255,6 +258,103 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		streamAIEvents(w, r, logger, func(write aiStreamWriter) error {
 			return streamAssistWithAI(r.Context(), request, logger, write)
 		})
+	})
+	mux.HandleFunc("/api/ai/chats", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			conversations, err := aiChats.listConversations(100)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string][]aiChatConversation{"conversations": conversations})
+		case http.MethodPost:
+			var request aiChatConversationCreateRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil && err != io.EOF {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			conversation, err := aiChats.createConversation(request.Title)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, conversation)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/ai/chats/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/api/ai/chats/")
+		parts := strings.Split(strings.Trim(rest, "/"), "/")
+		if len(parts) == 0 || parts[0] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		conversationID := parts[0]
+		if len(parts) == 1 {
+			if r.Method != http.MethodPatch {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			var request aiChatConversationUpdateRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			conversation, err := aiChats.updateConversation(conversationID, request)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			writeJSON(w, conversation)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "messages" {
+			switch r.Method {
+			case http.MethodGet:
+				messages, err := aiChats.listMessages(conversationID, 500)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				writeJSON(w, map[string][]aiChatMessage{"messages": messages})
+			case http.MethodPost:
+				var request aiChatMessageCreateRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					http.Error(w, "invalid request body", http.StatusBadRequest)
+					return
+				}
+				message, err := aiChats.addMessage(conversationID, request)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				writeJSON(w, message)
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if len(parts) == 3 && parts[1] == "messages" {
+			if r.Method != http.MethodPatch {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			var request aiChatMessageUpdateRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			message, err := aiChats.updateMessage(conversationID, parts[2], request)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			writeJSON(w, message)
+			return
+		}
+		http.NotFound(w, r)
 	})
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

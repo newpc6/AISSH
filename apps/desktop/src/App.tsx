@@ -39,6 +39,15 @@ import {
   type AIAssistRequest,
   type AIAssistResponse,
   type AIAssistTask,
+  type AIChatConversation,
+  type AIChatConversationCreateRequest,
+  type AIChatConversationListResponse,
+  type AIChatConversationUpdateRequest,
+  type AIChatMessage,
+  type AIChatMessageCreateRequest,
+  type AIChatMessageUpdateRequest,
+  type AIChatMessagesResponse,
+  type AIChatMessageKind,
   type AIRiskLevel,
   type AuthSettingsResponse,
   type AuthSettingsUpdateRequest,
@@ -215,6 +224,10 @@ type TerminalSelectionAction = {
   top: number
 }
 
+type AIChatMessageDraft = AIChatMessage & {
+  pending?: boolean
+}
+
 const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
   predictions: [],
   index: 0,
@@ -234,7 +247,7 @@ const MAX_PREDICTION_PANEL_HEIGHT = 520
 const MIN_RIGHT_SERVER_INFO_HEIGHT = 88
 const DEFAULT_RIGHT_SERVER_INFO_HEIGHT = 420
 const MAX_RIGHT_SERVER_INFO_HEIGHT = 720
-const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified']
+const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified', 'ai-chat-history']
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
 const ERROR_DETAIL_LIMIT = 1200
@@ -310,6 +323,7 @@ const defaultSettings: AppSettings = {
   aiPredictionTriggerDelayMs: 1000,
   aiTerminalContextLimit: 5000,
   aiCommandHistoryLimit: 20,
+  aiConversationContextLimit: 30,
   aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
   agentCommandTimeoutSeconds: 120,
 }
@@ -690,6 +704,10 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
     aiCommandHistoryLimit: Math.max(
       1,
       Math.min(200, Number(value.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit) || 20),
+    ),
+    aiConversationContextLimit: Math.max(
+      1,
+      Math.min(100, Number(value.aiConversationContextLimit ?? defaultSettings.aiConversationContextLimit) || 30),
     ),
     aiSystemPrompt: typeof value.aiSystemPrompt === 'string' && value.aiSystemPrompt.trim()
       ? value.aiSystemPrompt
@@ -1183,11 +1201,14 @@ export function App() {
   const [aiAssistantError, setAiAssistantError] = useState('')
   const [aiStreamThinking, setAiStreamThinking] = useState('')
   const [aiStreamContent, setAiStreamContent] = useState('')
+  const [aiConversations, setAiConversations] = useState<AIChatConversation[]>([])
+  const [activeAIConversationId, setActiveAIConversationId] = useState('')
+  const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
+  const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
   const [terminalSelectionAction, setTerminalSelectionAction] = useState<TerminalSelectionAction | null>(null)
   const [agentMode, setAgentMode] = useState<AIAgentMode>('review')
   const [agentState, setAgentState] = useState<LoadState>('idle')
   const [agentMessage, setAgentMessage] = useState('')
-  const [agentFinalResponse, setAgentFinalResponse] = useState<AIAssistResponse | null>(null)
   const [agentSteps, setAgentSteps] = useState<AIAgentPlanStep[]>([])
   const [pendingAgentStepId, setPendingAgentStepId] = useState('')
   const [rightServerInfoPanelHeight, setRightServerInfoPanelHeight] = useState(DEFAULT_RIGHT_SERVER_INFO_HEIGHT)
@@ -1230,6 +1251,13 @@ export function App() {
   const commandHistoryRef = useRef<string[]>([])
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
   const aiPredictionBySessionRef = useRef<Record<string, AIPredictionSessionState>>({})
+  const aiMessagesRef = useRef<AIChatMessageDraft[]>([])
+  const activeAIConversationIdRef = useRef('')
+  const aiMessageListRef = useRef<HTMLDivElement | null>(null)
+  const aiStreamThinkingRef = useRef('')
+  const aiStreamContentRef = useRef('')
+  const aiStreamThinkingMessageIdRef = useRef('')
+  const aiStreamContentMessageIdRef = useRef('')
   const leftModeRef = useRef<LeftMode>('servers')
   const trackTerminalPathRef = useRef(true)
   const inputQueuesRef = useRef<Record<string, Promise<void>>>({})
@@ -2102,8 +2130,44 @@ export function App() {
   }, [hosts])
 
   useEffect(() => {
+    aiMessagesRef.current = aiMessages
+  }, [aiMessages])
+
+  useEffect(() => {
+    activeAIConversationIdRef.current = activeAIConversationId
+  }, [activeAIConversationId])
+
+  useEffect(() => {
+    const element = aiMessageListRef.current
+    if (!element) {
+      return
+    }
+    element.scrollTop = element.scrollHeight
+  }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, agentMessage, isAIHistoryOpen])
+
+  useEffect(() => {
     sessionsRef.current = sessions
   }, [sessions])
+
+  useEffect(() => {
+    if (authState !== 'success') {
+      return
+    }
+    void (async () => {
+      try {
+        const conversations = await loadAIConversations()
+        if (conversations.length > 0) {
+          const first = conversations[0]
+          setActiveAIConversationId(first.id)
+          await loadAIMessages(first.id)
+        } else {
+          await createAIConversation('新对话')
+        }
+      } catch (error) {
+        appendLog('warn', 'ui.ai', 'load ai conversations failed', { error: error instanceof Error ? error.message : String(error) })
+      }
+    })()
+  }, [authState])
 
   useEffect(() => {
     const isKnownSessionView =
@@ -2656,6 +2720,7 @@ export function App() {
       aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
+      aiConversationContextLimit: normalized.aiConversationContextLimit,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
     })
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
@@ -3782,6 +3847,273 @@ export function App() {
     )
   }
 
+  const makeLocalAIMessage = (
+    kind: AIChatMessageKind,
+    content: string,
+    extras: Partial<AIChatMessage> = {},
+  ): AIChatMessageDraft => ({
+    id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    conversationId: activeAIConversationIdRef.current,
+    kind,
+    content,
+    createdAt: new Date().toISOString(),
+    ...extras,
+  })
+
+  const persistAIMessage = async (
+    conversationId: string,
+    message: AIChatMessageCreateRequest,
+  ): Promise<AIChatMessageDraft> => {
+    const response = await apiFetch(`/ai/chats/${conversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    })
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `保存 AI 消息失败：${response.status}`)
+    }
+    return (await response.json()) as AIChatMessageDraft
+  }
+
+  const updatePersistedAIMessage = async (
+    conversationId: string,
+    messageId: string,
+    message: AIChatMessageUpdateRequest,
+  ): Promise<AIChatMessageDraft> => {
+    const response = await apiFetch(`/ai/chats/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    })
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `更新 AI 消息失败：${response.status}`)
+    }
+    return (await response.json()) as AIChatMessageDraft
+  }
+
+  const appendAIMessage = async (
+    kind: AIChatMessageKind,
+    content: string,
+    extras: Partial<AIChatMessage> = {},
+    conversationId = activeAIConversationIdRef.current,
+  ) => {
+    if (!conversationId) {
+      const local = makeLocalAIMessage(kind, content, extras)
+      setAiMessages((current) => [...current, local])
+      return local
+    }
+    const local = { ...makeLocalAIMessage(kind, content, extras), conversationId, pending: true }
+    setAiMessages((current) => [...current, local])
+    try {
+      const persisted = await persistAIMessage(conversationId, {
+        kind,
+        content,
+        response: extras.response,
+        step: extras.step,
+      })
+      setAiMessages((current) => current.map((item) => (item.id === local.id ? persisted : item)))
+      void loadAIConversations()
+      return persisted
+    } catch (error) {
+      setAiMessages((current) => current.map((item) => (item.id === local.id ? { ...item, pending: false } : item)))
+      appendLog('warn', 'ui.ai', 'persist ai message failed', { error: error instanceof Error ? error.message : String(error) })
+      return local
+    }
+  }
+
+  const resetAIStreamBuffers = () => {
+    aiStreamThinkingRef.current = ''
+    aiStreamContentRef.current = ''
+    aiStreamThinkingMessageIdRef.current = ''
+    aiStreamContentMessageIdRef.current = ''
+    setAiStreamThinking('')
+    setAiStreamContent('')
+  }
+
+  const startStreamingThinkingMessage = () => {
+    const message = makeLocalAIMessage('thinking', '')
+    aiStreamThinkingMessageIdRef.current = message.id
+    setAiMessages((current) => [...current, message])
+  }
+
+  const updateStreamingThinkingMessage = (text: string) => {
+    if (!text) {
+      return
+    }
+    if (!aiStreamThinkingMessageIdRef.current) {
+      startStreamingThinkingMessage()
+    }
+    const messageId = aiStreamThinkingMessageIdRef.current
+    setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
+  }
+
+  const startStreamingContentMessage = () => {
+    const message = makeLocalAIMessage('content', '')
+    aiStreamContentMessageIdRef.current = message.id
+    setAiMessages((current) => [...current, message])
+  }
+
+  const updateStreamingContentMessage = (text: string) => {
+    if (!text) {
+      return
+    }
+    if (!aiStreamContentMessageIdRef.current) {
+      startStreamingContentMessage()
+    }
+    const messageId = aiStreamContentMessageIdRef.current
+    setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
+  }
+
+  const removeStreamingContentMessage = () => {
+    const messageId = aiStreamContentMessageIdRef.current
+    if (!messageId) {
+      return
+    }
+    setAiMessages((current) => current.filter((item) => item.id !== messageId))
+    aiStreamContentMessageIdRef.current = ''
+  }
+
+  const persistStreamingContentMessage = async (conversationId: string) => {
+    const content = aiStreamContentRef.current.trim()
+    const messageId = aiStreamContentMessageIdRef.current
+    if (!content || !messageId) {
+      return
+    }
+    try {
+      const persisted = await persistAIMessage(conversationId, { kind: 'content', content })
+      setAiMessages((current) => current.map((item) => (item.id === messageId ? persisted : item)))
+    } catch (error) {
+      appendLog('warn', 'ui.ai', 'persist streaming content message failed', { error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const persistStreamingThinkingMessage = async (conversationId: string) => {
+    const content = aiStreamThinkingRef.current.trim()
+    const messageId = aiStreamThinkingMessageIdRef.current
+    if (!content || !messageId) {
+      return
+    }
+    try {
+      const persisted = await persistAIMessage(conversationId, { kind: 'thinking', content })
+      setAiMessages((current) => current.map((item) => (item.id === messageId ? persisted : item)))
+    } catch (error) {
+      appendLog('warn', 'ui.ai', 'persist thinking message failed', { error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const persistStreamingArtifacts = async (conversationId: string, keepContent = false) => {
+    await persistStreamingThinkingMessage(conversationId)
+    if (keepContent) {
+      await persistStreamingContentMessage(conversationId)
+    } else {
+      removeStreamingContentMessage()
+    }
+  }
+
+  const loadAIConversations = async () => {
+    const response = await apiFetch('/ai/chats')
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `加载 AI 对话失败：${response.status}`)
+    }
+    const data = (await response.json()) as AIChatConversationListResponse
+    setAiConversations(data.conversations)
+    return data.conversations
+  }
+
+  const loadAIMessages = async (conversationId: string) => {
+    if (!conversationId) {
+      setAiMessages([])
+      return []
+    }
+    const response = await apiFetch(`/ai/chats/${conversationId}/messages`)
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `加载 AI 消息失败：${response.status}`)
+    }
+    const data = (await response.json()) as AIChatMessagesResponse
+    setAiMessages(data.messages)
+    agentStepsRef.current = data.messages
+      .map((message) => (message.kind === 'agent_step' && message.step ? ({ ...message.step, id: message.id } as AIAgentPlanStep) : null))
+      .filter((step): step is AIAgentPlanStep => Boolean(step))
+      .slice(-30)
+      .reverse()
+    setAgentSteps(agentStepsRef.current)
+    return data.messages
+  }
+
+  const createAIConversation = async (title = '新对话') => {
+    const body: AIChatConversationCreateRequest = { title }
+    const response = await apiFetch('/ai/chats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `创建 AI 对话失败：${response.status}`)
+    }
+    const conversation = (await response.json()) as AIChatConversation
+    setAiConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)])
+    setActiveAIConversationId(conversation.id)
+    setAiMessages([])
+    aiMessagesRef.current = []
+    setAiAssistantResponse(null)
+    resetAIStreamBuffers()
+    setAgentSteps([])
+    agentStepsRef.current = []
+    agentGoalRef.current = ''
+    return conversation
+  }
+
+  const ensureAIConversation = async (title = '新对话') => {
+    if (activeAIConversationIdRef.current) {
+      return activeAIConversationIdRef.current
+    }
+    const conversation = await createAIConversation(title)
+    return conversation.id
+  }
+
+  const selectAIConversation = async (conversationId: string) => {
+    setActiveAIConversationId(conversationId)
+    setAiAssistantResponse(null)
+    resetAIStreamBuffers()
+    setAgentSteps([])
+    agentStepsRef.current = []
+    agentGoalRef.current = ''
+    await loadAIMessages(conversationId)
+  }
+
+  const updateAIConversationTitle = async (conversationId: string, title: string) => {
+    const body: AIChatConversationUpdateRequest = { title }
+    const response = await apiFetch(`/ai/chats/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!response.ok) {
+      return
+    }
+    const conversation = (await response.json()) as AIChatConversation
+    setAiConversations((current) =>
+      [conversation, ...current.filter((item) => item.id !== conversation.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    )
+  }
+
+  const currentConversationContext = () => {
+    const limit = normalizeAppSettings(sessionSettingsRef.current).aiConversationContextLimit
+    return aiMessagesRef.current
+      .filter((message) => !message.pending && ['user', 'assistant', 'command', 'agent_step', 'agent_result'].includes(message.kind))
+      .slice(-limit)
+      .map((message) => {
+        const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
+        if (message.kind === 'agent_step' && message.step) {
+          const output = message.step.output ? `\n输出摘要: ${message.step.output.slice(-2000)}` : ''
+          const exitCode = typeof message.step.exitCode === 'number' ? `\n退出码: ${message.step.exitCode}` : ''
+          return `${label}: ${message.step.command || message.content}\n状态: ${message.step.status}${exitCode}${output}`
+        }
+        return `${label}: ${message.content}`
+      })
+      .join('\n')
+  }
+
   const requestAIAssistStream = async (
     task: AIAssistTask,
     prompt: string,
@@ -3795,6 +4127,7 @@ export function App() {
     if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
+    const conversationContext = currentConversationContext()
     const payload: AIAssistRequest = {
       baseUrl: normalized.aiBaseUrl,
       apiKey: normalized.aiApiKey,
@@ -3803,7 +4136,12 @@ export function App() {
       systemPrompt: normalized.aiSystemPrompt,
       prompt,
       terminalContext,
-      selectedText: window.getSelection()?.toString() ?? '',
+      selectedText: [
+        window.getSelection()?.toString() ?? '',
+        conversationContext ? `当前对话上下文：\n${conversationContext}` : '',
+      ]
+        .filter((item) => item.trim())
+        .join('\n\n'),
       commandHistory,
       currentCommand: commandBufferRef.current,
       cwd: filePathRef.current,
@@ -3830,10 +4168,14 @@ export function App() {
     let streamError = ''
     await readSSEStream(response, (event) => {
       if (event.type === 'thinking' && event.text) {
+        aiStreamThinkingRef.current = `${aiStreamThinkingRef.current}${event.text}`
         setAiStreamThinking((current) => `${current}${event.text}`)
+        updateStreamingThinkingMessage(event.text)
       }
       if (event.type === 'content' && event.text) {
+        aiStreamContentRef.current = `${aiStreamContentRef.current}${event.text}`
         setAiStreamContent((current) => `${current}${event.text}`)
+        updateStreamingContentMessage(event.text)
       }
       if (event.type === 'done' && event.response) {
         finalResponse = event.response
@@ -3870,7 +4212,6 @@ export function App() {
     if (response.agentStatus === 'done') {
       agentRunningRef.current = false
       setAgentState('success')
-      setAgentFinalResponse(response)
       setAgentMessage('')
       return
     }
@@ -3878,7 +4219,6 @@ export function App() {
       if (response.agentStatus === 'question') {
         agentRunningRef.current = false
         setAgentState('idle')
-        setAgentFinalResponse(response)
         setAgentMessage('')
       }
       return
@@ -3888,7 +4228,7 @@ export function App() {
     }
     const riskLevel = response.riskLevel || classifyCommandRisk(command)
     const step: AIAgentPlanStep = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      id: `step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       command,
       status: 'pending',
       explanation: response.agentReason || response.answer,
@@ -3896,23 +4236,30 @@ export function App() {
       riskReason: response.riskReason,
       createdAt: new Date().toISOString(),
     }
-    const nextSteps = [step, ...agentStepsRef.current].slice(0, 30)
-    setAgentSteps(nextSteps)
-    agentStepsRef.current = nextSteps
     setAgentState('success')
-    setAgentFinalResponse(null)
     setAgentMessage(response.answer || response.agentReason || 'AI 已给出下一步命令')
-    if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
-      agentRunningRef.current = true
-      void executeAgentStep(step.id, true, true)
-    } else if (riskLevel === 'high') {
+    if (agentModeRef.current !== 'auto') {
       agentRunningRef.current = false
-      setPendingAgentStepId(step.id)
-      setAgentMessage('检测到高风险命令，请人工确认后执行')
+      return
     }
+    void appendAIMessage('agent_step', command, { step }).then((message) => {
+      const messageStep = { ...step, id: message.id }
+      const updatedSteps = [messageStep, ...agentStepsRef.current].slice(0, 30)
+      setAgentSteps(updatedSteps)
+      agentStepsRef.current = updatedSteps
+      if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
+        agentRunningRef.current = true
+        void executeAgentStep(messageStep.id, true, true)
+      } else if (riskLevel === 'high') {
+        agentRunningRef.current = false
+        setPendingAgentStepId(messageStep.id)
+        setAgentMessage('检测到高风险命令，请人工确认后执行')
+      }
+    })
   }
 
   const runUnifiedAI = async () => {
+    const previousMessages = [...aiMessagesRef.current]
     const prompt = aiUnifiedPrompt.trim()
     const selectedText = window.getSelection()?.toString().trim() ?? ''
     const requestPrompt = prompt || selectedText
@@ -3920,13 +4267,22 @@ export function App() {
       setAiAssistantError('请输入问题、目标，或先选中终端文本')
       return
     }
+    let conversationId = activeAIConversationIdRef.current
+    try {
+      conversationId = await ensureAIConversation(requestPrompt.slice(0, 24) || '新对话')
+    } catch (error) {
+      setAiAssistantError(error instanceof Error ? error.message : '创建 AI 对话失败')
+      return
+    }
     setAiAssistantState('loading')
     setAiAssistantError('')
     setAiAssistantResponse(null)
-    setAiStreamThinking('')
-    setAiStreamContent('')
+    resetAIStreamBuffers()
     setAgentMessage('')
-    setAgentFinalResponse(null)
+    await appendAIMessage('user', requestPrompt, {}, conversationId)
+    if (previousMessages.filter((message) => message.kind === 'user').length === 0) {
+      void updateAIConversationTitle(conversationId, requestPrompt)
+    }
     agentGoalRef.current = requestPrompt
     agentRunningRef.current = agentModeRef.current === 'auto'
     try {
@@ -3934,16 +4290,22 @@ export function App() {
       response.commands = normalizeAssistCommands(response.commands)
       setAiAssistantResponse(response)
       setAiAssistantState('success')
+      await persistStreamingArtifacts(conversationId)
+      if (response.agentStatus === 'command' && normalizeAssistCommands(response.commands).length > 0) {
+        await appendAIMessage('command', response.answer || response.agentReason || 'AI 已生成可执行命令。', { response }, conversationId)
+      } else {
+        await appendAIMessage('assistant', response.answer || response.summary || response.agentReason || 'AI 已返回结果。', { response }, conversationId)
+      }
       addAgentStepFromAIResponse(response)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI 请求失败'
+      await appendAIMessage('error', message, {}, conversationId)
       const detail =
         message.includes('404') || message.includes('not found')
           ? 'Go core 返回 404，通常表示当前客户端还在使用旧版 core。请关闭旧的 ai-ssh-core.exe 后重启客户端，或重新运行 npm run dev:tauri。'
           : '这是通过 Go core 调用大模型的统一 AI 接口失败，可在“工具 -> 日志”搜索 source=ai 查看详情。'
       setAiAssistantError(message)
       setAiAssistantState('error')
-      setAiStreamContent('')
       setErrorMessage(message, {
         title: 'AI 请求失败',
         method: 'POST',
@@ -3970,9 +4332,7 @@ export function App() {
       return
     }
     setAgentState('loading')
-    setAgentFinalResponse(null)
-    setAiStreamThinking('')
-    setAiStreamContent('')
+    resetAIStreamBuffers()
     setAgentMessage('正在让 Agent 规划下一步...')
     try {
       const response = await requestAIAssistStream(
@@ -3987,14 +4347,16 @@ export function App() {
       )
       if (response.agentStatus === 'done') {
         setAgentState('success')
-        setAgentFinalResponse(response)
+        await persistStreamingArtifacts(activeAIConversationIdRef.current)
+        await appendAIMessage('agent_result', response.answer || response.summary || response.agentReason || '已根据命令输出生成执行结论。', { response })
         setAgentMessage('已根据命令输出生成执行结论。')
         agentRunningRef.current = false
         return
       }
       if (response.agentStatus === 'question' || !response.agentCommand) {
         setAgentState('idle')
-        setAgentFinalResponse(response)
+        await persistStreamingArtifacts(activeAIConversationIdRef.current)
+        await appendAIMessage('agent_result', response.answer || response.agentReason || 'AI 需要更多信息。', { response })
         setAgentMessage('AI 需要更多信息，已生成说明。')
         agentRunningRef.current = false
         return
@@ -4010,11 +4372,19 @@ export function App() {
         riskReason: response.riskReason,
         createdAt: new Date().toISOString(),
       }
+      setAgentState('success')
+      await persistStreamingArtifacts(activeAIConversationIdRef.current)
+      await appendAIMessage('command', response.answer || response.agentReason || 'Agent 已给出下一步命令。', { response })
+      if (agentModeRef.current !== 'auto') {
+        agentRunningRef.current = false
+        setAgentMessage(response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。')
+        return
+      }
+      const stepMessage = await appendAIMessage('agent_step', command, { step })
+      step.id = stepMessage.id
       const nextSteps = [step, ...steps].slice(0, 30)
       setAgentSteps(nextSteps)
       agentStepsRef.current = nextSteps
-      setAgentState('success')
-      setAgentFinalResponse(null)
       setAgentMessage(response.answer || response.agentReason || 'Agent 已给出下一步命令')
       if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
         agentRunningRef.current = true
@@ -4542,7 +4912,7 @@ export function App() {
     }
   }
 
-  const executeAICommand = (command: string, riskLevel?: AIRiskLevel) => {
+  const executeAICommand = async (command: string, riskLevel?: AIRiskLevel) => {
     const normalized = stripTerminalControlSequences(command).trim()
     if (!normalized) {
       return
@@ -4556,16 +4926,19 @@ export function App() {
     }
     const goal = resolveAgentGoal(`执行命令并根据结果回答用户：${normalized}`)
     agentGoalRef.current = goal
-    setAgentFinalResponse(null)
+    const lastCommandMessage = [...aiMessagesRef.current].reverse().find((message) => message.kind === 'command' && message.response)
+    const commandResponse = lastCommandMessage?.response
     const step: AIAgentPlanStep = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      id: `step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       command: normalized,
       status: 'pending',
-      explanation: aiAssistantResponse?.answer || aiAssistantResponse?.agentReason || '用户已确认执行 AI 生成命令',
+      explanation: commandResponse?.answer || commandResponse?.agentReason || aiAssistantResponse?.answer || aiAssistantResponse?.agentReason || '用户已确认执行 AI 生成命令',
       riskLevel: normalizedRisk,
-      riskReason: aiAssistantResponse?.riskReason,
+      riskReason: commandResponse?.riskReason || aiAssistantResponse?.riskReason,
       createdAt: new Date().toISOString(),
     }
+    const stepMessage = await appendAIMessage('agent_step', normalized, { step })
+    step.id = stepMessage.id
     const nextSteps = [step, ...agentStepsRef.current].slice(0, 30)
     agentStepsRef.current = nextSteps
     setAgentSteps(nextSteps)
@@ -4578,6 +4951,30 @@ export function App() {
     const next = agentStepsRef.current.map((step) => (step.id === stepId ? { ...step, ...patch } : step))
     agentStepsRef.current = next
     setAgentSteps(next)
+  }
+
+  const replaceAIMessage = (messageId: string, patch: Partial<AIChatMessageDraft>) => {
+    setAiMessages((current) => current.map((message) => (message.id === messageId ? { ...message, ...patch } : message)))
+  }
+
+  const replaceAndPersistAIMessage = (messageId: string, patch: Partial<AIChatMessageDraft>) => {
+    replaceAIMessage(messageId, patch)
+    const conversationId = activeAIConversationIdRef.current
+    if (!conversationId || !messageId.startsWith('msg-')) {
+      return
+    }
+    void updatePersistedAIMessage(conversationId, messageId, {
+      content: patch.content,
+      response: patch.response,
+      step: patch.step,
+    })
+      .then((message) => replaceAIMessage(messageId, message))
+      .catch((error) =>
+        appendLog('warn', 'ui.ai', 'update ai message failed', {
+          messageID: messageId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      )
   }
 
   const finishAgentStep = (stepId: string, sessionId: string, beforeContext: string, timedOut = false, marker = '') => {
@@ -4597,6 +4994,10 @@ export function App() {
       output: output.trim().slice(-8000),
       exitCode,
     })
+    const completedStep = agentStepsRef.current.find((step) => step.id === stepId)
+    if (completedStep) {
+      replaceAndPersistAIMessage(stepId, { content: completedStep.command, step: completedStep })
+    }
     appendLog(timedOut ? 'warn' : 'info', 'ui.agent', timedOut ? 'agent command timed out' : 'agent command completed', {
       stepID: stepId,
       sessionID: sessionId,
@@ -4681,6 +5082,153 @@ export function App() {
     }
     writeCommand(primaryPrediction)
     clearAIPrediction()
+  }
+
+  const renderAIResponseMessage = (message: AIChatMessageDraft, label: string) => {
+    const response = message.response
+    const commands = normalizeAssistCommands(response?.commands)
+    return (
+      <article className={`ai-response-card ai-message-card ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
+        <strong>{label}</strong>
+        {message.content ? <p>{message.content}</p> : null}
+        {response?.agentStatus === 'command' && response.riskLevel ? (
+          <span className={`risk-badge risk-${response.riskLevel}`}>{riskLabel(response.riskLevel)}</span>
+        ) : null}
+        {response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
+        {commands.map((command, index) => {
+          const favorited = isFavoriteCommand(command)
+          return (
+            <div className="command-row compact" key={`${message.id}-${index}-${command}`}>
+              <button className="command-main" type="button" title={`输入命令：${command}`} onClick={() => writeCommand(command)}>
+                {command}
+              </button>
+              <button
+                className={`favorite-command-button ${favorited ? 'active' : ''}`}
+                type="button"
+                title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                onClick={() => toggleFavoriteCommand(command)}
+              >
+                {favorited ? '★' : '☆'}
+              </button>
+              <button className="copy-command-button" type="button" title={`复制命令：${command}`} onClick={() => void copyCommand(command)}>
+                ⧉
+              </button>
+              <button
+                className="execute-command-button"
+                disabled={!activeSession || activeSession.status !== 'connected'}
+                type="button"
+                title={`执行命令：${command}`}
+                onClick={() => void executeAICommand(command, response?.riskLevel)}
+              >
+                ↵
+              </button>
+            </div>
+          )
+        })}
+      </article>
+    )
+  }
+
+  const renderAIMessage = (message: AIChatMessageDraft) => {
+    if (message.kind === 'user') {
+      return (
+        <article className="ai-message-card user-message" key={message.id}>
+          <strong>我</strong>
+          <p>{message.content}</p>
+        </article>
+      )
+    }
+    if (message.kind === 'thinking') {
+      return (
+        <details className="ai-stream-card ai-message-card" key={message.id} open>
+          <summary>thinking</summary>
+          <pre>{message.content || '思考中...'}</pre>
+        </details>
+      )
+    }
+    if (message.kind === 'content') {
+      return (
+        <article className="ai-stream-card ai-message-card" key={message.id}>
+          <strong>实时输出</strong>
+          <pre>{message.content}</pre>
+        </article>
+      )
+    }
+    if (message.kind === 'command') {
+      return <div key={message.id}>{renderAIResponseMessage(message, 'AI 命令')}</div>
+    }
+    if (message.kind === 'agent_result') {
+      return (
+        <article className="ai-response-card agent-final-card ai-message-card" key={message.id}>
+          <strong>执行结论</strong>
+          <p>{message.content}</p>
+          {message.response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
+        </article>
+      )
+    }
+    if (message.kind === 'agent_step') {
+      const step = message.step ? ({ ...message.step, id: message.id } as AIAgentPlanStep) : undefined
+      const liveStep = step ? agentSteps.find((item) => item.id === step.id) : undefined
+      const displayedStep = step && liveStep ? { ...step, ...liveStep } : step
+      const canExecuteStep =
+        displayedStep &&
+        displayedStep.status !== 'executed' &&
+        displayedStep.status !== 'running' &&
+        activeSession &&
+        activeSession.status === 'connected'
+      return (
+        <article className={`agent-step ai-message-card risk-${displayedStep?.riskLevel ?? 'low'}`} key={message.id}>
+          <header>
+            <span>{riskLabel(displayedStep?.riskLevel)}</span>
+            <small>{displayedStep?.status ?? 'pending'}</small>
+          </header>
+          <code>{displayedStep?.command ?? message.content}</code>
+          {displayedStep?.explanation ? <p>{displayedStep.explanation}</p> : null}
+          {displayedStep?.riskReason ? <small>{displayedStep.riskReason}</small> : null}
+          {typeof displayedStep?.exitCode === 'number' ? <small>退出码：{displayedStep.exitCode}</small> : null}
+          {displayedStep?.output ? <pre className="agent-step-output">{displayedStep.output}</pre> : null}
+          {displayedStep ? (
+            <div>
+              <button type="button" title={`复制 AI 命令：${displayedStep.command}`} onClick={() => void copyCommand(displayedStep.command)}>
+                复制
+              </button>
+              <button
+                disabled={!canExecuteStep}
+                type="button"
+                title={`执行 AI 命令：${displayedStep.command}`}
+                onClick={() => {
+                  agentGoalRef.current = resolveAgentGoal(`执行命令并根据结果回答用户：${displayedStep.command}`)
+                  agentRunningRef.current = true
+                  void executeAgentStep(displayedStep.id)
+                }}
+              >
+                执行
+              </button>
+              {displayedStep.status === 'executed' ? (
+                <button type="button" title="让 AI 根据该步骤输出继续判断" onClick={() => void requestAgentNextStep(agentStepsRef.current, activeSessionIdRef.current)}>
+                  继续
+                </button>
+              ) : null}
+              <button type="button" title="跳过这一步" onClick={() => updateAgentStep(displayedStep.id, { status: 'skipped' })}>
+                跳过
+              </button>
+            </div>
+          ) : null}
+        </article>
+      )
+    }
+    if (message.kind === 'error') {
+      return (
+        <article className="ai-message-card ai-error-card" key={message.id}>
+          <strong>错误</strong>
+          <p>{message.content}</p>
+        </article>
+      )
+    }
+    if (message.kind === 'status') {
+      return <p className="hint-text ai-status-line" key={message.id}>{message.content}</p>
+    }
+    return <div key={message.id}>{renderAIResponseMessage(message, 'AI')}</div>
   }
 
   const renderFilePreview = (tab: FilePreviewTab) => {
@@ -5971,7 +6519,7 @@ export function App() {
             </div>
 
             {rightTool === 'ai' ? (
-              <div className="ai-box unified-ai-box">
+              <div className={`ai-box unified-ai-box ${isAIHistoryOpen ? 'history-open' : ''}`}>
                 <div className="ai-unified-input">
                   <textarea
                     placeholder="直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作"
@@ -5996,6 +6544,16 @@ export function App() {
                   </div>
                   <div className="agent-actions">
                     <button
+                      type="button"
+                      title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'}
+                      onClick={() => setIsAIHistoryOpen((current) => !current)}
+                    >
+                      {isAIHistoryOpen ? '收起历史' : '历史对话'}
+                    </button>
+                    <button type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
+                      新建对话
+                    </button>
+                    <button
                       className="primary-button"
                       disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
                       type="button"
@@ -6006,19 +6564,13 @@ export function App() {
                     </button>
                     <button
                       type="button"
-                      title="清空当前 AI 输入和输出"
+                      title="清空当前 AI 输入框"
                       onClick={() => {
                         setAiUnifiedPrompt('')
-                        setAiStreamThinking('')
-                        setAiStreamContent('')
-                        setAiAssistantResponse(null)
                         setAiAssistantError('')
-                        setAgentMessage('')
-                        setAgentFinalResponse(null)
-                        agentGoalRef.current = ''
                       }}
                     >
-                      清空
+                      清空输入
                     </button>
                     <button disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={continueAgentTask}>
                       继续
@@ -6029,128 +6581,47 @@ export function App() {
                   </div>
                 </div>
 
-                {!settings.aiEnabled ? <p className="hint-text">AI 功能已关闭，可在设置中开启。</p> : null}
-                {!isAIProviderConfigured && settings.aiEnabled ? (
-                  <p className="hint-text">请先在设置里填写大模型地址和模型，保存后再使用 AI。</p>
-                ) : null}
-                {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
-                {aiAssistantState === 'loading' ? (
-                  <div className="prediction-loading">
-                    <span aria-hidden="true" className="file-loading-spinner" />
-                    <span>AI 正在实时返回...</span>
-                  </div>
-                ) : null}
-                {aiStreamThinking ? (
-                  <details className="ai-stream-card" open>
-                    <summary>thinking</summary>
-                    <pre>{aiStreamThinking}</pre>
-                  </details>
-                ) : null}
-                {aiStreamContent && !aiAssistantResponse && aiAssistantState === 'loading' ? (
-                  <article className="ai-stream-card">
-                    <strong>实时输出</strong>
-                    <pre>{aiStreamContent}</pre>
-                  </article>
-                ) : null}
-                {aiAssistantResponse ? (
-                  <article className={`ai-response-card ${aiAssistantResponse.agentStatus === 'command' ? `risk-${aiAssistantResponse.riskLevel ?? 'low'}` : ''}`}>
-                    {aiAssistantResponse.answer || aiAssistantResponse.summary ? (
-                      <p>{aiAssistantResponse.answer || aiAssistantResponse.summary}</p>
-                    ) : null}
-                    {aiAssistantResponse.agentStatus === 'command' && aiAssistantResponse.riskLevel ? (
-                      <span className={`risk-badge risk-${aiAssistantResponse.riskLevel}`}>
-                        {riskLabel(aiAssistantResponse.riskLevel)}
-                      </span>
-                    ) : null}
-                    {aiAssistantResponse.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
-                    {normalizeAssistCommands(aiAssistantResponse.commands).map((command, index) => {
-                      const favorited = isFavoriteCommand(command)
-                      return (
-                        <div className="command-row compact" key={`${index}-${command}`}>
-                          <button className="command-main" type="button" title={`输入命令：${command}`} onClick={() => writeCommand(command)}>
-                            {command}
-                          </button>
-                          <button
-                            className={`favorite-command-button ${favorited ? 'active' : ''}`}
-                            type="button"
-                            title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
-                            onClick={() => toggleFavoriteCommand(command)}
-                          >
-                            {favorited ? '★' : '☆'}
-                          </button>
-                          <button
-                            className="copy-command-button"
-                            type="button"
-                            title={`复制命令：${command}`}
-                            onClick={() => void copyCommand(command)}
-                          >
-                            ⧉
-                          </button>
-                          <button
-                            className="execute-command-button"
-                            disabled={!activeSession || activeSession.status !== 'connected'}
-                            type="button"
-                            title={`执行命令：${command}`}
-                            onClick={() => executeAICommand(command, aiAssistantResponse.riskLevel)}
-                          >
-                            ↵
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </article>
-                ) : null}
-
-                {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
-                {agentFinalResponse ? (
-                  <article className="ai-response-card agent-final-card">
-                    <strong>执行结论</strong>
-                    {agentFinalResponse.answer || agentFinalResponse.summary || agentFinalResponse.agentReason ? (
-                      <p>{agentFinalResponse.answer || agentFinalResponse.summary || agentFinalResponse.agentReason}</p>
-                    ) : null}
-                    {agentFinalResponse.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
-                  </article>
-                ) : null}
-                <div className="agent-step-list">
-                  {agentSteps.map((step) => (
-                    <article className={`agent-step risk-${step.riskLevel ?? 'low'}`} key={step.id}>
-                      <header>
-                        <span>{riskLabel(step.riskLevel)}</span>
-                        <small>{step.status}</small>
-                      </header>
-                      <code>{step.command}</code>
-                      {step.explanation ? <p>{step.explanation}</p> : null}
-                      {step.riskReason ? <small>{step.riskReason}</small> : null}
-                      {typeof step.exitCode === 'number' ? <small>退出码：{step.exitCode}</small> : null}
-                      {step.output ? <pre className="agent-step-output">{step.output}</pre> : null}
-                      <div>
-                        <button type="button" title={`复制 AI 命令：${step.command}`} onClick={() => void copyCommand(step.command)}>
-                          复制
-                        </button>
-                        <button
-                          disabled={
-                            step.status === 'executed' ||
-                            step.status === 'running' ||
-                            !activeSession ||
-                            activeSession.status !== 'connected'
-                          }
-                          type="button"
-                          title={`执行 AI 命令：${step.command}`}
-                          onClick={() => {
-                            agentGoalRef.current = resolveAgentGoal(`执行命令并根据结果回答用户：${step.command}`)
-                            setAgentFinalResponse(null)
-                            agentRunningRef.current = true
-                            void executeAgentStep(step.id)
-                          }}
-                        >
-                          执行
-                        </button>
-                        <button type="button" title="跳过这一步" onClick={() => updateAgentStep(step.id, { status: 'skipped' })}>
-                          跳过
+                <div className="ai-conversation-shell">
+                  {isAIHistoryOpen ? (
+                    <aside className="ai-chat-sidebar">
+                      <div className="ai-chat-sidebar-head">
+                        <strong>历史对话</strong>
+                        <button type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
+                          +
                         </button>
                       </div>
-                    </article>
-                  ))}
+                      <div className="ai-chat-list">
+                        {aiConversations.map((conversation) => (
+                          <button
+                            className={conversation.id === activeAIConversationId ? 'active' : ''}
+                            key={conversation.id}
+                            type="button"
+                            title={`切换到 ${conversation.title}`}
+                            onClick={() => void selectAIConversation(conversation.id)}
+                          >
+                            <span>{conversation.title}</span>
+                            <small>{new Date(conversation.updatedAt).toLocaleString()}</small>
+                          </button>
+                        ))}
+                      </div>
+                    </aside>
+                  ) : null}
+                  <div className="ai-message-list" ref={aiMessageListRef}>
+                    {!settings.aiEnabled ? <p className="hint-text">AI 功能已关闭，可在设置中开启。</p> : null}
+                    {!isAIProviderConfigured && settings.aiEnabled ? (
+                      <p className="hint-text">请先在设置里填写大模型地址和模型，保存后再使用 AI。</p>
+                    ) : null}
+                    {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
+                    {aiMessages.length === 0 ? <p className="hint-text">当前对话暂无消息，可以直接输入问题或目标。</p> : null}
+                    {aiMessages.map((message) => renderAIMessage(message))}
+                    {aiAssistantState === 'loading' ? (
+                      <div className="prediction-loading">
+                        <span aria-hidden="true" className="file-loading-spinner" />
+                        <span>AI 正在实时返回，消息会按时间追加...</span>
+                      </div>
+                    ) : null}
+                    {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
+                  </div>
                 </div>
               </div>
             ) : rightTool === 'history' ? (
@@ -6835,6 +7306,21 @@ export function App() {
                         />
                       </label>
                     </div>
+                    <label>
+                      <span>对话上下文消息数</span>
+                      <input
+                        min="1"
+                        max="100"
+                        type="number"
+                        value={settings.aiConversationContextLimit ?? defaultSettings.aiConversationContextLimit}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            aiConversationContextLimit: Number(event.target.value) || 30,
+                          }))
+                        }
+                      />
+                    </label>
                     <label>
                       <span>Agent 命令等待超时（秒）</span>
                       <input
