@@ -13,8 +13,17 @@ bin/
 *.test
 coverage.out
 
+# Database
+*.sqlite3
+*.sqlite
+*.db
+
 # Logs
 *.log
+
+# Environment
+.env
+.env.*
 
 # Local runtime data
 data/
@@ -24,3 +33,9 @@ data/
 Thumbs.db
 .idea/
 .vscode/
+
+# Temporary
+*.tmp
+*.bak
+*.sw?
+*~

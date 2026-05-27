@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/liupengcheng/ai-ssh-core/internal/server"
+	"ai-ssh-core/internal/server"
 )
 
 func main() {
