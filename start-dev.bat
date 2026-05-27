@@ -10,8 +10,7 @@ echo [AI SSH] Starting Go core in a separate log window...
 start "AI SSH Core Logs" cmd /k "cd /d ""%~dp0"" && npm run dev:core"
 
 echo [AI SSH] Starting Tauri desktop without auto-starting another core...
-set AI_SSH_DESKTOP_NO_CORE=1
-npm run tauri:dev -w apps/desktop
+npm run dev:tauri
 
 if errorlevel 1 (
   echo.

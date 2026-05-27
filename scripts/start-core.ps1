@@ -10,17 +10,19 @@ $coreOutDir = Join-Path $repoRoot "apps\core-go\bin"
 $isWindowsPlatform = $IsWindows -or $env:OS -eq "Windows_NT"
 $coreExeName = if ($isWindowsPlatform) { "ai-ssh-core.exe" } else { "ai-ssh-core" }
 $coreExe = Join-Path $coreOutDir $coreExeName
+$dataDir = Join-Path $coreOutDir "data"
 
 New-Item -ItemType Directory -Force -Path $coreOutDir | Out-Null
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 Push-Location $repoRoot
 try {
   if (-not $SkipBuild -or -not (Test-Path $coreExe)) {
     go build -o $coreExe ./apps/core-go/cmd/server
-  }
-
-  if ([string]::IsNullOrWhiteSpace($env:AI_SSH_HOME)) {
-    $env:AI_SSH_HOME = $repoRoot
+    if ($LASTEXITCODE -ne 0) {
+      Write-Error "go build failed with exit code $LASTEXITCODE"
+      exit $LASTEXITCODE
+    }
   }
 
   if (-not [string]::IsNullOrWhiteSpace($WebRoot)) {
@@ -31,6 +33,11 @@ try {
     $env:AI_SSH_WEB_ROOT = (Resolve-Path $webRootPath).Path
   }
 
+  Pop-Location
+  Push-Location $coreOutDir
+  Remove-Item Env:\AI_SSH_HOME -ErrorAction SilentlyContinue
+  Write-Host "AI SSH core working directory: $coreOutDir"
+  Write-Host "AI SSH core data directory: $dataDir"
   & $coreExe
 } finally {
   Pop-Location

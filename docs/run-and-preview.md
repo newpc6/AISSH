@@ -17,7 +17,7 @@
 - 前端对 Go core 健康检查接口的状态展示
 - Tauri 桌面壳启动能力
 - Go core 托管前端 Web，网页访问默认需要登录
-- 桌面客户端启动后会尝试自动拉起内置 Go core，浏览器也可以访问同一服务
+- 打包后的桌面客户端会尝试自动拉起内置 Go core，浏览器也可以访问同一服务；开发调试模式推荐手动运行 `npm run dev:core` 查看后端日志
 - `local-demo` 演示主机的终端输入输出链路
 - 临时 SSH 主机密码认证连接
 - 左侧加号弹窗新增 SSH 连接
@@ -86,7 +86,7 @@ npm run dev:core
 
 - `npm run dev:core` 会先编译 Go core 到固定路径 `apps/core-go/bin/ai-ssh-core.exe`
 - 随后从这个固定路径启动服务，不再使用 `go run` 的临时目录可执行文件
-- 默认会把 `AI_SSH_HOME` 设置为项目根目录，因此会读取项目下的 `data/hosts.json` 和 `data/web-auth.json`
+- 运行时工作目录会切到 `apps/core-go/bin`，并清空本进程的 `AI_SSH_HOME`，因此默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
 
 启动后预期输出类似：
 
@@ -262,36 +262,24 @@ http://127.0.0.1:1420
 
 这个方式用于查看当前桌面壳效果。
 
-### 步骤 1：开发模式先准备 core 可执行文件
+### 步骤 1：启动 Go core 并查看后端日志
 
-Tauri 窗口启动时会尝试自动拉起 Go core。开发模式首次运行前，在项目根目录执行：
-
-```powershell
-npm run build:desktop
-powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1
-```
-
-说明：
-
-- 脚本会编译 `ai-ssh-core.exe`
-- 脚本会把前端 `dist` 复制到 Tauri resources，用于客户端启动后的浏览器 Web 访问
-- 现在 `npm run dev:tauri` 也会先执行 `npm run build:core`，并优先使用 `apps/core-go/bin/ai-ssh-core.exe`
-
-如果你不想让 Tauri 自动启动 core，可以设置：
-
-```powershell
-$env:AI_SSH_DESKTOP_NO_CORE = "1"
-```
-
-然后手动启动 core：
+开发调试时推荐手动启动 Go core，这样后端日志会直接显示在当前终端。在项目根目录执行：
 
 ```powershell
 npm run dev:core
 ```
 
-### 步骤 2：启动 Tauri
+说明：
 
-在项目根目录执行：
+- `npm run dev:core` 会先编译最新 Go core 到固定路径 `apps/core-go/bin/ai-ssh-core.exe`
+- 随后从这个固定路径启动服务，不再使用 `go run` 的临时目录可执行文件
+- 运行时工作目录会切到 `apps/core-go/bin`，并清空本进程的 `AI_SSH_HOME`，因此默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
+- 如果编译时报 `ai-ssh-core.exe` 被占用，说明旧 core 进程还没关，需要先关闭旧终端或结束旧 `ai-ssh-core.exe`
+
+### 步骤 2：启动 Tauri 桌面窗口
+
+另开一个终端，在项目根目录执行：
 
 ```powershell
 npm run dev:tauri
@@ -299,8 +287,22 @@ npm run dev:tauri
 
 说明：
 
-- 这个命令会先启动前端开发服务器
-- 然后由 Tauri 打开桌面窗口
+- `npm run dev:tauri` 现在只启动桌面端，不再编译或自动拉起 Go core
+- 该命令内部会设置 `AI_SSH_DESKTOP_NO_CORE=1`，避免 Tauri 再启动第二个 core
+- 这个命令会先启动前端开发服务器，然后由 Tauri 打开桌面窗口
+
+### 一键双窗口启动
+
+如果想少敲命令，也可以直接双击根目录：
+
+```powershell
+start-dev.bat
+```
+
+说明：
+
+- 它会自动新开一个窗口运行 `npm run dev:core`
+- 当前窗口继续运行 `npm run dev:tauri`
 
 ### 预期效果
 
@@ -448,11 +450,11 @@ cargo --version
 
 日常开发建议：
 
-1. 直接运行 `npm run dev:tauri`
-2. 如果 resources 中的 core 或 Web 资源需要刷新，再运行 `powershell -ExecutionPolicy Bypass -File scripts/prepare-tauri-core.ps1`
-3. 重启 `npm run dev:tauri`
+1. 一个终端运行 `npm run dev:core`，用于编译并启动最新 Go core，同时查看后端日志
+2. 另一个终端运行 `npm run dev:tauri`，只启动 Tauri 桌面窗口
+3. 也可以直接双击 `start-dev.bat` 自动完成上面两步
 
-如果只是想快速看前端页面：
+如果只是想快速看浏览器前端页面：
 
 1. 一个终端运行 `npm run dev:core`
 2. 一个终端运行 `npm run dev:desktop`

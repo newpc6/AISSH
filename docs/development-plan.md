@@ -265,6 +265,8 @@
 82. 终端框选文本后显示“加入 AI”快捷按钮，可把选中文本追加到统一 AI 输入框继续处理
 83. 健康检查能力增加 `ai-stream` / `ai-unified`，前端和 Tauri 调试复用已有 core 时会避免使用不支持统一 AI 和流式 AI 的旧 core
 84. 根目录增加 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri，便于一键调试并查看后端日志
+85. `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core，便于固定查看后端日志
+86. `npm run dev:core` 运行 core 前切换工作目录到 `apps/core-go/bin` 并清空本进程 `AI_SSH_HOME`，默认从 `apps/core-go/bin/data` 读取服务器列表和网页登录配置
 
 ## 6. 工程规则
 
@@ -435,7 +437,7 @@
 - [x] 调试模式下服务器列表优先使用项目根目录 `data/hosts.json`，避免从不同工作目录启动时读到 `%APPDATA%` 或临时目录导致列表看似丢失
 - [x] Go core 的网页登录配置与服务器列表使用同一数据根目录，避免登录配置和主机列表分别落到不同目录
 - [x] Go core 健康检查和运行日志会暴露实际 host store 路径，便于排查连错数据目录
-- [x] `npm run dev:core` 和 `npm run serve:web` 改为先构建并运行固定路径 `apps/core-go/bin/ai-ssh-core.exe`，Tauri 调试也优先使用该固定 core 路径
+- [x] `npm run dev:core` 和 `npm run serve:web` 改为先构建并运行固定路径 `apps/core-go/bin/ai-ssh-core.exe`，开发调试时由 `dev:core` 独立启动 core、`dev:tauri` 独立启动桌面端
 - [x] Go core 健康检查暴露 `ai-assist` / `ai-agent` 能力，Tauri 调试复用已有 core 时会检查能力，避免继续使用没有 `/api/ai/assist` 的旧 core
 - [x] 前端健康检查会检测 `ai-assist` / `ai-agent` 能力，AI 助手和 Agent 错误提示统一显示真实 `/api/ai/assist` 接口，并在 404 时提示可能是旧 core 未重启
 - [x] 右侧 AI 面板合并为统一输入入口，用户不需要先选择助手 / Agent / 解释 / 总结模块，模型根据上下文自动判断意图
@@ -445,6 +447,8 @@
 - [x] 终端选中文本后显示“加入 AI”快捷按钮，点击后把选中文本追加到统一 AI 输入框
 - [x] 健康检查能力增加 `ai-stream` / `ai-unified`，前端和 Tauri 调试复用已有 core 时会避免使用不支持流式 AI 或统一 AI 的旧 core
 - [x] 增加根目录 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri
+- [x] `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core
+- [x] `npm run dev:core` 默认使用 `apps/core-go/bin` 作为 core 工作目录，读取 `apps/core-go/bin/data` 下的服务器列表和网页登录配置
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验
