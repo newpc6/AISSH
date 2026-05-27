@@ -87,6 +87,7 @@ npm run dev:core
 - `npm run dev:core` 会先编译 Go core 到固定路径 `apps/core-go/bin/ai-ssh-core.exe`
 - 随后从这个固定路径启动服务，不再使用 `go run` 的临时目录可执行文件
 - 运行时工作目录会切到 `apps/core-go/bin`，并清空本进程的 `AI_SSH_HOME`，因此默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
+- 脚本会读取或生成 `%APPDATA%\ai-ssh\desktop-token`，并把同一个 token 注入 Go core；Tauri 桌面端也会读取这个 token，因此两窗口调试时仍可自动登录并读取主机列表
 
 启动后预期输出类似：
 
@@ -275,6 +276,7 @@ npm run dev:core
 - `npm run dev:core` 会先编译最新 Go core 到固定路径 `apps/core-go/bin/ai-ssh-core.exe`
 - 随后从这个固定路径启动服务，不再使用 `go run` 的临时目录可执行文件
 - 运行时工作目录会切到 `apps/core-go/bin`，并清空本进程的 `AI_SSH_HOME`，因此默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
+- 脚本会读取或生成 `%APPDATA%\ai-ssh\desktop-token`，并把同一个 token 注入 Go core；Tauri 桌面端也会读取这个 token，因此两窗口调试时仍可自动登录并读取主机列表
 - 如果编译时报 `ai-ssh-core.exe` 被占用，说明旧 core 进程还没关，需要先关闭旧终端或结束旧 `ai-ssh-core.exe`
 
 ### 步骤 2：启动 Tauri 桌面窗口

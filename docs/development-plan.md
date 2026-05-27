@@ -268,6 +268,7 @@
 85. `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core，便于固定查看后端日志
 86. `npm run dev:core` 运行 core 前切换工作目录到 `apps/core-go/bin` 并清空本进程 `AI_SSH_HOME`，默认从 `apps/core-go/bin/data` 读取服务器列表和网页登录配置
 87. Go core 默认以自身可执行文件所在目录作为数据根目录；桌面端、Web 发布包和绿色便携版启动器均不再默认注入 `AI_SSH_HOME`，打包后统一读取程序目录下的 `data`
+88. 开发模式下 `npm run dev:core` 会读取或生成与 Tauri 桌面端一致的 desktop token，避免手动 core 与桌面端 token 不一致导致 `/api/hosts` 被 401 拦截后列表看似为空
 
 ## 6. 工程规则
 
@@ -451,6 +452,7 @@
 - [x] `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core
 - [x] `npm run dev:core` 默认使用 `apps/core-go/bin` 作为 core 工作目录，读取 `apps/core-go/bin/data` 下的服务器列表和网页登录配置
 - [x] Go core 默认使用自身可执行文件所在目录下的 `data` 读写 `hosts.json` 和 `web-auth.json`；桌面端、Web 发布包和绿色便携版启动器不再默认设置 `AI_SSH_HOME`
+- [x] `npm run dev:core` 与 Tauri 桌面端复用同一个 desktop token，并修正前端自动登录失败时误绕过登录导致主机列表 401 后空白的问题
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验

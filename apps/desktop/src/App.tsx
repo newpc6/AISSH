@@ -1527,7 +1527,6 @@ export function App() {
       }
       const status = (await response.json()) as AuthStatusResponse
       const initialized = status.initialized ?? true
-      const shouldBypassDesktopLogin = isTauriRuntime && initialized && status.enabled && !status.desktopLoginRequired
       setAuthInitialized(initialized)
       setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
       setSetupForm((current) => ({
@@ -1539,7 +1538,13 @@ export function App() {
         setAuthRequired(true)
         setAuthState('idle')
         setLoginError('')
-        return
+        return false
+      }
+      if (!status.enabled || status.authenticated) {
+        setAuthRequired(false)
+        setAuthState('success')
+        setLoginError('')
+        return true
       }
       if (status.enabled && !status.authenticated && isTauriRuntime && !status.desktopLoginRequired) {
         const token = desktopTokenRef.current || await invoke<string>('desktop_login_token').catch(() => '')
@@ -1556,23 +1561,23 @@ export function App() {
             setAuthState('success')
             setAuthInitialized(true)
             setLoginError('')
-            return
+            return true
           }
+          const detail = await readResponseErrorDetail(desktopResponse)
+          setLoginError(detail || `桌面自动登录失败：${desktopResponse.status}`)
         }
-      }
-      if (shouldBypassDesktopLogin) {
-        setAuthRequired(false)
-        setAuthState('success')
-        setLoginError('')
-        return
       }
       setAuthRequired(status.enabled && !status.authenticated)
       setAuthState(status.enabled && !status.authenticated ? 'idle' : 'success')
-      setLoginError('')
+      if (!status.enabled || status.authenticated) {
+        setLoginError('')
+      }
+      return !(status.enabled && !status.authenticated)
     } catch (error) {
       setAuthRequired(true)
       setAuthState('error')
       setLoginError(error instanceof Error ? error.message : '认证状态检查失败')
+      return false
     }
   }
 
@@ -1892,16 +1897,9 @@ export function App() {
 
   useEffect(() => {
     const boot = async () => {
-      await checkAuthStatus()
-      const authResponse = await apiFetch('/auth/status')
-      if (authResponse.ok) {
-        const status = (await authResponse.json()) as AuthStatusResponse
-        setAuthInitialized(status.initialized ?? true)
-        setDesktopLoginRequired(Boolean(status.desktopLoginRequired))
-        const canEnterDesktop = isTauriRuntime && (status.initialized ?? true) && status.enabled && !status.desktopLoginRequired
-        if (!status.initialized || (status.enabled && !status.authenticated && !canEnterDesktop)) {
-          return
-        }
+      const canLoadWorkspace = await checkAuthStatus()
+      if (!canLoadWorkspace) {
+        return
       }
       await Promise.all([checkHealth(), loadHosts(), loadHostGroups()])
     }

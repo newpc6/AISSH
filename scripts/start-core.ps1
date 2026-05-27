@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot "desktop-token.ps1")
 $coreOutDir = Join-Path $repoRoot "apps\core-go\bin"
 $isWindowsPlatform = $IsWindows -or $env:OS -eq "Windows_NT"
 $coreExeName = if ($isWindowsPlatform) { "ai-ssh-core.exe" } else { "ai-ssh-core" }
@@ -36,8 +37,11 @@ try {
   Pop-Location
   Push-Location $coreOutDir
   Remove-Item Env:\AI_SSH_HOME -ErrorAction SilentlyContinue
+  $desktopToken = Get-AISSHDesktopToken
+  $env:AI_SSH_DESKTOP_TOKEN = $desktopToken.Token
   Write-Host "AI SSH core working directory: $coreOutDir"
   Write-Host "AI SSH core data directory: $dataDir"
+  Write-Host "AI SSH desktop token: $($desktopToken.Path)"
   & $coreExe
 } finally {
   Pop-Location
