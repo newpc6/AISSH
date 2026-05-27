@@ -2196,6 +2196,7 @@ export function App() {
         if (conversations.length > 0) {
           const first = conversations[0]
           setActiveAIConversationId(first.id)
+          activeAIConversationIdRef.current = first.id
           await loadAIMessages(first.id)
         } else {
           await createAIConversation('新对话')
@@ -4076,6 +4077,7 @@ export function App() {
   const loadAIMessages = async (conversationId: string) => {
     if (!conversationId) {
       setAiMessages([])
+      aiMessagesRef.current = []
       return []
     }
     const response = await apiFetch(`/ai/chats/${conversationId}/messages`)
@@ -4083,14 +4085,19 @@ export function App() {
       throw new Error((await readResponseErrorDetail(response)) || `加载 AI 消息失败：${response.status}`)
     }
     const data = (await response.json()) as AIChatMessagesResponse
-    setAiMessages(data.messages)
-    agentStepsRef.current = data.messages
+    const messages = data.messages.filter((message) => message.conversationId === conversationId)
+    if (activeAIConversationIdRef.current !== conversationId) {
+      return messages
+    }
+    setAiMessages(messages)
+    aiMessagesRef.current = messages
+    agentStepsRef.current = messages
       .map((message) => (message.kind === 'agent_step' && message.step ? ({ ...message.step, id: message.id } as AIAgentPlanStep) : null))
       .filter((step): step is AIAgentPlanStep => Boolean(step))
       .slice(-30)
       .reverse()
     setAgentSteps(agentStepsRef.current)
-    return data.messages
+    return messages
   }
 
   const isConversationEmpty = (conversationId = activeAIConversationIdRef.current) =>
@@ -4117,6 +4124,7 @@ export function App() {
     const conversation = (await response.json()) as AIChatConversation
     setAiConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)])
     setActiveAIConversationId(conversation.id)
+    activeAIConversationIdRef.current = conversation.id
     setAiMessages([])
     aiMessagesRef.current = []
     setAiAssistantResponse(null)
@@ -4168,6 +4176,7 @@ export function App() {
 
   const selectAIConversation = async (conversationId: string) => {
     setActiveAIConversationId(conversationId)
+    activeAIConversationIdRef.current = conversationId
     setAiAssistantResponse(null)
     resetAIStreamBuffers()
     setAgentSteps([])
@@ -4192,10 +4201,15 @@ export function App() {
     )
   }
 
-  const currentConversationContext = () => {
+  const currentConversationContext = (conversationId = activeAIConversationIdRef.current) => {
     const limit = normalizeAppSettings(sessionSettingsRef.current).aiConversationContextLimit
     return aiMessagesRef.current
-      .filter((message) => !message.pending && ['user', 'assistant', 'command', 'agent_step', 'agent_result'].includes(message.kind))
+      .filter(
+        (message) =>
+          message.conversationId === conversationId &&
+          !message.pending &&
+          ['user', 'assistant', 'command', 'agent_step', 'agent_result'].includes(message.kind),
+      )
       .slice(-limit)
       .map((message) => {
         const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
@@ -4222,7 +4236,7 @@ export function App() {
     if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
-    const conversationContext = currentConversationContext()
+    const conversationContext = currentConversationContext(activeAIConversationIdRef.current)
     const payload: AIAssistRequest = {
       baseUrl: normalized.aiBaseUrl,
       apiKey: normalized.aiApiKey,
