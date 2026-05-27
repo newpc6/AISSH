@@ -44,6 +44,35 @@ func TestParseAssistResponseAcceptsAgentJSON(t *testing.T) {
 	}
 }
 
+func TestAssistContentStreamExtractorReturnsReadableAnswerDelta(t *testing.T) {
+	extractor := &assistContentStreamExtractor{}
+	var streamed string
+	for _, chunk := range []string{
+		`{"answer":"第一行`,
+		`\n第二行`,
+		`","agentStatus":"done"}`,
+	} {
+		streamed += extractor.Append(chunk)
+	}
+	if streamed != "第一行\n第二行" {
+		t.Fatalf("expected readable answer stream, got %q", streamed)
+	}
+	if tail := extractor.Finalize(aiAssistResponse{Answer: "第一行\n第二行"}); tail != "" {
+		t.Fatalf("expected no duplicate final tail, got %q", tail)
+	}
+}
+
+func TestAssistContentStreamExtractorFallsBackToFinalAnswer(t *testing.T) {
+	extractor := &assistContentStreamExtractor{}
+	if text := extractor.Append(`{"agentStatus":"command","agentCommand":"which nginx"`); text != "" {
+		t.Fatalf("expected no readable stream before answer-like fields, got %q", text)
+	}
+	tail := extractor.Finalize(aiAssistResponse{Answer: "需要执行 which nginx 检查。"})
+	if tail != "需要执行 which nginx 检查。" {
+		t.Fatalf("expected final answer tail, got %q", tail)
+	}
+}
+
 func TestRedactSensitiveText(t *testing.T) {
 	redacted := redactSensitiveText(`password=secret token: abc123 Authorization: Bearer very-secret`)
 	if redacted == "" || redacted == `password=secret token: abc123 Authorization: Bearer very-secret` {

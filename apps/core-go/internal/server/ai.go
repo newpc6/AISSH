@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type openAIChatRequest struct {
@@ -60,6 +62,12 @@ type aiStreamEvent struct {
 var numberedCommandPattern = regexp.MustCompile(`^\s*(?:[-*]|\d+[.)])\s*`)
 
 type aiStreamWriter func(aiStreamEvent) error
+
+type assistContentStreamExtractor struct {
+	buffer    string
+	displayed string
+	field     string
+}
 
 const (
 	aiDefaultPredictionCount = 3
@@ -507,9 +515,15 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 	}
 
 	started := time.Now()
+	contentExtractor := &assistContentStreamExtractor{}
 	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, body, logger, func(event aiStreamEvent) error {
-		if event.Type == "thinking" || event.Type == "content" {
+		if event.Type == "thinking" {
 			return write(event)
+		}
+		if event.Type == "content" && event.Text != "" {
+			if text := contentExtractor.Append(event.Text); text != "" {
+				return write(aiStreamEvent{Type: "content", Text: text})
+			}
 		}
 		return nil
 	})
@@ -534,6 +548,11 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 		return err
 	}
 	result = finalizeAssistResponse(normalized, result)
+	if text := contentExtractor.Finalize(result); text != "" {
+		if err := write(aiStreamEvent{Type: "content", Text: text}); err != nil {
+			return err
+		}
+	}
 	if logger != nil {
 		logger.info("ai", "stream assist completed", map[string]any{
 			"task":         normalized.Task,
@@ -645,6 +664,131 @@ func streamOpenAIChat(ctx context.Context, endpoint string, apiKey string, model
 		return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
 	}
 	return contentBuilder.String(), reasoningBuilder.String(), finishReason, nil
+}
+
+func (extractor *assistContentStreamExtractor) Append(chunk string) string {
+	extractor.buffer += chunk
+	preview := extractor.preview()
+	if preview == "" || len(preview) <= len(extractor.displayed) {
+		return ""
+	}
+	delta := preview[len(extractor.displayed):]
+	extractor.displayed = preview
+	return delta
+}
+
+func (extractor *assistContentStreamExtractor) Finalize(response aiAssistResponse) string {
+	final := extractor.finalText(response)
+	if final == "" || len(final) <= len(extractor.displayed) || !strings.HasPrefix(final, extractor.displayed) {
+		return ""
+	}
+	delta := final[len(extractor.displayed):]
+	extractor.displayed = final
+	return delta
+}
+
+func (extractor *assistContentStreamExtractor) preview() string {
+	if extractor.field != "" {
+		value, _ := partialJSONStringFieldValue(extractor.buffer, extractor.field)
+		return value
+	}
+	for _, field := range []string{"answer", "summary", "agentReason"} {
+		if value, ok := partialJSONStringFieldValue(extractor.buffer, field); ok {
+			if value != "" {
+				extractor.field = field
+			}
+			return value
+		}
+	}
+	return ""
+}
+
+func (extractor *assistContentStreamExtractor) finalText(response aiAssistResponse) string {
+	switch extractor.field {
+	case "answer":
+		return response.Answer
+	case "summary":
+		return response.Summary
+	case "agentReason":
+		return response.AgentReason
+	default:
+		return firstNonEmpty(response.Answer, response.Summary, response.AgentReason)
+	}
+}
+
+func partialJSONStringFieldValue(content string, field string) (string, bool) {
+	pattern := `"` + field + `"`
+	keyIndex := strings.Index(content, pattern)
+	if keyIndex < 0 {
+		return "", false
+	}
+	rest := content[keyIndex+len(pattern):]
+	colonIndex := strings.Index(rest, ":")
+	if colonIndex < 0 {
+		return "", false
+	}
+	rest = strings.TrimLeft(rest[colonIndex+1:], " \t\r\n")
+	if !strings.HasPrefix(rest, `"`) {
+		return "", false
+	}
+	return decodePartialJSONString(rest[1:]), true
+}
+
+func decodePartialJSONString(value string) string {
+	var builder strings.Builder
+	escaped := false
+	for index := 0; index < len(value); {
+		if escaped {
+			switch value[index] {
+			case '"', '\\', '/':
+				builder.WriteByte(value[index])
+				index++
+			case 'b':
+				builder.WriteByte('\b')
+				index++
+			case 'f':
+				builder.WriteByte('\f')
+				index++
+			case 'n':
+				builder.WriteByte('\n')
+				index++
+			case 'r':
+				builder.WriteByte('\r')
+				index++
+			case 't':
+				builder.WriteByte('\t')
+				index++
+			case 'u':
+				if index+5 <= len(value) {
+					if decoded, err := strconv.ParseInt(value[index+1:index+5], 16, 32); err == nil {
+						builder.WriteRune(rune(decoded))
+						index += 5
+					} else {
+						index++
+					}
+				} else {
+					index = len(value)
+				}
+			default:
+				builder.WriteByte(value[index])
+				index++
+			}
+			escaped = false
+			continue
+		}
+		switch value[index] {
+		case '\\':
+			escaped = true
+			index++
+		case '"':
+			return builder.String()
+		default:
+			r, size := utf8.DecodeRuneInString(value[index:])
+			builder.WriteRune(r)
+			index += size
+		}
+	}
+	return builder.String()
 }
 
 func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error) {

@@ -1251,6 +1251,7 @@ export function App() {
   const [aiConversations, setAiConversations] = useState<AIChatConversation[]>([])
   const [activeAIConversationId, setActiveAIConversationId] = useState('')
   const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
+  const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
   const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
   const [terminalSelectionAction, setTerminalSelectionAction] = useState<TerminalSelectionAction | null>(null)
   const [agentMode, setAgentMode] = useState<AIAgentMode>('review')
@@ -5308,84 +5309,106 @@ export function App() {
     </div>
   )
 
-  const renderAIMessageHeader = (label: string, createdAt: string, extra?: ReactNode) => (
+  const toggleAIMessageCollapsed = (messageId: string) => {
+    setCollapsedAIMessageIds((current) => ({ ...current, [messageId]: !current[messageId] }))
+  }
+
+  const renderAIMessageHeader = (messageId: string, label: string, createdAt: string, extra?: ReactNode) => {
+    const collapsed = Boolean(collapsedAIMessageIds[messageId])
+    return (
     <header className="ai-message-header">
-      <strong>{label}</strong>
-      <time dateTime={createdAt}>{formatFullDateTime(createdAt)}</time>
-      {extra}
+      <button
+        className="ai-message-toggle"
+        type="button"
+        title={collapsed ? '展开消息' : '折叠消息'}
+        onClick={() => toggleAIMessageCollapsed(messageId)}
+      >
+        <span aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+        <strong>{label}</strong>
+      </button>
+      <span className="ai-message-header-meta">
+        <time dateTime={createdAt}>{formatFullDateTime(createdAt)}</time>
+        {extra}
+      </span>
     </header>
   )
+  }
+
+  const isAIMessageCollapsed = (messageId: string) => Boolean(collapsedAIMessageIds[messageId])
 
   const renderAIResponseMessage = (message: AIChatMessageDraft, label: string) => {
     const response = message.response
     const commands = normalizeAssistCommands(response?.commands)
+    const collapsed = isAIMessageCollapsed(message.id)
     return (
       <article className={`ai-response-card ai-message-card ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
-        {renderAIMessageHeader(label, message.createdAt)}
-        {message.content ? renderMarkdown(message.content) : null}
-        {response?.agentStatus === 'command' && response.riskLevel ? (
-          <span className={`risk-badge risk-${response.riskLevel}`}>{riskLabel(response.riskLevel)}</span>
+        {renderAIMessageHeader(message.id, label, message.createdAt)}
+        {!collapsed ? (
+          <>
+            {message.content ? renderMarkdown(message.content) : null}
+            {response?.agentStatus === 'command' && response.riskLevel ? (
+              <span className={`risk-badge risk-${response.riskLevel}`}>{riskLabel(response.riskLevel)}</span>
+            ) : null}
+            {response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
+            {commands.map((command, index) => {
+              const favorited = isFavoriteCommand(command)
+              return (
+                <div className="command-row compact" key={`${message.id}-${index}-${command}`}>
+                  <button className="command-main" type="button" title={`输入命令：${command}`} onClick={() => writeCommand(command)}>
+                    {command}
+                  </button>
+                  <button
+                    className={`favorite-command-button ${favorited ? 'active' : ''}`}
+                    type="button"
+                    title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                    onClick={() => toggleFavoriteCommand(command)}
+                  >
+                    {favorited ? '★' : '☆'}
+                  </button>
+                  <button className="copy-command-button" type="button" title={`复制命令：${command}`} onClick={() => void copyCommand(command)}>
+                    ⧉
+                  </button>
+                  <button
+                    className="execute-command-button"
+                    disabled={!activeSession || activeSession.status !== 'connected'}
+                    type="button"
+                    title={`执行命令：${command}`}
+                    onClick={() => void executeAICommand(command, response?.riskLevel)}
+                  >
+                    ↵
+                  </button>
+                </div>
+              )
+            })}
+          </>
         ) : null}
-        {response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
-        {commands.map((command, index) => {
-          const favorited = isFavoriteCommand(command)
-          return (
-            <div className="command-row compact" key={`${message.id}-${index}-${command}`}>
-              <button className="command-main" type="button" title={`输入命令：${command}`} onClick={() => writeCommand(command)}>
-                {command}
-              </button>
-              <button
-                className={`favorite-command-button ${favorited ? 'active' : ''}`}
-                type="button"
-                title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
-                onClick={() => toggleFavoriteCommand(command)}
-              >
-                {favorited ? '★' : '☆'}
-              </button>
-              <button className="copy-command-button" type="button" title={`复制命令：${command}`} onClick={() => void copyCommand(command)}>
-                ⧉
-              </button>
-              <button
-                className="execute-command-button"
-                disabled={!activeSession || activeSession.status !== 'connected'}
-                type="button"
-                title={`执行命令：${command}`}
-                onClick={() => void executeAICommand(command, response?.riskLevel)}
-              >
-                ↵
-              </button>
-            </div>
-          )
-        })}
       </article>
     )
   }
 
   const renderAIMessage = (message: AIChatMessageDraft) => {
+    const collapsed = isAIMessageCollapsed(message.id)
     if (message.kind === 'user') {
       return (
         <article className="ai-message-card user-message" key={message.id}>
-          {renderAIMessageHeader('我', message.createdAt)}
-          {renderMarkdown(message.content)}
+          {renderAIMessageHeader(message.id, '我', message.createdAt)}
+          {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
     }
     if (message.kind === 'thinking') {
       return (
-        <details className="ai-stream-card ai-message-card" key={message.id} open>
-          <summary>
-            <span>思考</span>
-            <time dateTime={message.createdAt}>{formatFullDateTime(message.createdAt)}</time>
-          </summary>
-          {renderMarkdown(message.content, '思考中...')}
-        </details>
+        <article className="ai-stream-card ai-message-card" key={message.id}>
+          {renderAIMessageHeader(message.id, '思考', message.createdAt)}
+          {!collapsed ? renderMarkdown(message.content, '思考中...') : null}
+        </article>
       )
     }
     if (message.kind === 'content') {
       return (
         <article className="ai-stream-card ai-message-card" key={message.id}>
-          {renderAIMessageHeader('实时输出', message.createdAt)}
-          {renderMarkdown(message.content)}
+          {renderAIMessageHeader(message.id, '实时输出', message.createdAt)}
+          {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
     }
@@ -5395,9 +5418,13 @@ export function App() {
     if (message.kind === 'agent_result') {
       return (
         <article className="ai-response-card agent-final-card ai-message-card" key={message.id}>
-          {renderAIMessageHeader('执行结论', message.createdAt)}
-          {renderMarkdown(message.content)}
-          {message.response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
+          {renderAIMessageHeader(message.id, '执行结论', message.createdAt)}
+          {!collapsed ? (
+            <>
+              {renderMarkdown(message.content)}
+              {message.response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
+            </>
+          ) : null}
         </article>
       )
     }
@@ -5413,53 +5440,58 @@ export function App() {
         activeSession.status === 'connected'
       return (
         <article className={`agent-step ai-message-card risk-${displayedStep?.riskLevel ?? 'low'}`} key={message.id}>
-          <header className="ai-message-header">
-            <span>{riskLabel(displayedStep?.riskLevel)}</span>
-            <time dateTime={message.createdAt}>{formatFullDateTime(message.createdAt)}</time>
-            <small>{displayedStep?.status ?? 'pending'}</small>
-          </header>
-          <code>{displayedStep?.command ?? message.content}</code>
-          {displayedStep?.explanation ? renderMarkdown(displayedStep.explanation) : null}
-          {displayedStep?.riskReason ? <small>{displayedStep.riskReason}</small> : null}
-          {typeof displayedStep?.exitCode === 'number' ? <small>退出码：{displayedStep.exitCode}</small> : null}
-          {displayedStep?.output ? <pre className="agent-step-output">{displayedStep.output}</pre> : null}
-          {displayedStep ? (
-            <div className="agent-step-actions">
-              <button
-                className="ai-icon-button"
-                type="button"
-                title={`复制 AI 命令：${displayedStep.command}`}
-                onClick={() => void copyCommand(displayedStep.command)}
-              >
-                ⧉
-              </button>
-              <button
-                className="ai-icon-button"
-                disabled={!canExecuteStep}
-                type="button"
-                title={`执行 AI 命令：${displayedStep.command}`}
-                onClick={() => {
-                  agentGoalRef.current = resolveAgentGoal(`执行命令并根据结果回答用户：${displayedStep.command}`)
-                  agentRunningRef.current = true
-                  void executeAgentStep(displayedStep.id)
-                }}
-              >
-                ↵
-              </button>
-              {displayedStep.status === 'executed' ? (
-                <button
-                  className="ai-icon-button"
-                  type="button"
-                  title="让 AI 根据该步骤输出继续判断"
-                  onClick={() => void requestAgentNextStep(agentStepsRef.current, activeSessionIdRef.current)}
-                >
-                  ↻
-                </button>
+          {renderAIMessageHeader(
+            message.id,
+            `执行步骤 · ${riskLabel(displayedStep?.riskLevel)}`,
+            message.createdAt,
+            <small>{displayedStep?.status ?? 'pending'}</small>,
+          )}
+          {!collapsed ? (
+            <>
+              <code>{displayedStep?.command ?? message.content}</code>
+              {displayedStep?.explanation ? renderMarkdown(displayedStep.explanation) : null}
+              {displayedStep?.riskReason ? <small>{displayedStep.riskReason}</small> : null}
+              {typeof displayedStep?.exitCode === 'number' ? <small>退出码：{displayedStep.exitCode}</small> : null}
+              {displayedStep?.output ? <pre className="agent-step-output">{displayedStep.output}</pre> : null}
+              {displayedStep ? (
+                <div className="agent-step-actions">
+                  <button
+                    className="ai-icon-button"
+                    type="button"
+                    title={`复制 AI 命令：${displayedStep.command}`}
+                    onClick={() => void copyCommand(displayedStep.command)}
+                  >
+                    ⧉
+                  </button>
+                  <button
+                    className="ai-icon-button"
+                    disabled={!canExecuteStep}
+                    type="button"
+                    title={`执行 AI 命令：${displayedStep.command}`}
+                    onClick={() => {
+                      agentGoalRef.current = resolveAgentGoal(`执行命令并根据结果回答用户：${displayedStep.command}`)
+                      agentRunningRef.current = true
+                      void executeAgentStep(displayedStep.id)
+                    }}
+                  >
+                    ↵
+                  </button>
+                  {displayedStep.status === 'executed' ? (
+                    <button
+                      className="ai-icon-button"
+                      type="button"
+                      title="让 AI 根据该步骤输出继续判断"
+                      onClick={() => void requestAgentNextStep(agentStepsRef.current, activeSessionIdRef.current)}
+                    >
+                      ↻
+                    </button>
+                  ) : null}
+                  <button className="ai-icon-button" type="button" title="跳过这一步" onClick={() => updateAgentStep(displayedStep.id, { status: 'skipped' })}>
+                    ⤼
+                  </button>
+                </div>
               ) : null}
-              <button className="ai-icon-button" type="button" title="跳过这一步" onClick={() => updateAgentStep(displayedStep.id, { status: 'skipped' })}>
-                ⤼
-              </button>
-            </div>
+            </>
           ) : null}
         </article>
       )
@@ -5467,16 +5499,16 @@ export function App() {
     if (message.kind === 'error') {
       return (
         <article className="ai-message-card ai-error-card" key={message.id}>
-          {renderAIMessageHeader('错误', message.createdAt)}
-          {renderMarkdown(message.content)}
+          {renderAIMessageHeader(message.id, '错误', message.createdAt)}
+          {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
     }
     if (message.kind === 'status') {
       return (
         <article className="ai-message-card ai-status-line" key={message.id}>
-          {renderAIMessageHeader('状态', message.createdAt)}
-          {renderMarkdown(message.content)}
+          {renderAIMessageHeader(message.id, '状态', message.createdAt)}
+          {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
     }
@@ -7719,6 +7751,7 @@ export function App() {
                         onChange={(event) => setSettings((current) => ({ ...current, aiSystemPrompt: event.target.value }))}
                         placeholder={DEFAULT_AI_SYSTEM_PROMPT}
                       />
+                      <small>用于统一 AI 对话和 Agent 任务，会随请求发送给 Go core；AI 预测使用后端专用预测提示词。</small>
                     </label>
                   </>
                 ) : null}

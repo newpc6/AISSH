@@ -1497,6 +1497,37 @@ button {
   gap: 8px;
 }
 
+.ai-message-toggle {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: #bfdbfe;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.ai-message-toggle span {
+  width: 12px;
+  color: #8ca0b8;
+  font-size: 11px;
+}
+
+.ai-message-toggle:hover span,
+.ai-message-toggle:hover strong {
+  color: #dbeafe;
+}
+
+.ai-message-header-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .ai-message-header strong,
 .ai-message-header span {
   min-width: 0;
@@ -1505,7 +1536,7 @@ button {
 }
 
 .ai-message-header time,
-.ai-stream-card summary time {
+.ai-message-header-meta time {
   flex: 0 0 auto;
   color: #7f93ad;
   font-size: 11px;
