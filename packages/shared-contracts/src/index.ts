@@ -66,12 +66,14 @@ export interface AppSettings {
   metricsCompactPointLimit: number
   metricsExpandedPointLimit: number
   terminalRetainedLines: number
+  rightServerInfoPanelHeight: number
   aiEnabled: boolean
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string
   aiPredictionEnabled: boolean
   aiPredictionCount: number
+  aiPredictionTriggerDelayMs: number
   aiTerminalContextLimit: number
   aiCommandHistoryLimit: number
   aiSystemPrompt: string

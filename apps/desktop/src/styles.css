@@ -330,8 +330,8 @@ button {
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   padding: 14px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 14px;
+  grid-template-rows: auto 10px minmax(0, 1fr) auto auto;
+  gap: 8px;
   align-content: stretch;
   overflow: hidden;
 }
@@ -1004,7 +1004,7 @@ button {
   position: relative;
   min-height: 0;
   height: var(--prediction-panel-height, 300px);
-  max-height: min(38vh, 360px);
+  max-height: min(48vh, 520px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
@@ -1397,6 +1397,7 @@ button {
 .unified-ai-box {
   min-height: 0;
   display: grid;
+  grid-auto-rows: max-content;
   gap: 8px;
   align-content: start;
 }
@@ -1462,6 +1463,10 @@ button {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ai-response-card .risk-badge:only-child {
+  margin-top: 0;
 }
 
 .compact-stream pre {
@@ -1539,6 +1544,7 @@ button {
 .agent-step-list {
   min-height: 0;
   display: grid;
+  align-content: start;
   gap: 8px;
   overflow: auto;
 }
@@ -1717,6 +1723,35 @@ button {
   padding: 14px;
 }
 
+.info-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.right-panel-resizer {
+  position: relative;
+  min-height: 10px;
+  cursor: row-resize;
+  outline: none;
+}
+
+.right-panel-resizer::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.right-panel-resizer:hover::before,
+.right-panel-resizer:focus::before {
+  background: rgba(96, 165, 250, 0.74);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+}
+
 .info-panel h3,
 .host-modal h3 {
   margin: 6px 0 12px;
@@ -1754,6 +1789,8 @@ button {
 }
 
 .info-panel.collapsed {
+  height: auto !important;
+  overflow: hidden;
   padding-bottom: 10px;
 }
 

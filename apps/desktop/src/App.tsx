@@ -232,6 +232,9 @@ const PREDICTION_PANEL_HEIGHT_STORAGE_KEY = 'ai-ssh-prediction-panel-height'
 const MIN_PREDICTION_PANEL_HEIGHT = 160
 const DEFAULT_PREDICTION_PANEL_HEIGHT = 300
 const MAX_PREDICTION_PANEL_HEIGHT = 520
+const MIN_RIGHT_SERVER_INFO_HEIGHT = 88
+const DEFAULT_RIGHT_SERVER_INFO_HEIGHT = 420
+const MAX_RIGHT_SERVER_INFO_HEIGHT = 720
 const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified']
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
@@ -298,12 +301,14 @@ const defaultSettings: AppSettings = {
   metricsCompactPointLimit: 5,
   metricsExpandedPointLimit: 20,
   terminalRetainedLines: 1000,
+  rightServerInfoPanelHeight: DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
   aiEnabled: true,
   aiBaseUrl: '',
   aiApiKey: '',
   aiModel: '',
   aiPredictionEnabled: true,
   aiPredictionCount: 3,
+  aiPredictionTriggerDelayMs: 1000,
   aiTerminalContextLimit: 5000,
   aiCommandHistoryLimit: 20,
   aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
@@ -663,10 +668,21 @@ function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
       100,
       Number(value.terminalRetainedLines ?? defaultSettings.terminalRetainedLines) || 1000,
     ),
+    rightServerInfoPanelHeight: Math.max(
+      MIN_RIGHT_SERVER_INFO_HEIGHT,
+      Math.min(
+        MAX_RIGHT_SERVER_INFO_HEIGHT,
+        Number(value.rightServerInfoPanelHeight ?? defaultSettings.rightServerInfoPanelHeight) || DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
+      ),
+    ),
     aiEnabled: value.aiEnabled ?? defaultSettings.aiEnabled,
     aiPredictionCount: Math.max(
       1,
       Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3),
+    ),
+    aiPredictionTriggerDelayMs: Math.max(
+      0,
+      Math.min(10000, Number(value.aiPredictionTriggerDelayMs ?? defaultSettings.aiPredictionTriggerDelayMs) || 1000),
     ),
     aiTerminalContextLimit: Math.max(
       500,
@@ -832,6 +848,13 @@ function clampPredictionPanelHeight(value: number) {
     return DEFAULT_PREDICTION_PANEL_HEIGHT
   }
   return Math.min(MAX_PREDICTION_PANEL_HEIGHT, Math.max(MIN_PREDICTION_PANEL_HEIGHT, Math.round(value)))
+}
+
+function clampRightServerInfoPanelHeight(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_RIGHT_SERVER_INFO_HEIGHT
+  }
+  return Math.min(MAX_RIGHT_SERVER_INFO_HEIGHT, Math.max(MIN_RIGHT_SERVER_INFO_HEIGHT, Math.round(value)))
 }
 
 function emptyTerminalCache(): TerminalCache {
@@ -1167,6 +1190,7 @@ export function App() {
   const [agentMessage, setAgentMessage] = useState('')
   const [agentSteps, setAgentSteps] = useState<AIAgentPlanStep[]>([])
   const [pendingAgentStepId, setPendingAgentStepId] = useState('')
+  const [rightServerInfoPanelHeight, setRightServerInfoPanelHeight] = useState(DEFAULT_RIGHT_SERVER_INFO_HEIGHT)
   const [predictionGhostPosition, setPredictionGhostPosition] = useState<PredictionGhostPosition | null>(null)
   const [terminalCaches, setTerminalCaches] = useState<Record<string, TerminalCache>>({})
   const [filePreviewTabs, setFilePreviewTabs] = useState<FilePreviewTab[]>([])
@@ -1213,6 +1237,8 @@ export function App() {
   const pendingAIPredictionTimerRef = useRef<Record<string, number>>({})
   const pendingAIPredictionCommandRef = useRef<Record<string, string>>({})
   const aiPredictionRequestRef = useRef<Record<string, number>>({})
+  const aiPredictionInFlightRef = useRef<Record<string, number>>({})
+  const aiPredictionIgnoredRequestRef = useRef<Record<string, number>>({})
   const aiPredictionCursorRef = useRef<Record<string, number>>({})
   const aiPredictionCycleStartedRef = useRef<Record<string, boolean>>({})
   const agentRunningRef = useRef(false)
@@ -1324,7 +1350,7 @@ export function App() {
       window.clearTimeout(pendingAIPredictionTimerRef.current[sessionId])
       delete pendingAIPredictionTimerRef.current[sessionId]
       delete pendingAIPredictionCommandRef.current[sessionId]
-      aiPredictionRequestRef.current[sessionId] = (aiPredictionRequestRef.current[sessionId] ?? 0) + 1
+      aiPredictionIgnoredRequestRef.current[sessionId] = aiPredictionInFlightRef.current[sessionId] ?? 0
     }
     updateAIPredictionForSession(sessionId, EMPTY_AI_PREDICTION_STATE)
     delete aiPredictionCursorRef.current[sessionId]
@@ -2110,6 +2136,7 @@ export function App() {
   useEffect(() => {
     const normalized = normalizeAppSettings(settings)
     sessionSettingsRef.current = normalized
+    setRightServerInfoPanelHeight(clampRightServerInfoPanelHeight(normalized.rightServerInfoPanelHeight))
   }, [settings])
 
   useEffect(() => {
@@ -2433,6 +2460,7 @@ export function App() {
     const config = {
       settings: normalizeAppSettings(settings),
       leftRailWidth,
+      rightServerInfoPanelHeight,
       hostGroups,
       favoriteCommands: normalizeFavoriteCommands(favoriteCommands),
       exportedAt: new Date().toISOString(),
@@ -2447,12 +2475,22 @@ export function App() {
       return
     }
     try {
-      const parsed = JSON.parse(text) as { settings?: Partial<AppSettings>; leftRailWidth?: number; favoriteCommands?: unknown }
+      const parsed = JSON.parse(text) as {
+        settings?: Partial<AppSettings>
+        leftRailWidth?: number
+        rightServerInfoPanelHeight?: number
+        favoriteCommands?: unknown
+      }
       if (parsed.settings) {
         setSettings((current) => normalizeAppSettings({ ...current, ...parsed.settings }))
       }
       if (typeof parsed.leftRailWidth === 'number') {
         setLeftRailWidth(Math.min(620, Math.max(320, parsed.leftRailWidth)))
+      }
+      if (typeof parsed.rightServerInfoPanelHeight === 'number') {
+        const height = clampRightServerInfoPanelHeight(parsed.rightServerInfoPanelHeight)
+        setRightServerInfoPanelHeight(height)
+        setSettings((current) => normalizeAppSettings({ ...current, rightServerInfoPanelHeight: height }))
       }
       if (Array.isArray((parsed as { hostGroups?: HostGroup[] }).hostGroups)) {
         setHostGroups(normalizeHostGroups((parsed as { hostGroups: HostGroup[] }).hostGroups, hosts))
@@ -2610,9 +2648,11 @@ export function App() {
       metricsCompactPointLimit: normalized.metricsCompactPointLimit,
       metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
       terminalRetainedLines: normalized.terminalRetainedLines,
+      rightServerInfoPanelHeight: normalized.rightServerInfoPanelHeight,
       aiEnabled: normalized.aiEnabled,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
+      aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
@@ -3496,21 +3536,23 @@ export function App() {
       aiEnabledRef.current
     ) {
       pendingAIPredictionCommandRef.current[sessionId] = normalized
-      updateAIPredictionForSession(sessionId, {
-        predictions: [],
-        index: 0,
-        state: 'loading',
-        error: '',
-        thinking: '',
-        streamingContent: '',
-      })
-      scheduleAIPrediction(nextHistory, 900, sessionId)
+      if (!aiPredictionInFlightRef.current[sessionId]) {
+        updateAIPredictionForSession(sessionId, {
+          predictions: [],
+          index: 0,
+          state: 'loading',
+          error: '',
+          thinking: '',
+          streamingContent: '',
+        })
+        scheduleAIPrediction(nextHistory, sessionSettingsRef.current.aiPredictionTriggerDelayMs, sessionId)
+      }
     }
   }
 
   const scheduleAIPrediction = (
     history = commandHistoryRef.current,
-    delayMs = 900,
+    delayMs = defaultSettings.aiPredictionTriggerDelayMs,
     sessionId = activeSessionIdRef.current,
   ) => {
     if (!sessionId) {
@@ -3532,6 +3574,8 @@ export function App() {
 
   const requestAIPredictions = async (history = commandHistoryRef.current, sessionId = activeSessionIdRef.current) => {
     const normalized = normalizeAppSettings(sessionSettingsRef.current)
+    const existingPrediction = getAIPredictionForSession(sessionId)
+    const inFlightRequestID = aiPredictionInFlightRef.current[sessionId]
     const session = sessionsRef.current.find((item) => item.id === sessionId)
     const host = hostsRef.current.find((item) => item.id === session?.hostId)
     if (
@@ -3542,7 +3586,12 @@ export function App() {
       !host ||
       agentWaiterRef.current?.sessionId === sessionId
     ) {
-      clearAIPrediction({ sessionId })
+      if (!inFlightRequestID || existingPrediction.state !== 'loading') {
+        clearAIPrediction({ sessionId })
+      }
+      return
+    }
+    if (inFlightRequestID) {
       return
     }
     if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
@@ -3559,6 +3608,7 @@ export function App() {
 
     const requestID = (aiPredictionRequestRef.current[sessionId] ?? 0) + 1
     aiPredictionRequestRef.current[sessionId] = requestID
+    aiPredictionInFlightRef.current[sessionId] = requestID
     updateAIPredictionForSession(sessionId, {
       predictions: [],
       index: 0,
@@ -3580,6 +3630,11 @@ export function App() {
       hostAddress: host.address,
       username: host.username,
     }
+    const requestCommand = payload.commandHistory[0] ?? ''
+    const hasNewerPredictionCommand = () => {
+      const nextCommand = pendingAIPredictionCommandRef.current[sessionId]
+      return Boolean(nextCommand && nextCommand !== requestCommand)
+    }
 
     let failedStatus: number | undefined
     let failedDetail = '这是调用 Go core 的 /api/ai/predict 接口失败。通常表示 Go core 调用大模型 provider 失败、provider 返回内容无法解析，或模型没有返回有效 commands。可在“工具 -> 日志”里查看 source=ai 的详细响应片段。'
@@ -3599,7 +3654,7 @@ export function App() {
       }
       let commands: string[] = []
       await readSSEStream(response, (event) => {
-        if (aiPredictionRequestRef.current[sessionId] !== requestID) {
+        if (aiPredictionIgnoredRequestRef.current[sessionId] === requestID) {
           return
         }
         if (event.type === 'thinking' && event.text) {
@@ -3621,12 +3676,15 @@ export function App() {
           failedDetail = event.error || failedDetail
         }
       })
-      if (aiPredictionRequestRef.current[sessionId] !== requestID) {
+      if (aiPredictionIgnoredRequestRef.current[sessionId] === requestID) {
         return
       }
       if (commands.length === 0) {
         failedDetail = failedDetail || 'Go core 流式预测结束后没有返回可执行命令。'
         throw new Error('AI 返回的预测命令无效，已过滤结构化残片')
+      }
+      if (hasNewerPredictionCommand()) {
+        return
       }
       aiPredictionCursorRef.current[sessionId] = 0
       aiPredictionCycleStartedRef.current[sessionId] = false
@@ -3637,13 +3695,18 @@ export function App() {
         error: '',
         streamingContent: '',
       })
-      delete pendingAIPredictionCommandRef.current[sessionId]
+      if (pendingAIPredictionCommandRef.current[sessionId] === requestCommand) {
+        delete pendingAIPredictionCommandRef.current[sessionId]
+      }
       clearErrorForRequest(AI_PREDICT_STREAM_API_PATH, 'POST')
       if (activeSessionIdRef.current === sessionId) {
         schedulePredictionGhostPositionUpdate()
       }
     } catch (error) {
-      if (aiPredictionRequestRef.current[sessionId] !== requestID) {
+      if (aiPredictionIgnoredRequestRef.current[sessionId] === requestID) {
+        return
+      }
+      if (hasNewerPredictionCommand()) {
         return
       }
       updateAIPredictionForSession(sessionId, {
@@ -3662,6 +3725,9 @@ export function App() {
         terminalContextChars: payload.terminalContext.length,
         commandHistoryCount: payload.commandHistory.length,
       })
+      if (pendingAIPredictionCommandRef.current[sessionId] === requestCommand) {
+        delete pendingAIPredictionCommandRef.current[sessionId]
+      }
       setErrorMessage(error instanceof Error ? error.message : 'AI 预测失败', {
         title: 'AI 预测请求失败',
         method: 'POST',
@@ -3670,6 +3736,23 @@ export function App() {
         status: failedStatus,
         detail: failedDetail,
       })
+    } finally {
+      if (aiPredictionInFlightRef.current[sessionId] === requestID) {
+        delete aiPredictionInFlightRef.current[sessionId]
+        if (aiPredictionIgnoredRequestRef.current[sessionId] === requestID) {
+          delete aiPredictionIgnoredRequestRef.current[sessionId]
+        }
+        const nextCommand = pendingAIPredictionCommandRef.current[sessionId]
+        if (
+          nextCommand &&
+          nextCommand !== requestCommand &&
+          normalized.aiEnabled &&
+          normalized.aiPredictionEnabled &&
+          agentWaiterRef.current?.sessionId !== sessionId
+        ) {
+          scheduleAIPrediction(commandHistoryRef.current, normalized.aiPredictionTriggerDelayMs, sessionId)
+        }
+      }
     }
   }
 
@@ -3811,6 +3894,9 @@ export function App() {
       }
       return
     }
+    if (response.agentStatus !== 'command') {
+      return
+    }
     const riskLevel = response.riskLevel || classifyCommandRisk(command)
     const step: AIAgentPlanStep = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -3864,6 +3950,7 @@ export function App() {
           : '这是通过 Go core 调用大模型的统一 AI 接口失败，可在“工具 -> 日志”搜索 source=ai 查看详情。'
       setAiAssistantError(message)
       setAiAssistantState('error')
+      setAiStreamContent('')
       setErrorMessage(message, {
         title: 'AI 请求失败',
         method: 'POST',
@@ -4065,7 +4152,7 @@ export function App() {
         queueSessionInput(activeSession.id, '\r')
         return
       }
-      if (!isEnter) {
+      if (!isEnter && data !== '\u0003') {
         clearAIPrediction()
       }
       observeTerminalInput(activeSession.id, data)
@@ -4741,6 +4828,32 @@ export function App() {
     window.addEventListener('pointerup', handlePointerUp)
   }
 
+  const startRightToolResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = rightServerInfoPanelHeight
+    let nextHeight = startHeight
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      nextHeight = clampRightServerInfoPanelHeight(startHeight + moveEvent.clientY - startY)
+      setRightServerInfoPanelHeight(nextHeight)
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      const height = clampRightServerInfoPanelHeight(nextHeight)
+      setSettings((current) => normalizeAppSettings({ ...current, rightServerInfoPanelHeight: height }))
+      window.localStorage.setItem(
+        'ai-ssh-settings',
+        JSON.stringify(normalizeAppSettings({ ...sessionSettingsRef.current, rightServerInfoPanelHeight: height })),
+      )
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
+
   const renderMetricChart = (key: MetricChartKey, label: string, compact = true) => {
     const width = compact ? 220 : 760
     const height = compact ? 74 : 260
@@ -5078,6 +5191,7 @@ export function App() {
         className="workbench-grid"
         style={{
           '--left-rail-width': `${leftRailWidth}px`,
+          '--right-server-info-height': `${rightServerInfoPanelHeight}px`,
           gridTemplateColumns: `${leftRailWidth}px minmax(560px, 1fr) 440px`,
         } as React.CSSProperties}
       >
@@ -5728,7 +5842,10 @@ export function App() {
         </main>
 
         <aside className="right-rail">
-          <section className={`info-panel ${isServerInfoCollapsed ? 'collapsed' : ''}`}>
+          <section
+            className={`info-panel ${isServerInfoCollapsed ? 'collapsed' : ''}`}
+            style={!isServerInfoCollapsed ? { height: rightServerInfoPanelHeight } : undefined}
+          >
             <div className="info-panel-header">
               <div>
                 <p className="section-label">当前服务器</p>
@@ -5797,6 +5914,15 @@ export function App() {
             ) : null}
           </section>
 
+          <div
+            aria-label="拖动调整右侧命令区域高度"
+            className="right-panel-resizer"
+            role="separator"
+            tabIndex={0}
+            title="拖动调整右侧当前服务器和命令区域的高度"
+            onPointerDown={startRightToolResize}
+          />
+
           <section className="tool-panel">
             <div className="tool-tabs">
               <button
@@ -5832,6 +5958,12 @@ export function App() {
                     placeholder="直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作"
                     value={aiUnifiedPrompt}
                     onChange={(event) => setAiUnifiedPrompt(event.target.value)}
+                    onKeyDown={(event) => {
+                      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                        event.preventDefault()
+                        void runUnifiedAI()
+                      }
+                    }}
                   />
                   <div className="agent-mode-row">
                     <label title="AI 给出命令后需要人工点击执行">
@@ -5893,18 +6025,18 @@ export function App() {
                     <pre>{aiStreamThinking}</pre>
                   </details>
                 ) : null}
-                {aiStreamContent && !aiAssistantResponse ? (
+                {aiStreamContent && !aiAssistantResponse && aiAssistantState === 'loading' ? (
                   <article className="ai-stream-card">
                     <strong>实时输出</strong>
                     <pre>{aiStreamContent}</pre>
                   </article>
                 ) : null}
                 {aiAssistantResponse ? (
-                  <article className={`ai-response-card risk-${aiAssistantResponse.riskLevel ?? 'low'}`}>
+                  <article className={`ai-response-card ${aiAssistantResponse.agentStatus === 'command' ? `risk-${aiAssistantResponse.riskLevel ?? 'low'}` : ''}`}>
                     {aiAssistantResponse.answer || aiAssistantResponse.summary ? (
                       <p>{aiAssistantResponse.answer || aiAssistantResponse.summary}</p>
                     ) : null}
-                    {aiAssistantResponse.riskLevel ? (
+                    {aiAssistantResponse.agentStatus === 'command' && aiAssistantResponse.riskLevel ? (
                       <span className={`risk-badge risk-${aiAssistantResponse.riskLevel}`}>
                         {riskLabel(aiAssistantResponse.riskLevel)}
                       </span>
@@ -6482,20 +6614,37 @@ export function App() {
 
               <div className="settings-content">
                 {settingsSection === 'general' ? (
-                  <label>
-                    <span>每个 SSH 标签保留终端行数</span>
-                    <input
-                      min="100"
-                      type="number"
-                      value={settings.terminalRetainedLines}
-                      onChange={(event) =>
-                        setSettings((current) => ({
-                          ...current,
-                          terminalRetainedLines: Number(event.target.value) || 1000,
-                        }))
-                      }
-                    />
-                  </label>
+                  <>
+                    <label>
+                      <span>每个 SSH 标签保留终端行数</span>
+                      <input
+                        min="100"
+                        type="number"
+                        value={settings.terminalRetainedLines}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            terminalRetainedLines: Number(event.target.value) || 1000,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>右侧服务器信息默认高度（像素）</span>
+                      <input
+                        min={MIN_RIGHT_SERVER_INFO_HEIGHT}
+                        max={MAX_RIGHT_SERVER_INFO_HEIGHT}
+                        type="number"
+                        value={settings.rightServerInfoPanelHeight ?? defaultSettings.rightServerInfoPanelHeight}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            rightServerInfoPanelHeight: Number(event.target.value) || DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
+                          }))
+                        }
+                      />
+                    </label>
+                  </>
                 ) : null}
 
                 {settingsSection === 'security' ? (
@@ -6665,6 +6814,22 @@ export function App() {
                           setSettings((current) => ({
                             ...current,
                             agentCommandTimeoutSeconds: Number(event.target.value) || 120,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>预测触发延迟（毫秒）</span>
+                      <input
+                        min="0"
+                        max="10000"
+                        step="100"
+                        type="number"
+                        value={settings.aiPredictionTriggerDelayMs ?? defaultSettings.aiPredictionTriggerDelayMs}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            aiPredictionTriggerDelayMs: Number(event.target.value) || 1000,
                           }))
                         }
                       />
