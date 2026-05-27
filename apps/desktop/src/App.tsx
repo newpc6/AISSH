@@ -4354,6 +4354,9 @@ export function App() {
   }
 
   const runUnifiedAI = async () => {
+    if (aiAssistantState === 'loading' || !settings.aiEnabled) {
+      return
+    }
     const previousMessages = [...aiMessagesRef.current]
     const prompt = aiUnifiedPrompt.trim()
     const selectedText = window.getSelection()?.toString().trim() ?? ''
@@ -4374,6 +4377,7 @@ export function App() {
     setAiAssistantResponse(null)
     resetAIStreamBuffers()
     setAgentMessage('')
+    setAiUnifiedPrompt('')
     await appendAIMessage('user', requestPrompt, {}, conversationId)
     if (previousMessages.filter((message) => message.kind === 'user').length === 0) {
       void updateAIConversationTitle(conversationId, requestPrompt)
@@ -6742,7 +6746,10 @@ export function App() {
                     value={aiUnifiedPrompt}
                     onChange={(event) => setAiUnifiedPrompt(event.target.value)}
                     onKeyDown={(event) => {
-                      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                      if (event.nativeEvent.isComposing) {
+                        return
+                      }
+                      if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
                         void runUnifiedAI()
                       }
