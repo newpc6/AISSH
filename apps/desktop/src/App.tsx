@@ -1188,6 +1188,7 @@ export function App() {
   const [agentMode, setAgentMode] = useState<AIAgentMode>('review')
   const [agentState, setAgentState] = useState<LoadState>('idle')
   const [agentMessage, setAgentMessage] = useState('')
+  const [agentFinalResponse, setAgentFinalResponse] = useState<AIAssistResponse | null>(null)
   const [agentSteps, setAgentSteps] = useState<AIAgentPlanStep[]>([])
   const [pendingAgentStepId, setPendingAgentStepId] = useState('')
   const [rightServerInfoPanelHeight, setRightServerInfoPanelHeight] = useState(DEFAULT_RIGHT_SERVER_INFO_HEIGHT)
@@ -1242,6 +1243,7 @@ export function App() {
   const aiPredictionCursorRef = useRef<Record<string, number>>({})
   const aiPredictionCycleStartedRef = useRef<Record<string, boolean>>({})
   const agentRunningRef = useRef(false)
+  const agentGoalRef = useRef('')
   const agentStepsRef = useRef<AIAgentPlanStep[]>([])
   const agentModeRef = useRef<AIAgentMode>('review')
   const agentWaiterRef = useRef<AgentCommandWaiter | null>(null)
@@ -3771,6 +3773,16 @@ export function App() {
     }
   }
 
+  const resolveAgentGoal = (fallback = '') => {
+    return (
+      agentGoalRef.current.trim() ||
+      aiUnifiedPrompt.trim() ||
+      aiAssistantResponse?.answer?.trim() ||
+      aiAssistantResponse?.summary?.trim() ||
+      fallback.trim()
+    )
+  }
+
   const requestAIAssist = async (task: AIAssistTask, prompt: string, options: Partial<AIAssistRequest> = {}) => {
     const { normalized, session, host, terminalContext, commandHistory } = buildAIContextPayload()
     if (!normalized.aiEnabled) {
@@ -3883,14 +3895,14 @@ export function App() {
     if (response.agentStatus === 'done') {
       agentRunningRef.current = false
       setAgentState('success')
-      setAgentMessage(response.answer || response.agentReason || 'AI 判断任务已完成')
+      setAgentMessage('')
       return
     }
     if (response.agentStatus === 'question' || !command) {
       if (response.agentStatus === 'question') {
         agentRunningRef.current = false
         setAgentState('idle')
-        setAgentMessage(response.answer || response.agentReason || 'AI 需要更多信息')
+        setAgentMessage('')
       }
       return
     }
@@ -3911,6 +3923,7 @@ export function App() {
     setAgentSteps(nextSteps)
     agentStepsRef.current = nextSteps
     setAgentState('success')
+    setAgentFinalResponse(null)
     setAgentMessage(response.answer || response.agentReason || 'AI 已给出下一步命令')
     if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
       agentRunningRef.current = true
@@ -3925,6 +3938,7 @@ export function App() {
   const runUnifiedAI = async () => {
     const prompt = aiUnifiedPrompt.trim()
     const selectedText = window.getSelection()?.toString().trim() ?? ''
+    const requestPrompt = prompt || selectedText
     if (!prompt && !selectedText) {
       setAiAssistantError('请输入问题、目标，或先选中终端文本')
       return
@@ -3935,9 +3949,11 @@ export function App() {
     setAiStreamThinking('')
     setAiStreamContent('')
     setAgentMessage('')
+    setAgentFinalResponse(null)
+    agentGoalRef.current = requestPrompt
     agentRunningRef.current = agentModeRef.current === 'auto'
     try {
-      const response = await requestAIUnifiedStream(prompt || selectedText)
+      const response = await requestAIUnifiedStream(requestPrompt)
       response.commands = normalizeAssistCommands(response.commands)
       setAiAssistantResponse(response)
       setAiAssistantState('success')
@@ -3962,7 +3978,7 @@ export function App() {
   }
 
   const requestAgentNextStep = async (steps = agentStepsRef.current) => {
-    const goal = aiUnifiedPrompt.trim() || aiAssistantResponse?.answer?.trim() || aiAssistantResponse?.summary?.trim()
+    const goal = resolveAgentGoal()
     if (!goal) {
       setAgentMessage('请先输入任务目标，或先让 AI 生成一个命令')
       agentRunningRef.current = false
@@ -3973,6 +3989,7 @@ export function App() {
       return
     }
     setAgentState('loading')
+    setAgentFinalResponse(null)
     setAgentMessage('正在让 Agent 规划下一步...')
     try {
       const response = await requestAIAssist('agent_next', goal, {
@@ -3982,13 +3999,15 @@ export function App() {
       })
       if (response.agentStatus === 'done') {
         setAgentState('success')
-        setAgentMessage(response.answer || response.agentReason || 'Agent 判断任务已完成')
+        setAgentFinalResponse(response)
+        setAgentMessage('已根据命令输出生成执行结论。')
         agentRunningRef.current = false
         return
       }
       if (response.agentStatus === 'question' || !response.agentCommand) {
         setAgentState('idle')
-        setAgentMessage(response.answer || response.agentReason || 'Agent 需要更多信息')
+        setAgentFinalResponse(response)
+        setAgentMessage('AI 需要更多信息，已生成说明。')
         agentRunningRef.current = false
         return
       }
@@ -4007,6 +4026,7 @@ export function App() {
       setAgentSteps(nextSteps)
       agentStepsRef.current = nextSteps
       setAgentState('success')
+      setAgentFinalResponse(null)
       setAgentMessage(response.answer || response.agentReason || 'Agent 已给出下一步命令')
       if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
         agentRunningRef.current = true
@@ -4536,6 +4556,9 @@ export function App() {
 
   const executeAICommand = (command: string, riskLevel?: AIRiskLevel) => {
     const normalized = stripTerminalControlSequences(command).trim()
+    if (!normalized) {
+      return
+    }
     const normalizedRisk = riskLevel || classifyCommandRisk(normalized)
     if (normalizedRisk === 'high') {
       const confirmed = window.confirm(`AI 生成的命令风险较高，确认执行吗？\n\n${normalized}`)
@@ -4543,6 +4566,9 @@ export function App() {
         return
       }
     }
+    const goal = resolveAgentGoal(`执行命令并根据结果回答用户：${normalized}`)
+    agentGoalRef.current = goal
+    setAgentFinalResponse(null)
     const step: AIAgentPlanStep = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       command: normalized,
@@ -4576,7 +4602,8 @@ export function App() {
     }
     const exitCode = marker ? extractAgentExitCode(rawOutput, marker) : undefined
     const output = marker ? stripAgentMarker(rawOutput, marker) : rawOutput
-    const failed = timedOut || (exitCode !== undefined && exitCode !== 0)
+    const exitedWithError = exitCode !== undefined && exitCode !== 0
+    const failed = timedOut || exitedWithError
     updateAgentStep(stepId, {
       status: failed ? 'failed' : 'executed',
       output: output.trim().slice(-8000),
@@ -4589,18 +4616,22 @@ export function App() {
       exitCode,
       timedOut,
     })
-    if (failed) {
+    if (timedOut) {
       agentRunningRef.current = false
       setAgentState('idle')
-      setAgentMessage(timedOut ? '命令等待超时，Agent 已暂停。请确认终端状态后点击继续。' : `命令退出码 ${exitCode}，Agent 已暂停。请确认输出后点击继续。`)
+      setAgentMessage('命令等待超时，Agent 已暂停。请确认终端状态后点击继续。')
       return
     }
     if (agentRunningRef.current) {
-      setAgentMessage('命令已完成，正在规划下一步...')
+      setAgentMessage(
+        exitedWithError
+          ? `命令退出码 ${exitCode}，正在让 AI 根据输出判断结论或下一步...`
+          : '命令已完成，正在规划下一步...',
+      )
       void requestAgentNextStep(agentStepsRef.current)
     } else {
       setAgentState('success')
-      setAgentMessage('命令已完成')
+      setAgentMessage(exitedWithError ? `命令已完成，退出码 ${exitCode}` : '命令已完成')
     }
   }
 
@@ -5995,6 +6026,8 @@ export function App() {
                         setAiAssistantResponse(null)
                         setAiAssistantError('')
                         setAgentMessage('')
+                        setAgentFinalResponse(null)
+                        agentGoalRef.current = ''
                       }}
                     >
                       清空
@@ -6081,6 +6114,15 @@ export function App() {
                 ) : null}
 
                 {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
+                {agentFinalResponse ? (
+                  <article className="ai-response-card agent-final-card">
+                    <strong>执行结论</strong>
+                    {agentFinalResponse.answer || agentFinalResponse.summary || agentFinalResponse.agentReason ? (
+                      <p>{agentFinalResponse.answer || agentFinalResponse.summary || agentFinalResponse.agentReason}</p>
+                    ) : null}
+                    {agentFinalResponse.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
+                  </article>
+                ) : null}
                 <div className="agent-step-list">
                   {agentSteps.map((step) => (
                     <article className={`agent-step risk-${step.riskLevel ?? 'low'}`} key={step.id}>
@@ -6107,6 +6149,8 @@ export function App() {
                           type="button"
                           title={`执行 AI 命令：${step.command}`}
                           onClick={() => {
+                            agentGoalRef.current = resolveAgentGoal(`执行命令并根据结果回答用户：${step.command}`)
+                            setAgentFinalResponse(null)
                             agentRunningRef.current = true
                             void executeAgentStep(step.id)
                           }}

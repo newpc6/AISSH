@@ -764,7 +764,7 @@ func buildAssistSystemPrompt(task string, customPrompt string) string {
 	case "summarize_logs":
 		return base + `任务是总结日志。返回 {"answer":"总结","summary":"一句话结论","warnings":["异常点"],"commands":["可选排查命令"]}。`
 	case "agent_next":
-		return base + `任务是驱动终端完成用户目标。每次只给一个下一步命令，或者判断目标已完成，或者提出需要用户补充的问题。不要输出交互式编辑器命令，不要输出需要长时间阻塞的命令。优先用可验证、可回滚、保守的命令推进。返回 {"agentStatus":"command|done|question","agentCommand":"下一步命令","agentReason":"为什么执行这一步","answer":"给用户看的说明","riskLevel":"low|medium|high","riskReason":"风险原因","warnings":["注意事项"]}。安装、删除、重启、改配置、开放端口、sudo、rm、chmod 777、curl|sh、dd、mkfs 等必须标 high。`
+		return base + `任务是驱动终端完成用户目标。每次只给一个下一步命令，或者判断目标已完成，或者提出需要用户补充的问题。必须优先阅读 Agent 已执行步骤 JSON 中的 output 和 exitCode；如果最后一步已经足以回答目标，例如查询命令返回路径、版本号、服务状态、明确的不存在信息或退出码已经说明结果，必须返回 agentStatus:"done"，在 answer 中直接给出结论和依据，不要继续生成无必要命令。不要输出交互式编辑器命令，不要输出需要长时间阻塞的命令。优先用可验证、可回滚、保守的命令推进。返回 {"agentStatus":"command|done|question","agentCommand":"下一步命令","agentReason":"为什么执行这一步","answer":"给用户看的说明","riskLevel":"low|medium|high","riskReason":"风险原因","warnings":["注意事项"]}。安装、删除、重启、改配置、开放端口、sudo、rm、chmod 777、curl|sh、dd、mkfs 等必须标 high。`
 	default:
 		return base + `任务是围绕当前 SSH 会话做运维问答。返回 {"answer":"回答","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"原因"}。`
 	}

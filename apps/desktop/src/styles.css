@@ -1458,6 +1458,16 @@ button {
   font-size: 12px;
 }
 
+.agent-final-card {
+  border-color: rgba(45, 212, 191, 0.22);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.agent-final-card strong {
+  color: #99f6e4;
+  font-size: 12px;
+}
+
 .ai-stream-card pre {
   max-height: 150px;
   overflow: auto;
