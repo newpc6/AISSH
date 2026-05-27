@@ -173,7 +173,6 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
     let bind_host = std::env::var("AI_SSH_BIND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     command
         .current_dir(&core_dir)
-        .env_remove("AI_SSH_HOME")
         .env("AI_SSH_BIND_HOST", bind_host)
         .env(
             "AI_SSH_DESKTOP_TOKEN",

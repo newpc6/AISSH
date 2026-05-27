@@ -86,7 +86,7 @@ npm run dev:core
 
 - `npm run dev:core` 会先编译 Go core 到固定路径 `apps/core-go/bin/ai-ssh-core.exe`
 - 随后从这个固定路径启动服务，不再使用 `go run` 的临时目录可执行文件
-- 运行时工作目录会切到 `apps/core-go/bin`，并清空本进程的 `AI_SSH_HOME`，因此默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
+- 运行时工作目录会切到 `apps/core-go/bin`，默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
 - 脚本会读取或生成 `%APPDATA%\ai-ssh\desktop-token`，并把同一个 token 注入 Go core；Tauri 桌面端也会读取这个 token，因此两窗口调试时仍可自动登录并读取主机列表
 
 启动后预期输出类似：
@@ -180,8 +180,8 @@ http://127.0.0.1:1420
 
 - 当前服务器基础配置默认保存在 Go core 可执行文件所在目录下的 `data/hosts.json`
 - 调试模式下默认路径是 `apps/core-go/bin/data/hosts.json`；Web 发布包默认路径是 `release/web/data/hosts.json`；绿色便携桌面版默认路径是 `release/portable/data/hosts.json`
-- 如果需要指定程序数据目录，可以在启动 Go core 前显式设置 `AI_SSH_HOME`，此时默认配置路径为 `%AI_SSH_HOME%\data\hosts.json`
-- 如果需要精确指定配置文件，可以设置 `AI_SSH_HOSTS_PATH`；它的优先级高于 `AI_SSH_HOME`
+- 如果需要精确指定服务器列表配置文件，可以设置 `AI_SSH_HOSTS_PATH`
+- 如果需要精确指定网页登录配置文件，可以设置 `AI_SSH_WEB_AUTH_PATH`
 - 密码和 SSH Key 默认会写入操作系统安全存储，不会明文写入本地 `hosts.json`
 - 普通导出不会携带密码和 SSH Key；选择“导出服务器列表（含加密凭据）”时，会生成一个带 `exportKey` 的加密 JSON，导入到其他电脑后会解密并写入目标电脑的系统安全存储
 - SSH Key 会分片写入系统安全存储，以兼容较长私钥内容
@@ -275,7 +275,7 @@ npm run dev:core
 
 - `npm run dev:core` 会先编译最新 Go core 到固定路径 `apps/core-go/bin/ai-ssh-core.exe`
 - 随后从这个固定路径启动服务，不再使用 `go run` 的临时目录可执行文件
-- 运行时工作目录会切到 `apps/core-go/bin`，并清空本进程的 `AI_SSH_HOME`，因此默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
+- 运行时工作目录会切到 `apps/core-go/bin`，默认读取 `apps/core-go/bin/data/hosts.json` 和 `apps/core-go/bin/data/web-auth.json`
 - 脚本会读取或生成 `%APPDATA%\ai-ssh\desktop-token`，并把同一个 token 注入 Go core；Tauri 桌面端也会读取这个 token，因此两窗口调试时仍可自动登录并读取主机列表
 - 如果编译时报 `ai-ssh-core.exe` 被占用，说明旧 core 进程还没关，需要先关闭旧终端或结束旧 `ai-ssh-core.exe`
 
@@ -367,7 +367,8 @@ apps/core-go/bin/ai-ssh-core.exe
 - `AI_SSH_WEB_USER`：网页登录用户名，默认 `admin`
 - `AI_SSH_WEB_PASSWORD`：网页登录密码；未设置时会自动生成并保存到 `data/web-auth.json`
 - `AI_SSH_WEB_AUTH=0`：关闭网页登录认证，仅限本机临时调试使用
-- `AI_SSH_HOME`：高级覆盖数据根目录；默认不需要设置，未设置时使用 Go core 可执行文件所在目录下的 `data/hosts.json` 和 `data/web-auth.json`
+- `AI_SSH_HOSTS_PATH`：精确指定服务器列表配置文件路径，通常不需要设置
+- `AI_SSH_WEB_AUTH_PATH`：精确指定网页登录配置文件路径，通常不需要设置
 
 ## 8. 构建检查
 

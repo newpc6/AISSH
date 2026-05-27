@@ -356,7 +356,7 @@
 推荐本地持久化方式：
 
 - MVP 阶段先使用 JSON 保存服务器基础配置，默认路径为 Go core 可执行文件所在目录下的 `data/hosts.json`
-- 调试模式、桌面打包模式和命令行 / Web 打包模式都遵循“Go core 程序所在目录下的 `data`”规则；`AI_SSH_HOME` 仅作为显式高级覆盖，`AI_SSH_HOSTS_PATH` 可精确覆盖 `hosts.json` 文件路径
+- 调试模式、桌面打包模式和命令行 / Web 打包模式都遵循“Go core 程序所在目录下的 `data`”规则；不再提供数据根目录环境变量覆盖，必要时可通过 `AI_SSH_HOSTS_PATH` 精确覆盖 `hosts.json` 文件路径
 - 密码与 SSH Key 默认通过操作系统安全存储保存，并在连接前由 Go core 读取使用；较长 SSH Key 需要分片写入以兼容系统凭据长度限制
 - 导出分为普通导出和含加密凭据导出：普通导出不携带密码/SSH Key；含加密凭据导出使用一次性 `exportKey` 加密凭据，目标电脑导入后解密并写入当地系统安全存储
 - SQLite：存业务元数据

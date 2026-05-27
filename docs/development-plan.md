@@ -266,9 +266,10 @@
 83. 健康检查能力增加 `ai-stream` / `ai-unified`，前端和 Tauri 调试复用已有 core 时会避免使用不支持统一 AI 和流式 AI 的旧 core
 84. 根目录增加 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri，便于一键调试并查看后端日志
 85. `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core，便于固定查看后端日志
-86. `npm run dev:core` 运行 core 前切换工作目录到 `apps/core-go/bin` 并清空本进程 `AI_SSH_HOME`，默认从 `apps/core-go/bin/data` 读取服务器列表和网页登录配置
-87. Go core 默认以自身可执行文件所在目录作为数据根目录；桌面端、Web 发布包和绿色便携版启动器均不再默认注入 `AI_SSH_HOME`，打包后统一读取程序目录下的 `data`
+86. `npm run dev:core` 运行 core 前切换工作目录到 `apps/core-go/bin`，默认从 `apps/core-go/bin/data` 读取服务器列表和网页登录配置
+87. Go core 默认以自身可执行文件所在目录作为数据根目录；桌面端、Web 发布包和绿色便携版打包后统一读取程序目录下的 `data`
 88. 开发模式下 `npm run dev:core` 会读取或生成与 Tauri 桌面端一致的 desktop token，避免手动 core 与桌面端 token 不一致导致 `/api/hosts` 被 401 拦截后列表看似为空
+89. 移除旧的数据根目录覆盖入口，避免环境变量残留导致调试、桌面版和命令行版读到不同数据目录；保留 `AI_SSH_HOSTS_PATH` 与 `AI_SSH_WEB_AUTH_PATH` 做精确文件级覆盖
 
 ## 6. 工程规则
 
@@ -343,7 +344,7 @@
 - [x] 修复左侧服务器列表少量数据时不贴顶显示的问题
 - [x] 当前服务器面板支持 CPU / 内存折线趋势、多个磁盘挂载点和网络实时上下行带宽
 - [x] 顶部右侧移除重复导入导出按钮，文件菜单按服务器列表和软件配置分组导入导出
-- [x] 默认将 `hosts.json` 保存到 Go core 可执行文件所在目录的 `data/hosts.json`，并支持 `AI_SSH_HOME` / `AI_SSH_HOSTS_PATH` 覆盖
+- [x] 默认将 `hosts.json` 保存到 Go core 可执行文件所在目录的 `data/hosts.json`，并支持 `AI_SSH_HOSTS_PATH` 精确覆盖
 - [x] 支持服务器列表含加密凭据导出，导入后恢复密码/SSH Key 到目标电脑系统安全存储
 - [x] 无会话时不显示“未连接”伪 tab 和终端头部连接状态，只保留空状态快捷连接
 - [x] 历史命令过滤终端控制序列，记录数量扩展并支持右侧独立滚动
@@ -451,8 +452,9 @@
 - [x] 增加根目录 `start-dev.bat`，双击后先打开可见 Go core 日志窗口，再以 `AI_SSH_DESKTOP_NO_CORE=1` 启动 Tauri
 - [x] `npm run dev:tauri` 改为只启动桌面端并设置 `AI_SSH_DESKTOP_NO_CORE=1`，开发时由 `npm run dev:core` 单独负责编译并启动最新 core
 - [x] `npm run dev:core` 默认使用 `apps/core-go/bin` 作为 core 工作目录，读取 `apps/core-go/bin/data` 下的服务器列表和网页登录配置
-- [x] Go core 默认使用自身可执行文件所在目录下的 `data` 读写 `hosts.json` 和 `web-auth.json`；桌面端、Web 发布包和绿色便携版启动器不再默认设置 `AI_SSH_HOME`
+- [x] Go core 默认使用自身可执行文件所在目录下的 `data` 读写 `hosts.json` 和 `web-auth.json`；桌面端、Web 发布包和绿色便携版都不再依赖数据根目录环境变量
 - [x] `npm run dev:core` 与 Tauri 桌面端复用同一个 desktop token，并修正前端自动登录失败时误绕过登录导致主机列表 401 后空白的问题
+- [x] 移除旧的数据根目录覆盖支持，统一使用程序所在目录 `data`，只保留 `AI_SSH_HOSTS_PATH` / `AI_SSH_WEB_AUTH_PATH` 等精确文件级覆盖
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验

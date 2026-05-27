@@ -67,7 +67,6 @@ function Write-WebLauncher {
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dataDir = Join-Path $scriptDir "data"
-Remove-Item Env:\AI_SSH_HOME -ErrorAction SilentlyContinue
 if (-not $env:AI_SSH_WEB_ROOT) { $env:AI_SSH_WEB_ROOT = Join-Path $scriptDir "web" }
 if (-not $env:AI_SSH_BIND_HOST) { $env:AI_SSH_BIND_HOST = "0.0.0.0" }
 if (-not $env:AI_SSH_CORE_PORT) { $env:AI_SSH_CORE_PORT = "18555" }
@@ -87,7 +86,6 @@ try {
   $startCmdContent = @'
 @echo off
 set "SCRIPT_DIR=%~dp0"
-set "AI_SSH_HOME="
 if "%AI_SSH_WEB_ROOT%"=="" set "AI_SSH_WEB_ROOT=%SCRIPT_DIR%web"
 if "%AI_SSH_BIND_HOST%"=="" set "AI_SSH_BIND_HOST=0.0.0.0"
 if "%AI_SSH_CORE_PORT%"=="" set "AI_SSH_CORE_PORT=18555"
@@ -107,7 +105,6 @@ exit /b %EXIT_CODE%
 #!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-unset AI_SSH_HOME
 DATA_DIR="$SCRIPT_DIR/data"
 export AI_SSH_WEB_ROOT="${AI_SSH_WEB_ROOT:-$SCRIPT_DIR/web}"
 export AI_SSH_BIND_HOST="${AI_SSH_BIND_HOST:-0.0.0.0}"
@@ -180,7 +177,6 @@ function Write-PortableLauncher {
 @echo off
 setlocal
 set "SCRIPT_DIR=%~dp0"
-set "AI_SSH_HOME="
 set "AI_SSH_CORE_PATH=%SCRIPT_DIR%__CORE_EXE__"
 set "AI_SSH_WEB_ROOT=%SCRIPT_DIR%resources\web"
 set "AI_SSH_BIND_HOST=0.0.0.0"
@@ -194,7 +190,6 @@ start "" "%SCRIPT_DIR%__DESKTOP_EXE__"
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dataDir = Join-Path $scriptDir "data"
-Remove-Item Env:\AI_SSH_HOME -ErrorAction SilentlyContinue
 $env:AI_SSH_CORE_PATH = Join-Path $scriptDir "__CORE_EXE__"
 $env:AI_SSH_WEB_ROOT = Join-Path $scriptDir "resources\web"
 $env:AI_SSH_BIND_HOST = "0.0.0.0"

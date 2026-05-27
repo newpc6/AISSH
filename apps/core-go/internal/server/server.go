@@ -319,9 +319,6 @@ func newHostStore() *hostStore {
 }
 
 func resolveHostStoreBaseDir() string {
-	if baseDir := strings.TrimSpace(os.Getenv("AI_SSH_HOME")); baseDir != "" {
-		return baseDir
-	}
 	if exePath, err := os.Executable(); err == nil {
 		if exeDir := filepath.Dir(exePath); exeDir != "" {
 			return exeDir

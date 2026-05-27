@@ -15,7 +15,6 @@ import (
 
 func TestNewHostStoreDefaultsToExecutableDataDirectory(t *testing.T) {
 	t.Setenv("AI_SSH_HOSTS_PATH", "")
-	t.Setenv("AI_SSH_HOME", "")
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -28,13 +27,12 @@ func TestNewHostStoreDefaultsToExecutableDataDirectory(t *testing.T) {
 	}
 }
 
-func TestNewHostStoreHonorsAIHome(t *testing.T) {
+func TestNewHostStoreHonorsExplicitHostsPath(t *testing.T) {
 	workspace := t.TempDir()
-	t.Setenv("AI_SSH_HOSTS_PATH", "")
-	t.Setenv("AI_SSH_HOME", workspace)
+	expected := filepath.Join(workspace, "custom-hosts.json")
+	t.Setenv("AI_SSH_HOSTS_PATH", expected)
 
 	store := newHostStore()
-	expected := filepath.Join(workspace, "data", "hosts.json")
 	if filepath.Clean(store.path) != filepath.Clean(expected) {
 		t.Fatalf("expected host store path %q, got %q", expected, store.path)
 	}

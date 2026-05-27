@@ -36,7 +36,6 @@ try {
 
   Pop-Location
   Push-Location $coreOutDir
-  Remove-Item Env:\AI_SSH_HOME -ErrorAction SilentlyContinue
   $desktopToken = Get-AISSHDesktopToken
   $env:AI_SSH_DESKTOP_TOKEN = $desktopToken.Token
   Write-Host "AI SSH core working directory: $coreOutDir"
