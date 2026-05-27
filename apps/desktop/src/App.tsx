@@ -6686,7 +6686,7 @@ export function App() {
                       ＋
                     </button>
                     <button
-                      className="ai-icon-button primary-button"
+                      className="ai-icon-button ai-send-button"
                       disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
                       type="button"
                       title="发送给统一 AI 助手"

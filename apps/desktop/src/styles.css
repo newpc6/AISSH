@@ -1422,6 +1422,18 @@ button {
   color: #dbeafe;
 }
 
+.agent-actions .ai-send-button {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+}
+
+.agent-actions .ai-send-button:hover:not(:disabled) {
+  border-color: rgba(79, 140, 255, 0.42);
+  background: rgba(79, 140, 255, 0.1);
+  color: #dbeafe;
+}
+
 .unified-ai-box {
   min-height: 0;
   display: grid;
