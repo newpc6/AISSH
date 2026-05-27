@@ -5543,8 +5543,8 @@ export function App() {
   }
 
   const renderMetricChart = (key: MetricChartKey, label: string, compact = true) => {
-    const width = compact ? 220 : 760
-    const height = compact ? 74 : 260
+    const width = compact ? Math.max(260, rightPanelWidth - 82) : 760
+    const height = compact ? 88 : 320
     const chartWidth = width - 48
     const chartHeight = height - 28
     const path = buildMetricPath(metricHistory, key, chartWidth, chartHeight)
@@ -5589,7 +5589,7 @@ export function App() {
               <span />
             </button>
           ) : null}
-          <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+          <svg style={{ aspectRatio: `${width} / ${height}` }} viewBox={`0 0 ${width} ${height}`}>
             <g transform="translate(36 8)">
               <line className="axis-line" x1="0" x2="0" y1="0" y2={chartHeight} />
               <line className="axis-line" x1="0" x2={chartWidth} y1={chartHeight} y2={chartHeight} />

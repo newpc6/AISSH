@@ -2113,12 +2113,13 @@ button {
 
 .metric-chart svg {
   width: 100%;
-  height: 88px;
+  height: auto;
   overflow: visible;
 }
 
 .metric-chart.expanded svg {
-  height: min(52vh, 360px);
+  width: min(100%, 760px);
+  max-height: min(52vh, 360px);
 }
 
 .metric-line {
