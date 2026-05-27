@@ -1,4 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -5168,13 +5170,19 @@ export function App() {
     clearAIPrediction()
   }
 
+  const renderMarkdown = (content: string, fallback = '') => (
+    <div className="markdown-body">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || fallback}</ReactMarkdown>
+    </div>
+  )
+
   const renderAIResponseMessage = (message: AIChatMessageDraft, label: string) => {
     const response = message.response
     const commands = normalizeAssistCommands(response?.commands)
     return (
       <article className={`ai-response-card ai-message-card ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
         <strong>{label}</strong>
-        {message.content ? <p>{message.content}</p> : null}
+        {message.content ? renderMarkdown(message.content) : null}
         {response?.agentStatus === 'command' && response.riskLevel ? (
           <span className={`risk-badge risk-${response.riskLevel}`}>{riskLabel(response.riskLevel)}</span>
         ) : null}
@@ -5218,15 +5226,15 @@ export function App() {
       return (
         <article className="ai-message-card user-message" key={message.id}>
           <strong>我</strong>
-          <p>{message.content}</p>
+          {renderMarkdown(message.content)}
         </article>
       )
     }
     if (message.kind === 'thinking') {
       return (
         <details className="ai-stream-card ai-message-card" key={message.id} open>
-          <summary>thinking</summary>
-          <pre>{message.content || '思考中...'}</pre>
+          <summary>思考</summary>
+          {renderMarkdown(message.content, '思考中...')}
         </details>
       )
     }
@@ -5234,7 +5242,7 @@ export function App() {
       return (
         <article className="ai-stream-card ai-message-card" key={message.id}>
           <strong>实时输出</strong>
-          <pre>{message.content}</pre>
+          {renderMarkdown(message.content)}
         </article>
       )
     }
@@ -5245,7 +5253,7 @@ export function App() {
       return (
         <article className="ai-response-card agent-final-card ai-message-card" key={message.id}>
           <strong>执行结论</strong>
-          <p>{message.content}</p>
+          {renderMarkdown(message.content)}
           {message.response?.warnings?.map((warning) => <small key={warning}>{warning}</small>)}
         </article>
       )
@@ -5267,7 +5275,7 @@ export function App() {
             <small>{displayedStep?.status ?? 'pending'}</small>
           </header>
           <code>{displayedStep?.command ?? message.content}</code>
-          {displayedStep?.explanation ? <p>{displayedStep.explanation}</p> : null}
+          {displayedStep?.explanation ? renderMarkdown(displayedStep.explanation) : null}
           {displayedStep?.riskReason ? <small>{displayedStep.riskReason}</small> : null}
           {typeof displayedStep?.exitCode === 'number' ? <small>退出码：{displayedStep.exitCode}</small> : null}
           {displayedStep?.output ? <pre className="agent-step-output">{displayedStep.output}</pre> : null}
@@ -5316,7 +5324,7 @@ export function App() {
       return (
         <article className="ai-message-card ai-error-card" key={message.id}>
           <strong>错误</strong>
-          <p>{message.content}</p>
+          {renderMarkdown(message.content)}
         </article>
       )
     }

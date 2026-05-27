@@ -1488,6 +1488,96 @@ button {
   line-height: 1.45;
 }
 
+.markdown-body {
+  min-width: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body pre,
+.markdown-body table {
+  margin: 0 0 8px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 18px;
+}
+
+.markdown-body li + li {
+  margin-top: 3px;
+}
+
+.markdown-body code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.68);
+  color: #dbeafe;
+  font-size: 11px;
+}
+
+.markdown-body pre {
+  max-width: 100%;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(3, 7, 18, 0.64);
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.markdown-body blockquote {
+  padding-left: 10px;
+  border-left: 3px solid rgba(96, 165, 250, 0.34);
+  color: #9fb2c8;
+}
+
+.markdown-body table {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 5px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.markdown-body th {
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.markdown-body a {
+  color: #93c5fd;
+}
+
+.ai-stream-card .markdown-body {
+  max-height: 180px;
+  overflow: auto;
+}
+
 .ai-conversation-shell {
   min-height: 0;
   display: grid;
