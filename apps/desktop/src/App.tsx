@@ -43,7 +43,6 @@ import {
   type AIChatConversation,
   type AIChatConversationCreateRequest,
   type AIChatConversationListResponse,
-  type AIChatConversationUpdateRequest,
   type AIChatMessage,
   type AIChatMessageCreateRequest,
   type AIChatMessageUpdateRequest,
@@ -1264,6 +1263,7 @@ export function App() {
   const [aiStreamThinking, setAiStreamThinking] = useState('')
   const [aiStreamContent, setAiStreamContent] = useState('')
   const [aiConversations, setAiConversations] = useState<AIChatConversation[]>([])
+  const [hasMoreConversations, setHasMoreConversations] = useState(false)
   const [activeAIConversationId, setActiveAIConversationId] = useState('')
   const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
   const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
@@ -4331,6 +4331,7 @@ export function App() {
     } else {
       setAiConversations((current) => [...current, ...data.conversations])
     }
+    setHasMoreConversations(data.conversations.length >= 30)
     return data.conversations
   }
 
@@ -4367,6 +4368,19 @@ export function App() {
     if (isConversationEmpty()) {
       const existing = aiConversations.find((item) => item.id === activeAIConversationIdRef.current)
       if (existing) {
+        if (title !== '新对话' && existing.title === '新对话') {
+          try {
+            await apiFetch(`/ai/chats/${existing.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title }),
+            })
+            await loadAIConversations()
+          } catch {
+            appendLog('warn', 'ui.ai', 'rename conversation failed', { id: existing.id })
+          }
+          return { ...existing, title }
+        }
         return existing
       }
       return {
@@ -4440,6 +4454,19 @@ export function App() {
 
   const ensureAIConversation = async (title = '新对话') => {
     if (activeAIConversationIdRef.current) {
+      const existing = aiConversationsRef.current.find((item) => item.id === activeAIConversationIdRef.current)
+      if (existing && title !== '新对话' && existing.title === '新对话') {
+        try {
+          await apiFetch(`/ai/chats/${existing.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title }),
+          })
+          await loadAIConversations()
+        } catch {
+          appendLog('warn', 'ui.ai', 'rename conversation failed', { id: existing.id })
+        }
+      }
       return activeAIConversationIdRef.current
     }
     const conversation = await createAIConversation(title)
@@ -4455,19 +4482,6 @@ export function App() {
     agentStepsRef.current = []
     agentGoalRef.current = ''
     await loadAIMessages(conversationId)
-  }
-
-  const updateAIConversationTitle = async (conversationId: string, title: string) => {
-    const body: AIChatConversationUpdateRequest = { title }
-    const response = await apiFetch(`/ai/chats/${conversationId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `更新对话标题失败：${response.status}`)
-    }
-    await loadAIConversations()
   }
 
   const currentConversationContext = (conversationId = activeAIConversationIdRef.current) => {
@@ -4638,7 +4652,6 @@ export function App() {
     if (aiAssistantState === 'loading' || !settings.aiEnabled) {
       return
     }
-    const previousMessages = [...aiMessagesRef.current]
     const prompt = aiUnifiedPrompt.trim()
     const selectedText = window.getSelection()?.toString().trim() ?? ''
     const requestPrompt = prompt || selectedText
@@ -4660,13 +4673,6 @@ export function App() {
     setAgentMessage('')
     setAiUnifiedPrompt('')
     await appendAIMessage('user', requestPrompt, {}, conversationId)
-    if (previousMessages.filter((message) => message.kind === 'user').length === 0) {
-      try {
-        await updateAIConversationTitle(conversationId, requestPrompt.slice(0, 24))
-      } catch (error) {
-        appendLog('warn', 'ui.ai', 'update conversation title failed', { error: error instanceof Error ? error.message : String(error) })
-      }
-    }
     agentGoalRef.current = requestPrompt
     agentRunningRef.current = agentModeRef.current === 'auto'
     try {
@@ -7062,7 +7068,7 @@ export function App() {
                             </button>
                           </div>
                         ))}
-                        {aiConversations.length >= 30 ? (
+                        {hasMoreConversations ? (
                           <button
                             className="load-more-chats"
                             type="button"
