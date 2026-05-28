@@ -221,7 +221,7 @@ button {
   z-index: 12;
   top: 32px;
   left: 0;
-  min-width: 128px;
+  min-width: max-content;
   display: grid;
   gap: 3px;
   padding: 6px;
@@ -240,7 +240,8 @@ button {
   color: #dbe5ef;
   text-align: left;
   cursor: pointer;
-  padding: 0 9px;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
 .top-dropdown button:hover {
