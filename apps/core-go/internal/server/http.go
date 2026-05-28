@@ -784,6 +784,19 @@ func streamSessionEvents(w http.ResponseWriter, r *http.Request, session *termin
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
 
+	status, lastError := session.snapshotStatus()
+	if status != "" {
+		writeSSEEvent(writer, flusher, terminalEvent{Type: "status", Data: status})
+	}
+	if lastError != "" {
+		writeSSEEvent(writer, flusher, terminalEvent{Type: "error", Data: lastError})
+		if status == "error" || status == "closed" {
+			_, _ = writer.WriteString("event: close\ndata: {}\n\n")
+			flusher.Flush()
+			return
+		}
+	}
+
 	for {
 		select {
 		case event, ok := <-session.output:
@@ -804,6 +817,16 @@ func streamSessionEvents(w http.ResponseWriter, r *http.Request, session *termin
 			return
 		}
 	}
+}
+
+func writeSSEEvent(writer *bufio.Writer, flusher http.Flusher, event terminalEvent) {
+	payload, _ := json.Marshal(event)
+	_, _ = writer.WriteString("event: terminal\n")
+	_, _ = writer.WriteString("data: ")
+	_, _ = writer.Write(payload)
+	_, _ = writer.WriteString("\n\n")
+	_ = writer.Flush()
+	flusher.Flush()
 }
 
 func streamAIEvents(w http.ResponseWriter, r *http.Request, logger *appLogger, run func(aiStreamWriter) error) {

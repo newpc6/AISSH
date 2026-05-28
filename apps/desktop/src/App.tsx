@@ -2603,9 +2603,23 @@ export function App() {
     }
     const payload = (await response.json()) as HostsExportResponse
     const text = JSON.stringify(payload, null, 2)
+    if (isTauriRuntime) {
+      const suffix = includeCredentials ? '含凭据' : ''
+      const filePath = await saveDialog({
+        title: `导出服务器列表${suffix}`,
+        defaultPath: `ai-ssh-hosts${suffix}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (!filePath) return
+      await writeFile(filePath, new TextEncoder().encode(text))
+      if (includeCredentials && payload.exportKey) {
+        window.alert('已导出加密服务器列表。JSON 中包含 exportKey，导入到其他电脑后可以恢复密码或 SSH Key。请只把这份文件交给可信的人。')
+      }
+      return
+    }
     await navigator.clipboard.writeText(text)
     if (includeCredentials && payload.exportKey) {
-      window.alert('已复制加密服务器列表。JSON 中包含 exportKey，导入到其他电脑后可以恢复密码或 SSH Key。请只把这份文件交给可信的人。')
+      window.alert('已复制加密服务器列表到剪贴板。JSON 中包含 exportKey，导入到其他电脑后可以恢复密码或 SSH Key。请只把这份文件交给可信的人。')
     }
   }
 
@@ -4846,7 +4860,7 @@ export function App() {
 
       if (payload.type === 'status') {
         const nextStatus: SessionRecord['status'] | '' =
-          payload.data === 'connected' ? 'connected' : payload.data === 'closed' ? 'closed' : ''
+          payload.data === 'connected' ? 'connected' : payload.data === 'closed' ? 'closed' : payload.data === 'error' ? 'error' : ''
         if (nextStatus) {
           const nextSessions = sessionsRef.current.map((item) =>
             item.id === session.id ? { ...item, status: nextStatus } : item,

@@ -959,6 +959,10 @@ func (s *terminalSession) snapshot() sessionRecord {
 	return s.record
 }
 
+func (s *terminalSession) snapshotStatus() (string, string) {
+	return s.record.Status, s.record.LastError
+}
+
 func (s *terminalSession) currentCWD() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
