@@ -1639,6 +1639,7 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  overflow: hidden;
 }
 
 .unified-ai-box.history-open .ai-conversation-shell {
@@ -1652,6 +1653,7 @@ button {
   gap: 8px;
   padding-right: 8px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
 }
 
 .ai-chat-sidebar-head {
@@ -2505,6 +2507,8 @@ button {
 
 .ai-box {
   overflow: hidden;
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
 }
 
 .command-row.compact {
