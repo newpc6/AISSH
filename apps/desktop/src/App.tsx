@@ -252,7 +252,6 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
 const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 const AI_PREDICT_STREAM_API_PATH = '/api/ai/predict/stream'
 const AI_ASSIST_STREAM_API_PATH = '/api/ai/assist/stream'
-const PREDICTION_PANEL_HEIGHT_STORAGE_KEY = 'ai-ssh-prediction-panel-height'
 const MIN_PREDICTION_PANEL_HEIGHT = 160
 const DEFAULT_PREDICTION_PANEL_HEIGHT = 300
 const MAX_PREDICTION_PANEL_HEIGHT = 520
@@ -265,7 +264,6 @@ const MAX_RIGHT_PANEL_WIDTH = 720
 const DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS = 10
 const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified', 'ai-chat-history']
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
-const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
 const ERROR_DETAIL_LIMIT = 1200
 const DEFAULT_AI_SYSTEM_PROMPT = '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案；需要推进终端任务时只给一个下一步命令，并标明风险。高风险命令必须等待人工确认。'
 type DesktopWindow = Window & {
@@ -1899,7 +1897,7 @@ export function App() {
   const persistFavoriteCommands = (commands: string[]) => {
     const normalized = normalizeFavoriteCommands(commands)
     setFavoriteCommands(normalized)
-    window.localStorage.setItem(FAVORITE_COMMANDS_STORAGE_KEY, JSON.stringify(normalized))
+    void saveAppConfig({ favoriteCommands: normalized })
   }
 
   const requestConfirm = (dialog: NonNullable<ConfirmDialogState>) => {
@@ -2024,33 +2022,112 @@ export function App() {
   }
 
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
+
+  const saveAppConfig = async (overrides?: Partial<{
+    settings?: Partial<AppSettings>
+    leftRailWidth?: number
+    rightPanelWidth?: number
+    rightServerInfoPanelHeight?: number
+    predictionPanelHeight?: number
+    favoriteCommands?: string[]
+  }>) => {
+    const normalized = normalizeAppSettings(overrides?.settings ?? settings)
+    const config: Record<string, unknown> = {
+      bindHost: '',
+      port: 0,
+      app: {
+        healthCheckIntervalSeconds: normalized.healthCheckIntervalSeconds,
+        metricsRefreshIntervalSeconds: normalized.metricsRefreshIntervalSeconds,
+        metricsHistoryWindowMinutes: normalized.metricsHistoryWindowMinutes,
+        metricsCompactPointLimit: normalized.metricsCompactPointLimit,
+        metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
+        terminalRetainedLines: normalized.terminalRetainedLines,
+        rightServerInfoPanelHeight: overrides?.rightServerInfoPanelHeight ?? rightServerInfoPanelHeight,
+        rightPanelWidth: overrides?.rightPanelWidth ?? rightPanelWidth,
+        leftRailWidth: overrides?.leftRailWidth ?? leftRailWidth,
+        predictionPanelHeight: overrides?.predictionPanelHeight ?? predictionPanelHeight,
+        aiEnabled: normalized.aiEnabled,
+        aiBaseUrl: normalized.aiBaseUrl,
+        aiApiKey: normalized.aiApiKey,
+        aiModel: normalized.aiModel,
+        aiPredictionEnabled: normalized.aiPredictionEnabled,
+        aiPredictionCount: normalized.aiPredictionCount,
+        aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
+        aiTerminalContextLimit: normalized.aiTerminalContextLimit,
+        aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
+        aiConversationContextLimit: normalized.aiConversationContextLimit,
+        aiSystemPrompt: normalized.aiSystemPrompt,
+        agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
+        favoriteCommands: normalizeFavoriteCommands(overrides?.favoriteCommands ?? favoriteCommands),
+      },
+    }
+    try {
+      await apiFetch('/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      })
+    } catch (error) {
+      appendLog('warn', 'ui.config', 'save config failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
   useEffect(() => {
-    const rawSettings = window.localStorage.getItem('ai-ssh-settings')
-    if (rawSettings) {
+    const loadConfig = async () => {
       try {
-        const normalized = normalizeAppSettings(JSON.parse(rawSettings) as Partial<AppSettings>)
-        setSettings(normalized)
-        sessionSettingsRef.current = normalized
+        const resp = await apiFetch('/config')
+        if (!resp.ok) return
+        const cfg = await resp.json() as Record<string, unknown>
+        const app = cfg.app as Record<string, unknown> | undefined
+        if (app) {
+          const settings = normalizeAppSettings({
+            healthCheckIntervalSeconds: app.healthCheckIntervalSeconds as number,
+            metricsRefreshIntervalSeconds: app.metricsRefreshIntervalSeconds as number,
+            metricsHistoryWindowMinutes: app.metricsHistoryWindowMinutes as number,
+            metricsCompactPointLimit: app.metricsCompactPointLimit as number,
+            metricsExpandedPointLimit: app.metricsExpandedPointLimit as number,
+            terminalRetainedLines: app.terminalRetainedLines as number,
+            rightServerInfoPanelHeight: app.rightServerInfoPanelHeight as number,
+            rightPanelWidth: app.rightPanelWidth as number,
+            aiEnabled: app.aiEnabled as boolean,
+            aiBaseUrl: (app.aiBaseUrl ?? '') as string,
+            aiApiKey: (app.aiApiKey ?? '') as string,
+            aiModel: (app.aiModel ?? '') as string,
+            aiPredictionEnabled: app.aiPredictionEnabled as boolean,
+            aiPredictionCount: app.aiPredictionCount as number,
+            aiPredictionTriggerDelayMs: app.aiPredictionTriggerDelayMs as number,
+            aiTerminalContextLimit: app.aiTerminalContextLimit as number,
+            aiCommandHistoryLimit: app.aiCommandHistoryLimit as number,
+            aiConversationContextLimit: app.aiConversationContextLimit as number,
+            aiSystemPrompt: (app.aiSystemPrompt ?? '') as string,
+            agentCommandTimeoutSeconds: app.agentCommandTimeoutSeconds as number,
+          })
+          setSettings(settings)
+          sessionSettingsRef.current = settings
+          if (typeof app.leftRailWidth === 'number') {
+            setLeftRailWidth(Math.min(620, Math.max(320, app.leftRailWidth)))
+          }
+          if (typeof app.rightPanelWidth === 'number') {
+            setRightPanelWidth(clampRightPanelWidth(app.rightPanelWidth))
+          }
+          if (typeof app.rightServerInfoPanelHeight === 'number') {
+            setRightServerInfoPanelHeight(clampRightServerInfoPanelHeight(app.rightServerInfoPanelHeight))
+          }
+          if (typeof app.predictionPanelHeight === 'number') {
+            setPredictionPanelHeight(clampPredictionPanelHeight(app.predictionPanelHeight))
+          }
+          if (Array.isArray(app.favoriteCommands)) {
+            setFavoriteCommands(normalizeFavoriteCommands(app.favoriteCommands))
+          }
+        }
       } catch (error) {
-        appendLog('warn', 'ui.settings', 'settings load failed', {
+        appendLog('warn', 'ui.config', 'load config from API failed, falling back to localStorage', {
           error: error instanceof Error ? error.message : String(error),
         })
       }
     }
-    const rawFavorites = window.localStorage.getItem(FAVORITE_COMMANDS_STORAGE_KEY)
-    if (rawFavorites) {
-      try {
-        setFavoriteCommands(normalizeFavoriteCommands(JSON.parse(rawFavorites)))
-      } catch (error) {
-        appendLog('warn', 'ui.favorites', 'favorite commands load failed', {
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-    const rawPredictionPanelHeight = window.localStorage.getItem(PREDICTION_PANEL_HEIGHT_STORAGE_KEY)
-    if (rawPredictionPanelHeight) {
-      setPredictionPanelHeight(clampPredictionPanelHeight(Number(rawPredictionPanelHeight)))
-    }
+    void loadConfig()
   }, [])
 
   useEffect(() => {
@@ -2912,7 +2989,7 @@ export function App() {
     if (!normalized.aiSystemPrompt.trim()) {
       normalized.aiSystemPrompt = defaultSettings.aiSystemPrompt
     }
-    window.localStorage.setItem('ai-ssh-settings', JSON.stringify(normalized))
+    void saveAppConfig({ settings: normalized })
     setTerminalCaches((current) => {
       const next = Object.fromEntries(
         Object.entries(current).map(([sessionId, cache]) => {
@@ -5745,14 +5822,17 @@ export function App() {
     event.preventDefault()
     const startX = event.clientX
     const startWidth = leftRailWidth
+    let nextWidth = startWidth
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      setLeftRailWidth(Math.min(620, Math.max(320, startWidth + moveEvent.clientX - startX)))
+      nextWidth = Math.min(620, Math.max(320, startWidth + moveEvent.clientX - startX))
+      setLeftRailWidth(nextWidth)
     }
 
     const handlePointerUp = () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      void saveAppConfig({ leftRailWidth: nextWidth })
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -5777,7 +5857,7 @@ export function App() {
     const handlePointerUp = () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
-      window.localStorage.setItem(PREDICTION_PANEL_HEIGHT_STORAGE_KEY, String(nextHeight))
+      void saveAppConfig({ predictionPanelHeight: nextHeight })
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -5800,10 +5880,7 @@ export function App() {
       window.removeEventListener('pointerup', handlePointerUp)
       const height = clampRightServerInfoPanelHeight(nextHeight)
       setSettings((current) => normalizeAppSettings({ ...current, rightServerInfoPanelHeight: height }))
-      window.localStorage.setItem(
-        'ai-ssh-settings',
-        JSON.stringify(normalizeAppSettings({ ...sessionSettingsRef.current, rightServerInfoPanelHeight: height })),
-      )
+      void saveAppConfig({ rightServerInfoPanelHeight: height })
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -5826,10 +5903,7 @@ export function App() {
       window.removeEventListener('pointerup', handlePointerUp)
       const width = clampRightPanelWidth(nextWidth)
       setSettings((current) => normalizeAppSettings({ ...current, rightPanelWidth: width }))
-      window.localStorage.setItem(
-        'ai-ssh-settings',
-        JSON.stringify(normalizeAppSettings({ ...sessionSettingsRef.current, rightPanelWidth: width })),
-      )
+      void saveAppConfig({ settings: { ...sessionSettingsRef.current, rightPanelWidth: width } })
     }
 
     window.addEventListener('pointermove', handlePointerMove)
