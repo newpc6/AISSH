@@ -4359,10 +4359,6 @@ export function App() {
     if (isConversationEmpty()) {
       const existing = aiConversations.find((item) => item.id === activeAIConversationIdRef.current)
       if (existing) {
-        if (title !== '新对话' && existing.title === '新对话') {
-          void updateAIConversationTitle(existing.id, title)
-          return { ...existing, title }
-        }
         return existing
       }
       return {
@@ -4660,7 +4656,11 @@ export function App() {
     setAiUnifiedPrompt('')
     await appendAIMessage('user', requestPrompt, {}, conversationId)
     if (previousMessages.filter((message) => message.kind === 'user').length === 0) {
-      void updateAIConversationTitle(conversationId, requestPrompt.slice(0, 24))
+      try {
+        await updateAIConversationTitle(conversationId, requestPrompt.slice(0, 24))
+      } catch (error) {
+        appendLog('warn', 'ui.ai', 'update conversation title failed', { error: error instanceof Error ? error.message : String(error) })
+      }
     }
     agentGoalRef.current = requestPrompt
     agentRunningRef.current = agentModeRef.current === 'auto'
