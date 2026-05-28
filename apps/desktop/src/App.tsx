@@ -4357,7 +4357,15 @@ export function App() {
 
   const createAIConversation = async (title = '新对话') => {
     if (isConversationEmpty()) {
-      return aiConversations.find((item) => item.id === activeAIConversationIdRef.current) ?? {
+      const existing = aiConversations.find((item) => item.id === activeAIConversationIdRef.current)
+      if (existing) {
+        if (title !== '新对话' && existing.title === '新对话') {
+          void updateAIConversationTitle(existing.id, title)
+          return { ...existing, title }
+        }
+        return existing
+      }
+      return {
         id: activeAIConversationIdRef.current,
         title,
         createdAt: new Date().toISOString(),
@@ -4652,7 +4660,7 @@ export function App() {
     setAiUnifiedPrompt('')
     await appendAIMessage('user', requestPrompt, {}, conversationId)
     if (previousMessages.filter((message) => message.kind === 'user').length === 0) {
-      void updateAIConversationTitle(conversationId, requestPrompt)
+      void updateAIConversationTitle(conversationId, requestPrompt.slice(0, 24))
     }
     agentGoalRef.current = requestPrompt
     agentRunningRef.current = agentModeRef.current === 'auto'
