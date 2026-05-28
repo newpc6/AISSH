@@ -88,13 +88,13 @@ func (s *aiChatStore) listConversations(before string, limit int) ([]aiChatConve
 	if limit <= 0 || limit > 200 {
 		limit = 80
 	}
-	query := `SELECT id, title, created_at, updated_at FROM conversations`
+	query := `SELECT c.id, c.title, c.created_at, c.updated_at, COALESCE((SELECT m.content FROM messages m WHERE m.conversation_id = c.id AND m.kind = 'user' ORDER BY m.created_at ASC LIMIT 1), '') FROM conversations c`
 	args := []any{}
 	if before != "" {
-		query += ` WHERE updated_at < ?`
+		query += ` WHERE c.updated_at < ?`
 		args = append(args, before)
 	}
-	query += ` ORDER BY updated_at DESC LIMIT ?`
+	query += ` ORDER BY c.updated_at DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -104,12 +104,22 @@ func (s *aiChatStore) listConversations(before string, limit int) ([]aiChatConve
 	conversations := []aiChatConversation{}
 	for rows.Next() {
 		var conversation aiChatConversation
-		if err := rows.Scan(&conversation.ID, &conversation.Title, &conversation.CreatedAt, &conversation.UpdatedAt); err != nil {
+		var snippet string
+		if err := rows.Scan(&conversation.ID, &conversation.Title, &conversation.CreatedAt, &conversation.UpdatedAt, &snippet); err != nil {
 			return nil, err
 		}
+		conversation.Snippet = trimConversationSnippet(snippet, 40)
 		conversations = append(conversations, conversation)
 	}
 	return conversations, rows.Err()
+}
+
+func trimConversationSnippet(content string, maxLen int) string {
+	runes := []rune(content)
+	if len(runes) <= maxLen {
+		return content
+	}
+	return string(runes[:maxLen])
 }
 
 func (s *aiChatStore) createConversation(title string) (aiChatConversation, error) {

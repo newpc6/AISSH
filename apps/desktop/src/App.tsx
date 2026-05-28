@@ -4368,19 +4368,6 @@ export function App() {
     if (isConversationEmpty()) {
       const existing = aiConversations.find((item) => item.id === activeAIConversationIdRef.current)
       if (existing) {
-        if (title !== '新对话' && existing.title === '新对话') {
-          try {
-            await apiFetch(`/ai/chats/${existing.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title }),
-            })
-            await loadAIConversations()
-          } catch {
-            appendLog('warn', 'ui.ai', 'rename conversation failed', { id: existing.id })
-          }
-          return { ...existing, title }
-        }
         return existing
       }
       return {
@@ -4454,19 +4441,6 @@ export function App() {
 
   const ensureAIConversation = async (title = '新对话') => {
     if (activeAIConversationIdRef.current) {
-      const existing = aiConversationsRef.current.find((item) => item.id === activeAIConversationIdRef.current)
-      if (existing && title !== '新对话' && existing.title === '新对话') {
-        try {
-          await apiFetch(`/ai/chats/${existing.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title }),
-          })
-          await loadAIConversations()
-        } catch {
-          appendLog('warn', 'ui.ai', 'rename conversation failed', { id: existing.id })
-        }
-      }
       return activeAIConversationIdRef.current
     }
     const conversation = await createAIConversation(title)
@@ -7047,27 +7021,30 @@ export function App() {
                         </button>
                       </div>
                       <div className="ai-chat-list">
-                        {aiConversations.map((conversation) => (
+                        {aiConversations.map((conversation) => {
+                          const displayTitle = conversation.snippet || conversation.title
+                          return (
                           <div className={`ai-chat-item ${conversation.id === activeAIConversationId ? 'active' : ''}`} key={conversation.id}>
                             <button
                               className="ai-chat-select"
                               type="button"
-                              title={`切换到 ${conversation.title}`}
+                              title={`切换到 ${displayTitle}`}
                               onClick={() => void selectAIConversation(conversation.id)}
                             >
-                              <span>{conversation.title}</span>
+                              <span>{displayTitle}</span>
                               <small>{formatFullDateTime(conversation.updatedAt)}</small>
                             </button>
                             <button
                               className="ai-chat-delete ai-icon-button"
                               type="button"
-                              title={`删除对话：${conversation.title}`}
+                              title={`删除对话：${displayTitle}`}
                               onClick={() => confirmDeleteAIConversation(conversation.id)}
                             >
                               ×
                             </button>
                           </div>
-                        ))}
+                          )
+                        })}
                         {hasMoreConversations ? (
                           <button
                             className="load-more-chats"

@@ -175,6 +175,7 @@ type aiAssistResponse struct {
 type aiChatConversation struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
+	Snippet   string `json:"snippet,omitempty"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }

@@ -288,6 +288,7 @@ export type AIChatMessageKind = 'user' | 'thinking' | 'content' | 'assistant' | 
 export interface AIChatConversation {
   id: string
   title: string
+  snippet?: string
   createdAt: string
   updatedAt: string
 }
