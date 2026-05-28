@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { writeFile } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
@@ -2624,10 +2624,23 @@ export function App() {
   }
 
   const importHostsFromClipboard = async () => {
-    const text = window.prompt('粘贴服务器列表 JSON')
-    if (!text) {
+    if (isTauriRuntime) {
+      const filePath = await openDialog({
+        title: '导入服务器列表',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        multiple: false,
+      })
+      if (!filePath) return
+      const text = await readTextFile(filePath as string)
+      await importHostsFromText(text)
       return
     }
+    const text = window.prompt('粘贴服务器列表 JSON')
+    if (!text) return
+    await importHostsFromText(text)
+  }
+
+  const importHostsFromText = async (text: string) => {
     let payload: HostsImportRequest
     try {
       const parsed = JSON.parse(text) as Partial<HostsExportResponse & HostsImportRequest>
@@ -2665,6 +2678,15 @@ export function App() {
   }
 
   const exportSoftwareConfig = async () => {
+    let coreConfig: Record<string, unknown> | undefined
+    try {
+      const resp = await apiFetch('/config')
+      if (resp.ok) {
+        coreConfig = await resp.json() as Record<string, unknown>
+      }
+    } catch {
+      appendLog('warn', 'ui.config', 'failed to fetch core config for export', {})
+    }
     const config = {
       settings: normalizeAppSettings(settings),
       leftRailWidth,
@@ -2672,17 +2694,42 @@ export function App() {
       rightPanelWidth,
       hostGroups,
       favoriteCommands: normalizeFavoriteCommands(favoriteCommands),
+      coreConfig,
       exportedAt: new Date().toISOString(),
       version: 1,
     }
-    await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
+    const text = JSON.stringify(config, null, 2)
+    if (isTauriRuntime) {
+      const filePath = await saveDialog({
+        title: '导出软件配置',
+        defaultPath: 'ai-ssh-settings.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (!filePath) return
+      await writeFile(filePath, new TextEncoder().encode(text))
+      return
+    }
+    await navigator.clipboard.writeText(text)
   }
 
   const importSoftwareConfig = async () => {
-    const text = window.prompt('粘贴软件配置 JSON')
-    if (!text) {
+    if (isTauriRuntime) {
+      const filePath = await openDialog({
+        title: '导入软件配置',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        multiple: false,
+      })
+      if (!filePath) return
+      const text = await readTextFile(filePath as string)
+      await importSoftwareConfigFromText(text)
       return
     }
+    const text = window.prompt('粘贴软件配置 JSON')
+    if (!text) return
+    await importSoftwareConfigFromText(text)
+  }
+
+  const importSoftwareConfigFromText = async (text: string) => {
     try {
       const parsed = JSON.parse(text) as {
         settings?: Partial<AppSettings>
@@ -2690,6 +2737,7 @@ export function App() {
         rightServerInfoPanelHeight?: number
         rightPanelWidth?: number
         favoriteCommands?: unknown
+        coreConfig?: Record<string, unknown>
       }
       if (parsed.settings) {
         setSettings((current) => normalizeAppSettings({ ...current, ...parsed.settings }))
@@ -2712,6 +2760,16 @@ export function App() {
       }
       if (Array.isArray(parsed.favoriteCommands)) {
         persistFavoriteCommands(parsed.favoriteCommands)
+      }
+      if (parsed.coreConfig && (parsed.coreConfig.bindHost || parsed.coreConfig.port)) {
+        const resp = await apiFetch('/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed.coreConfig),
+        })
+        if (!resp.ok) {
+          appendLog('warn', 'ui.config', 'core config import failed; restart core manually for changes', {})
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '配置 JSON 解析失败'
@@ -6061,11 +6119,11 @@ export function App() {
                   {key === 'file' ? (
                     <>
                       <button type="button" title="新增 SSH 连接" onClick={openAddHostDialog}>新增连接</button>
-                      <button type="button" title="导出服务器列表" onClick={() => void exportHosts(false)}>导出服务器列表</button>
-                      <button type="button" title="导出服务器列表并包含加密凭据" onClick={() => void exportHosts(true)}>导出服务器列表（含加密凭据）</button>
-                      <button type="button" title="导出软件配置" onClick={() => void exportSoftwareConfig()}>导出软件配置</button>
-                      <button type="button" title="从剪贴板导入服务器列表" onClick={() => void importHostsFromClipboard()}>导入服务器列表</button>
-                      <button type="button" title="从剪贴板导入软件配置" onClick={() => void importSoftwareConfig()}>导入软件配置</button>
+                      <button type="button" title="导出服务器列表" onClick={() => void exportHosts(false)}>{isTauriRuntime ? '导出服务器列表到文件' : '导出服务器列表（复制）'}</button>
+                      <button type="button" title="导出服务器列表并包含加密凭据" onClick={() => void exportHosts(true)}>{isTauriRuntime ? '导出服务器列表到文件（含凭据）' : '导出服务器列表（含凭据、复制）'}</button>
+                      <button type="button" title="导出软件配置" onClick={() => void exportSoftwareConfig()}>{isTauriRuntime ? '导出软件配置到文件' : '导出软件配置（复制）'}</button>
+                      <button type="button" title={isTauriRuntime ? '从文件导入服务器列表' : '从剪贴板导入服务器列表'} onClick={() => void importHostsFromClipboard()}>{isTauriRuntime ? '从文件导入服务器列表' : '导入服务器列表'}</button>
+                      <button type="button" title={isTauriRuntime ? '从文件导入软件配置' : '从剪贴板导入软件配置'} onClick={() => void importSoftwareConfig()}>{isTauriRuntime ? '从文件导入软件配置' : '导入软件配置'}</button>
                     </>
                   ) : null}
                   {key === 'session' ? (
