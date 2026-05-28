@@ -4683,7 +4683,6 @@ export function App() {
         message.includes('404') || message.includes('not found')
           ? 'Go core 返回 404，通常表示当前客户端还在使用旧版 core。请关闭旧的 ai-ssh-core.exe 后重启客户端，或重新运行 npm run dev:tauri。'
           : '这是通过 Go core 调用大模型的统一 AI 接口失败，可在“工具 -> 日志”搜索 source=ai 查看详情。'
-      setAiAssistantError(message)
       setAiAssistantState('error')
       setErrorMessage(message, {
         title: 'AI 请求失败',
@@ -7066,7 +7065,6 @@ export function App() {
                     {!isAIProviderConfigured && settings.aiEnabled ? (
                       <p className="hint-text">请先在设置里填写大模型地址和模型，保存后再使用 AI。</p>
                     ) : null}
-                    {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
                     {aiMessages.length === 0 ? <p className="hint-text">当前对话暂无消息，可以直接输入问题或目标。</p> : null}
                     {aiMessages.map((message) => renderAIMessage(message))}
                     {aiAssistantState === 'loading' ? (
@@ -7079,6 +7077,7 @@ export function App() {
                   </div>
                 </div>
                 <div className="ai-unified-input">
+                  {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
                   <textarea
                     placeholder="直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作"
                     value={aiUnifiedPrompt}
