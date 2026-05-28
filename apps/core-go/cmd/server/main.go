@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -8,9 +9,19 @@ import (
 )
 
 func main() {
-	port := os.Getenv("AI_SSH_CORE_PORT")
-	if port == "" {
-		port = "18555"
+	cfg := server.LoadCoreConfig()
+
+	if os.Getenv("AI_SSH_BIND_HOST") == "" {
+		os.Setenv("AI_SSH_BIND_HOST", cfg.BindHost)
+	}
+
+	port := fmt.Sprintf("%d", cfg.Port)
+	if envPort := os.Getenv("AI_SSH_CORE_PORT"); envPort != "" {
+		port = envPort
+	}
+
+	if os.Getenv("AI_SSH_CORE_PORT") == "" {
+		os.Setenv("AI_SSH_CORE_PORT", port)
 	}
 
 	srv := server.New(port)

@@ -173,7 +173,7 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
     let bind_host = std::env::var("AI_SSH_BIND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     command
         .current_dir(&core_dir)
-        .env("AI_SSH_BIND_HOST", bind_host)
+        .env("AI_SSH_BIND_HOST", &bind_host)
         .env(
             "AI_SSH_DESKTOP_TOKEN",
             std::env::var("AI_SSH_DESKTOP_TOKEN").unwrap_or_default(),
@@ -187,7 +187,7 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
         command.creation_flags(0x08000000);
     }
     command.spawn().map_err(|error| error.to_string())?;
-    Ok(())
+    wait_core_listen(bind_host)
 }
 
 fn find_debug_repo_root() -> Option<std::path::PathBuf> {
@@ -400,4 +400,33 @@ fn local_core_http(request: &str) -> Option<String> {
     let mut response = String::new();
     std::io::Read::read_to_string(&mut stream, &mut response).ok()?;
     Some(response)
+}
+
+fn wait_core_listen(bind_host: String) -> Result<(), String> {
+    let core_port: u16 = std::env::var("AI_SSH_CORE_PORT")
+        .unwrap_or_else(|_| "18555".to_string())
+        .parse()
+        .unwrap_or(18555);
+    let addr = if bind_host == "0.0.0.0" || bind_host.is_empty() {
+        "127.0.0.1".to_string()
+    } else {
+        bind_host
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if std::time::Instant::now() > deadline {
+            return Err(format!(
+                "core 启动超时（15 秒），{addr}:{core_port} 无响应"
+            ));
+        }
+        if std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::from(([127, 0, 0, 1], core_port)),
+            std::time::Duration::from_millis(500),
+        )
+        .is_ok()
+        {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
 }

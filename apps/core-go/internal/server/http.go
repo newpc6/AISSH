@@ -49,6 +49,30 @@ func newServer(port string, manager *sessionManager) *http.Server {
 
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/health", healthHandler)
+	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, LoadCoreConfig())
+		case http.MethodPut:
+			var cfg CoreConfig
+			if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			if err := SaveCoreConfig(cfg); err != nil {
+				logger.error("config", "save core config failed", map[string]any{"error": err.Error()})
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			logger.info("config", "core config updated; restart required for bind host or port changes", map[string]any{
+				"bindHost": cfg.BindHost,
+				"port":     cfg.Port,
+			})
+			writeJSON(w, map[string]string{"message": "config saved; restart core for host/port changes to take effect"})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/auth/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
