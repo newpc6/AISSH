@@ -750,7 +750,6 @@ func withStaticFallback(api http.Handler, staticDir string) http.Handler {
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(value)
 }
@@ -778,7 +777,6 @@ func streamSessionEvents(w http.ResponseWriter, r *http.Request, session *termin
 		return
 	}
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -815,7 +813,6 @@ func streamAIEvents(w http.ResponseWriter, r *http.Request, logger *appLogger, r
 		return
 	}
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")

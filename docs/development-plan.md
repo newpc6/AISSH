@@ -489,6 +489,9 @@
 - [x] 统一 AI 输入框在 Enter 或发送图标提交后立即清空，方便连续输入下一条；Shift+Enter 保留换行，中文输入法选字时 Enter 不误触发发送
 - [x] 清理统一 AI 助手旧分流逻辑：共享协议、前端请求和 Go core 都不再传递模式枚举；系统提示词改为单一通用入口，由大模型自行判断问答、解释、总结、命令生成或 Agent 推进意图，用户自定义系统提示词继续参与同一入口
 - [x] Agent 自动执行步骤绑定来源 SSH 会话并随对话消息持久化，后续多步骤命令按步骤记录的 `sessionId` 执行和读取上下文，不再依赖当前 UI 激活会话，避免第二步误报“当前 SSH 会话不可执行命令”
+- [x] 修正绿色便携版打包流程：跳过安装包 bundler 时改用 `tauri build --no-bundle` 生成生产版桌面 exe，避免直接 `cargo build --release` 导致便携 exe 仍访问开发服务器 `127.0.0.1:1420`
+- [x] 修正 Tauri 生产运行时 API 地址识别：桌面端在 `tauri.localhost` 或 Tauri 注入对象可用时统一请求随包 Go core `127.0.0.1:18555`，避免登录页误请求静态资源或显示 `Failed to fetch`
+- [x] 修正 Go core JSON / SSE 响应覆盖 CORS Origin 的问题，避免 Tauri 生产窗口携带凭据访问本机 API 时被浏览器拦截
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [ ] 接入 agent 认证
 - [ ] 接入 known_hosts 严格校验

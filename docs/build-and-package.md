@@ -212,3 +212,5 @@ powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Clean -Ski
 # 打包前运行前端类型检查和 Go 测试
 powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Clean -RunTests
 ```
+
+`-SkipDesktopInstaller` 仍会使用 `tauri build --no-bundle` 生成生产版桌面 exe；不要直接用 `cargo build --release` 替代，否则 exe 会尝试访问开发服务器 `127.0.0.1:1420`，便携版启动后会显示“无法访问此页面”。

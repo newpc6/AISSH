@@ -323,6 +323,30 @@ func TestCORSAllowsCredentialedRequests(t *testing.T) {
 	}
 }
 
+func TestCORSOriginSurvivesJSONResponse(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.Header.Set("Origin", "http://tauri.localhost")
+	recorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected auth status 200, got %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "http://tauri.localhost" {
+		t.Fatalf("expected origin echo on JSON response, got %q", got)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("expected credentials allowed, got %q", got)
+	}
+}
+
 func TestAIPredictEndpointUsesOpenAICompatibleProvider(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {

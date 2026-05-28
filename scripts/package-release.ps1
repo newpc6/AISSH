@@ -320,7 +320,12 @@ try {
 
     if ($SkipDesktopInstaller) {
       Invoke-Step "构建 Tauri 桌面 exe" {
-        cargo build --release --manifest-path (Join-Path $repoRoot "apps\desktop\src-tauri\Cargo.toml")
+        Push-Location (Join-Path $repoRoot "apps\desktop")
+        try {
+          npx tauri build --no-bundle
+        } finally {
+          Pop-Location
+        }
       }
     } else {
       Invoke-Step "构建 Tauri 桌面客户端" {

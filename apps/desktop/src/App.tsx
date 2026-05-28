@@ -268,7 +268,19 @@ const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const FAVORITE_COMMANDS_STORAGE_KEY = 'ai-ssh-favorite-commands'
 const ERROR_DETAIL_LIMIT = 1200
 const DEFAULT_AI_SYSTEM_PROMPT = '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案；需要推进终端任务时只给一个下一步命令，并标明风险。高风险命令必须等待人工确认。'
-const isTauriRuntime = '__TAURI_INTERNALS__' in window
+type DesktopWindow = Window & {
+  __TAURI__?: unknown
+  __TAURI_INTERNALS__?: unknown
+}
+
+function isTauriDesktopLocation() {
+  return window.location.protocol === 'tauri:' || window.location.hostname === 'tauri.localhost'
+}
+
+const isTauriRuntime = (() => {
+  const desktopWindow = window as DesktopWindow
+  return Boolean(desktopWindow.__TAURI_INTERNALS__ || desktopWindow.__TAURI__ || isTauriDesktopLocation())
+})()
 const logLevelRank: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
@@ -384,6 +396,9 @@ function coreCapabilityErrorDetail(missing: string[]) {
 
 function resolveApiStreamUrl(path: string) {
   const requestPath = normalizeApiRequestPath(path)
+  if (isTauriRuntime) {
+    return `${CORE_API_FALLBACK_BASE}${requestPath}`
+  }
   if (window.location.origin.startsWith('http://127.0.0.1:1420')) {
     return `${CORE_API_BASE}${requestPath}`
   }
@@ -395,6 +410,9 @@ function resolveApiStreamUrl(path: string) {
 
 function resolveApiUrl(path: string) {
   const requestPath = normalizeApiRequestPath(path)
+  if (isTauriRuntime) {
+    return `${CORE_API_FALLBACK_BASE}${requestPath}`
+  }
   if (window.location.origin.startsWith('http://127.0.0.1:1420')) {
     return `${CORE_API_BASE}${requestPath}`
   }
