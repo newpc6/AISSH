@@ -1736,6 +1736,23 @@ button {
   white-space: nowrap;
 }
 
+.load-more-chats {
+  width: 100%;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #8ca0b8;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.load-more-chats:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+}
+
 .ai-chat-select small {
   color: #7f93ad;
   font-size: 10px;

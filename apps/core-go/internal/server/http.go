@@ -286,7 +286,16 @@ func newServer(port string, manager *sessionManager) *http.Server {
 	mux.HandleFunc("/api/ai/chats", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			conversations, err := aiChats.listConversations(100)
+			before := r.URL.Query().Get("before")
+			limit := 80
+			if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+				if parsed, err := fmt.Sscanf(rawLimit, "%d", &limit); err == nil && parsed == 1 && limit > 0 {
+					if limit > 200 {
+						limit = 200
+					}
+				}
+			}
+			conversations, err := aiChats.listConversations(before, limit)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

@@ -1316,6 +1316,7 @@ export function App() {
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
   const aiPredictionBySessionRef = useRef<Record<string, AIPredictionSessionState>>({})
   const aiMessagesRef = useRef<AIChatMessageDraft[]>([])
+  const aiConversationsRef = useRef<AIChatConversation[]>([])
   const activeAIConversationIdRef = useRef('')
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
   const aiStreamThinkingRef = useRef('')
@@ -2335,7 +2336,8 @@ export function App() {
 
   useEffect(() => {
     aiMessagesRef.current = aiMessages
-  }, [aiMessages])
+    aiConversationsRef.current = aiConversations
+  }, [aiMessages, aiConversations])
 
   useEffect(() => {
     activeAIConversationIdRef.current = activeAIConversationId
@@ -4316,13 +4318,19 @@ export function App() {
     }
   }
 
-  const loadAIConversations = async () => {
-    const response = await apiFetch('/ai/chats')
+  const loadAIConversations = async (replace = true) => {
+    const lastConversation = replace ? undefined : aiConversationsRef.current[aiConversationsRef.current.length - 1]
+    const cursor = lastConversation?.updatedAt ? `?before=${encodeURIComponent(lastConversation.updatedAt)}&limit=30` : '?limit=30'
+    const response = await apiFetch(`/ai/chats${cursor}`)
     if (!response.ok) {
       throw new Error((await readResponseErrorDetail(response)) || `加载 AI 对话失败：${response.status}`)
     }
     const data = (await response.json()) as AIChatConversationListResponse
-    setAiConversations(data.conversations)
+    if (replace) {
+      setAiConversations(data.conversations)
+    } else {
+      setAiConversations((current) => [...current, ...data.conversations])
+    }
     return data.conversations
   }
 
@@ -4457,12 +4465,9 @@ export function App() {
       body: JSON.stringify(body),
     })
     if (!response.ok) {
-      return
+      throw new Error((await readResponseErrorDetail(response)) || `更新对话标题失败：${response.status}`)
     }
-    const conversation = (await response.json()) as AIChatConversation
-    setAiConversations((current) =>
-      [conversation, ...current.filter((item) => item.id !== conversation.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    )
+    await loadAIConversations()
   }
 
   const currentConversationContext = (conversationId = activeAIConversationIdRef.current) => {
@@ -7057,6 +7062,15 @@ export function App() {
                             </button>
                           </div>
                         ))}
+                        {aiConversations.length >= 30 ? (
+                          <button
+                            className="load-more-chats"
+                            type="button"
+                            onClick={() => void loadAIConversations(false)}
+                          >
+                            加载更多...
+                          </button>
+                        ) : null}
                       </div>
                     </aside>
                   ) : null}

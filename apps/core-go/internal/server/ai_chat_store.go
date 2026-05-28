@@ -80,7 +80,7 @@ func (s *aiChatStore) ensureDB() (*sql.DB, error) {
 	return s.db, nil
 }
 
-func (s *aiChatStore) listConversations(limit int) ([]aiChatConversation, error) {
+func (s *aiChatStore) listConversations(before string, limit int) ([]aiChatConversation, error) {
 	db, err := s.ensureDB()
 	if err != nil {
 		return nil, err
@@ -88,7 +88,15 @@ func (s *aiChatStore) listConversations(limit int) ([]aiChatConversation, error)
 	if limit <= 0 || limit > 200 {
 		limit = 80
 	}
-	rows, err := db.Query(`SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC LIMIT ?`, limit)
+	query := `SELECT id, title, created_at, updated_at FROM conversations`
+	args := []any{}
+	if before != "" {
+		query += ` WHERE updated_at < ?`
+		args = append(args, before)
+	}
+	query += ` ORDER BY updated_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
