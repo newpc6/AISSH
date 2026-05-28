@@ -6722,7 +6722,7 @@ export function App() {
                           setExpandedPredictionThinkingSessionId(event.currentTarget.open ? activeSession.id : '')
                         }}
                       >
-                        <summary>预测 thinking</summary>
+                        <summary>预测思考 <span className="collapse-icon">▼</span></summary>
                         <pre>{activePrediction.thinking}</pre>
                       </details>
                     ) : null}

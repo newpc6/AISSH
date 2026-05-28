@@ -1776,11 +1776,20 @@ button {
 .ai-stream-card summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   color: #93c5fd;
   cursor: pointer;
   font-size: 12px;
+  user-select: none;
+}
+
+.ai-stream-card summary .collapse-icon {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+}
+
+.ai-stream-card details:not([open]) summary .collapse-icon {
+  transform: rotate(-90deg);
 }
 
 .ai-stream-card strong {
