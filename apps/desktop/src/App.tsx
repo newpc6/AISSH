@@ -4873,7 +4873,7 @@ export function App() {
     return () => window.clearInterval(interval)
   }, [activeSession?.hostId, settings.metricsRefreshIntervalSeconds, settings.metricsHistoryWindowMinutes])
 
-  const openSessionStream = (session: SessionRecord, markConnecting = false) => {
+  const openSessionStream = async (session: SessionRecord, markConnecting = false) => {
     if (eventSourcesRef.current[session.id]) {
       return
     }
@@ -4883,7 +4883,14 @@ export function App() {
       )
     }
 
-    const streamUrl = resolveApiStreamUrl(`/sessions/${session.id}/events`)
+    let streamUrl = resolveApiStreamUrl(`/sessions/${session.id}/events`)
+    if (isTauriRuntime) {
+      const token = desktopTokenRef.current || await invoke<string>('desktop_login_token').catch(() => '')
+      desktopTokenRef.current = token
+      if (token) {
+        streamUrl = appendQueryParam(streamUrl, 'desktopToken', token)
+      }
+    }
     appendLog('debug', 'ui.sse', 'session stream connecting', { sessionID: session.id, url: streamUrl })
     const source = new EventSource(streamUrl)
     eventSourcesRef.current[session.id] = source
