@@ -1291,7 +1291,8 @@ export function App() {
   const [fileError, setFileError] = useState('')
   const [isFileDropActive, setIsFileDropActive] = useState(false)
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
-  const [leftRailWidth, setLeftRailWidth] = useState(380)
+  const [leftRailWidth, setLeftRailWidth] = useState(280)
+  const [isLeftRailCollapsed, setIsLeftRailCollapsed] = useState(false)
   const [filePathDraft, setFilePathDraft] = useState('.')
   const [trackTerminalPath, setTrackTerminalPath] = useState(true)
   const [transferTasks, setTransferTasks] = useState<
@@ -2107,7 +2108,7 @@ export function App() {
           setSettings(settings)
           sessionSettingsRef.current = settings
           if (typeof app.leftRailWidth === 'number') {
-            setLeftRailWidth(Math.min(620, Math.max(320, app.leftRailWidth)))
+            setLeftRailWidth(Math.min(620, Math.max(220, app.leftRailWidth)))
           }
           if (typeof app.rightPanelWidth === 'number') {
             setRightPanelWidth(clampRightPanelWidth(app.rightPanelWidth))
@@ -2822,7 +2823,7 @@ export function App() {
         setSettings((current) => normalizeAppSettings({ ...current, ...parsed.settings }))
       }
       if (typeof parsed.leftRailWidth === 'number') {
-        setLeftRailWidth(Math.min(620, Math.max(320, parsed.leftRailWidth)))
+        setLeftRailWidth(Math.min(620, Math.max(220, parsed.leftRailWidth)))
       }
       if (typeof parsed.rightServerInfoPanelHeight === 'number') {
         const height = clampRightServerInfoPanelHeight(parsed.rightServerInfoPanelHeight)
@@ -5817,7 +5818,7 @@ export function App() {
     let nextWidth = startWidth
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      nextWidth = Math.min(620, Math.max(320, startWidth + moveEvent.clientX - startX))
+      nextWidth = Math.min(620, Math.max(220, startWidth + moveEvent.clientX - startX))
       setLeftRailWidth(nextWidth)
     }
 
@@ -6236,15 +6237,27 @@ export function App() {
       </header>
 
       <div
-        className="workbench-grid"
+        className={`workbench-grid${isLeftRailCollapsed ? ' left-collapsed' : ''}`}
         style={{
           '--left-rail-width': `${leftRailWidth}px`,
           '--right-server-info-height': `${rightServerInfoPanelHeight}px`,
           '--right-panel-width': `${rightPanelWidth}px`,
-          gridTemplateColumns: `${leftRailWidth}px minmax(560px, 1fr) ${rightPanelWidth}px`,
+          gridTemplateColumns: isLeftRailCollapsed ? `40px minmax(560px, 1fr) ${rightPanelWidth}px` : `${leftRailWidth}px minmax(560px, 1fr) ${rightPanelWidth}px`,
         } as React.CSSProperties}
       >
         <aside className="left-rail">
+          {isLeftRailCollapsed ? (
+            <div className="rail-collapsed">
+              <button
+                className="rail-toggle-button"
+                type="button"
+                title="展开左侧面板"
+                onClick={() => setIsLeftRailCollapsed(false)}
+              >
+                ▸
+              </button>
+            </div>
+          ) : (
           <div className="rail-tabs">
             <button
               className={leftMode === 'servers' ? 'active' : ''}
@@ -6263,12 +6276,14 @@ export function App() {
               文件
             </button>
           </div>
+          )}
 
-          {leftMode === 'servers' ? (
+          {!isLeftRailCollapsed ? (leftMode === 'servers' ? (
             <div className="left-content">
               <div className="panel-toolbar">
                 <strong>服务器</strong>
                 <div>
+                  <button type="button" title="折叠左侧面板" onClick={() => setIsLeftRailCollapsed(true)}>◁</button>
                   <button type="button" title="新增 SSH 连接" onClick={openAddHostDialog}>+</button>
                   <button type="button" title="管理 SSH 分组" onClick={openGroupDialog}>分组</button>
                   <button type="button" title="导出服务器列表" onClick={() => void exportHosts(false)}>⇅</button>
@@ -6336,6 +6351,7 @@ export function App() {
               <div className="panel-toolbar">
                 <strong>远程文件</strong>
                 <div>
+                  <button type="button" title="折叠左侧面板" onClick={() => setIsLeftRailCollapsed(true)}>◁</button>
                   <button type="button" title="进入上级目录" onClick={() => void loadFiles(parentPath(filePath))}>上级</button>
                   <button
                     type="button"
@@ -6525,8 +6541,9 @@ export function App() {
                 </div>
               ) : null}
             </div>
-          )}
+          )) : null}
         </aside>
+        {!isLeftRailCollapsed ? (
         <div
           aria-label="调整左侧宽度"
           className="rail-resizer"
@@ -6534,6 +6551,7 @@ export function App() {
           tabIndex={0}
           onPointerDown={startLeftRailResize}
         />
+        ) : null}
 
         <main className="center-workspace">
           <div
