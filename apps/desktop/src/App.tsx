@@ -1343,6 +1343,7 @@ export function App() {
   const agentStepsRef = useRef<AIAgentPlanStep[]>([])
   const agentModeRef = useRef<AIAgentMode>('review')
   const agentWaiterRef = useRef<AgentCommandWaiter | null>(null)
+  const terminalLineBufferRef = useRef<Record<string, string>>({})
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
@@ -1583,32 +1584,56 @@ export function App() {
     if (agentWaiterRef.current?.sessionId === sessionId) {
       agentWaiterRef.current.rawOutput += data
     }
-    const visibleData = stripVisibleAgentMarkers(data)
-    if (!visibleData) {
+    const buffer = terminalLineBufferRef.current[sessionId] ?? ''
+    const combined = buffer + data
+    const segments = combined.split(/\r?\n/)
+
+    const writeTerminalData = (output: string) => {
+      if (!output) return
+      setTerminalCaches((current) => {
+        const next = {
+          ...current,
+          [sessionId]: appendTerminalCache(current[sessionId], output, maxLines),
+        }
+        terminalCachesRef.current = next
+        return next
+      })
+      if (activeSessionIdRef.current === sessionId) {
+        xtermRef.current?.write(output)
+        schedulePredictionGhostPositionUpdate()
+        if (
+          pendingAIPredictionCommandRef.current[sessionId] &&
+          sessionSettingsRef.current.aiEnabled &&
+          sessionSettingsRef.current.aiPredictionEnabled &&
+          aiEnabledRef.current &&
+          !alternateScreenSessionsRef.current.has(sessionId)
+        ) {
+          scheduleAIPrediction(commandHistoryRef.current, 700, sessionId)
+        }
+      }
+    }
+
+    if (segments.length === 1) {
+      const markerPrefix = "printf '\\n__AI_SSH_AGENT_DONE_"
+      if (markerPrefix.startsWith(combined) || combined.includes('__AI_SSH_AGENT_DONE_')) {
+        terminalLineBufferRef.current[sessionId] = combined
+      } else {
+        terminalLineBufferRef.current[sessionId] = ''
+        writeTerminalData(data)
+      }
       return
     }
-    setTerminalCaches((current) => {
-      const next = {
-        ...current,
-        [sessionId]: appendTerminalCache(current[sessionId], visibleData, maxLines),
-      }
-      terminalCachesRef.current = next
-      return next
-    })
 
-    if (activeSessionIdRef.current === sessionId) {
-      xtermRef.current?.write(visibleData)
-      schedulePredictionGhostPositionUpdate()
-      if (
-        pendingAIPredictionCommandRef.current[sessionId] &&
-        sessionSettingsRef.current.aiEnabled &&
-        sessionSettingsRef.current.aiPredictionEnabled &&
-        aiEnabledRef.current &&
-        !alternateScreenSessionsRef.current.has(sessionId)
-      ) {
-        scheduleAIPrediction(commandHistoryRef.current, 700, sessionId)
-      }
+    const last = segments[segments.length - 1]
+    terminalLineBufferRef.current[sessionId] = last
+    const completeLines = segments.slice(0, -1)
+    const filtered = completeLines.filter(
+      (line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '\\n__AI_SSH_AGENT_DONE_/.test(line),
+    )
+    if (filtered.length === 0) {
+      return
     }
+    writeTerminalData(filtered.join('\r\n') + '\r\n')
   }
 
   const setSessionCommandDraft = (sessionId: string, draft: string) => {
@@ -1644,6 +1669,7 @@ export function App() {
     delete pendingAIPredictionTimerRef.current[sessionId]
     delete pendingAIPredictionCommandRef.current[sessionId]
     delete aiPredictionRequestRef.current[sessionId]
+    delete terminalLineBufferRef.current[sessionId]
   }
 
   const closeSessionStream = (sessionId: string) => {
