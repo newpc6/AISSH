@@ -1,4 +1,4 @@
-package server
+﻿package server
 
 import (
 	"crypto/aes"
@@ -251,6 +251,16 @@ type diskMetric struct {
 	Mount       string `json:"mount"`
 	Filesystem  string `json:"filesystem"`
 	UsedPercent int    `json:"usedPercent"`
+}
+
+type systemInfo struct {
+	HostID       string `json:"hostId"`
+	Hostname     string `json:"hostname"`
+	OS           string `json:"os"`
+	Kernel       string `json:"kernel"`
+	Arch         string `json:"arch"`
+	Uptime       string `json:"uptime"`
+	CollectedAt  string `json:"collectedAt"`
 }
 
 type terminalSession struct {

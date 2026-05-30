@@ -376,3 +376,70 @@ func runSSHCommand(client *ssh.Client, command string) (string, error) {
 	output, err := session.CombinedOutput(command)
 	return string(output), err
 }
+
+func collectSystemInfo(host hostRecord) (systemInfo, error) {
+	info := systemInfo{
+		HostID:      host.ID,
+		CollectedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	client, err := newSSHClient(host)
+	if err != nil {
+		return info, err
+	}
+	defer client.Close()
+
+	cmd := "uname -s; printf \"\\n__AI_SSH_SYS_HOST__\\n\"; hostname; printf \"\\n__AI_SSH_SYS_KERNEL__\\n\"; uname -r; printf \"\\n__AI_SSH_SYS_ARCH__\\n\"; uname -m; printf \"\\n__AI_SSH_SYS_UPTIME__\\n\"; cat /proc/uptime"
+	output, err := runSSHCommand(client, cmd)
+	if err != nil {
+		return info, err
+	}
+
+	info.OS = extractSection(output, "", "__AI_SSH_SYS_HOST__")
+	info.Hostname = extractSection(output, "__AI_SSH_SYS_HOST__", "__AI_SSH_SYS_KERNEL__")
+	info.Kernel = extractSection(output, "__AI_SSH_SYS_KERNEL__", "__AI_SSH_SYS_ARCH__")
+	info.Arch = extractSection(output, "__AI_SSH_SYS_ARCH__", "__AI_SSH_SYS_UPTIME__")
+
+	uptimeRaw := extractSection(output, "__AI_SSH_SYS_UPTIME__", "")
+	info.Uptime = formatUptime(uptimeRaw)
+
+	return info, nil
+}
+
+func extractSection(output, startMarker, endMarker string) string {
+	idx := strings.Index(output, startMarker)
+	if idx == -1 {
+		return ""
+	}
+	start := idx + len(startMarker)
+	if endMarker == "" {
+		return strings.TrimSpace(output[start:])
+	}
+	end := strings.Index(output[start:], endMarker)
+	if end == -1 {
+		return strings.TrimSpace(output[start:])
+	}
+	return strings.TrimSpace(output[start : start+end])
+}
+
+func formatUptime(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parts := strings.Fields(raw)
+	if len(parts) == 0 {
+		return ""
+	}
+	seconds, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return raw
+	}
+	days := int(seconds) / 86400
+	hours := (int(seconds) % 86400) / 3600
+	minutes := (int(seconds) % 3600) / 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
+	}
+	return fmt.Sprintf("%dh %dm", hours, minutes)
+}

@@ -1,4 +1,4 @@
-package server
+﻿package server
 
 import (
 	"bufio"
@@ -565,6 +565,36 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		}
 		writeJSON(w, metrics)
 	})
+
+	mux.HandleFunc("/api/system-info/", func(w http.ResponseWriter, r *http.Request) {
+		hostID := r.URL.Path[len("/api/system-info/"):]
+		if hostID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		host, ok, err := manager.resolveStoredHost(hostID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			http.Error(w, "host not found", http.StatusNotFound)
+			return
+		}
+
+		info, err := collectSystemInfo(host)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, info)
+	})
+
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)

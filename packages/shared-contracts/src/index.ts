@@ -1,4 +1,4 @@
-export const CORE_API_BASE = '/api'
+﻿export const CORE_API_BASE = '/api'
 export const CORE_DEFAULT_PORT = 18555
 
 export type HealthStatus = 'ok'
@@ -188,6 +188,16 @@ export interface DiskMetric {
   mount: string
   filesystem: string
   usedPercent: number
+}
+
+export interface SystemInfo {
+  hostId: string
+  hostname: string
+  os: string
+  kernel: string
+  arch: string
+  uptime: string
+  collectedAt: string
 }
 
 export interface SessionOpenRequest {

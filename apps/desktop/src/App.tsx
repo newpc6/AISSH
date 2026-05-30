@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+﻿import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Terminal } from '@xterm/xterm'
@@ -71,6 +71,7 @@ import {
   type LogsResponse,
   type LogSettings,
   type ServerMetrics,
+  type SystemInfo,
   type SessionCwdResponse,
   type HostUpsertRequest,
   type SessionOpenRequest,
@@ -1204,7 +1205,7 @@ async function readSSEStream(response: Response, onEvent: (event: AIStreamEvent)
 }
 
 export function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [_health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
   const [authState, setAuthState] = useState<LoadState>('loading')
   const [authRequired, setAuthRequired] = useState(true)
@@ -1268,6 +1269,7 @@ export function App() {
   const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
   const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
   const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
+  const [isAIInputCollapsed, setIsAIInputCollapsed] = useState(false)
   const [terminalSelectionAction, setTerminalSelectionAction] = useState<TerminalSelectionAction | null>(null)
   const [agentMode, setAgentMode] = useState<AIAgentMode>('review')
   const [agentState, setAgentState] = useState<LoadState>('idle')
@@ -1299,6 +1301,7 @@ export function App() {
     { id: string; name: string; direction: 'upload' | 'download'; progress: number; status: string }[]
   >([])
   const [serverMetrics, setServerMetrics] = useState<ServerMetrics | null>(null)
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [metricHistory, setMetricHistory] = useState<MetricSample[]>([])
   const terminalRef = useRef<HTMLDivElement | null>(null)
   const fileBrowserRef = useRef<HTMLDivElement | null>(null)
@@ -3878,6 +3881,21 @@ export function App() {
     previousMetricsRef.current = metrics
   }
 
+  const loadSystemInfo = async () => {
+    const hostId = activeSession?.hostId
+    if (!hostId || hostId === "local-demo") {
+      setSystemInfo(null)
+      return
+    }
+    const response = await apiFetch(`/system-info/${hostId}`)
+    if (!response.ok) {
+      setSystemInfo(null)
+      return
+    }
+    const info = (await response.json()) as SystemInfo
+    setSystemInfo(info)
+  }
+
   const recordCommand = (sessionId: string, command: string) => {
     const normalized = stripTerminalControlSequences(command).trim()
     if (!shouldRecordCommand(normalized)) {
@@ -4932,6 +4950,7 @@ export function App() {
 
   useEffect(() => {
     void loadServerMetrics()
+    void loadSystemInfo()
     if (!activeSession?.hostId || activeSession.hostId === 'local-demo') {
       return
     }
@@ -5139,6 +5158,7 @@ export function App() {
         commandBufferRef.current = ''
         clearAIPrediction()
         setServerMetrics(null)
+        setSystemInfo(null)
         setMetricHistory([])
         previousMetricsRef.current = null
         setFileEntries([])
@@ -6886,7 +6906,7 @@ export function App() {
                 <div>
                   <p className="section-label">快速连接</p>
                   <h2>选择一个服务器开始 SSH 会话</h2>
-                  <span>关闭所有标签后，终端会回到这里。左侧也可以继续新增、导入或管理服务器。</span>
+                  {/* <span>关闭所有标签后，终端会回到这里。左侧也可以继续新增、导入或管理服务器。</span> */}
                 </div>
                 <div className="recent-hosts">
                   {recentHosts.length > 0 ? (
@@ -6925,7 +6945,7 @@ export function App() {
             <div className="info-panel-header">
               <div>
                 <p className="section-label">当前服务器</p>
-                <h3>{activeSession?.hostName ?? activeHost?.name ?? '未连接'}</h3>
+                <h3>{activeSession?.hostName ?? '未连接'}</h3>
               </div>
               <button
                 className="panel-icon-button"
@@ -6941,17 +6961,37 @@ export function App() {
                 <dl>
                   <div>
                     <dt>地址</dt>
-                    <dd>{activeHost ? `${activeHost.address}:${activeHost.port}` : '-'}</dd>
+                    <dd>{activeSession ? (activeHost ? `${activeHost.address}:${activeHost.port}` : "-") : "-"}</dd>
                   </div>
                   <div>
                     <dt>用户</dt>
-                    <dd>{activeHost?.username ?? '-'}</dd>
-                  </div>
-                  <div>
-                    <dt>认证</dt>
-                    <dd>{activeHost?.authType ?? '-'}</dd>
+                    <dd>{activeSession ? (activeHost?.username ?? "-") : "-"}</dd>
                   </div>
                 </dl>
+                {activeSession && systemInfo ? (
+                  <div className="system-info-card">
+                    <div className="system-info-row">
+                      <span>系统</span>
+                      <strong>{systemInfo.os || "-"}</strong>
+                    </div>
+                    <div className="system-info-row">
+                      <span>内核</span>
+                      <strong>{systemInfo.kernel || "-"}</strong>
+                    </div>
+                    <div className="system-info-row">
+                      <span>主机名</span>
+                      <strong>{systemInfo.hostname || "-"}</strong>
+                    </div>
+                    <div className="system-info-row">
+                      <span>架构</span>
+                      <strong>{systemInfo.arch || "-"}</strong>
+                    </div>
+                    <div className="system-info-row">
+                      <span>运行时间</span>
+                      <strong>{systemInfo.uptime || "-"}</strong>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="metric-stack">
                   <div className="metric-card">{renderMetricChart('cpuPercent', 'CPU')}</div>
                   <div className="metric-card">{renderMetricChart('memoryPercent', '内存')}</div>
@@ -7091,71 +7131,96 @@ export function App() {
                     {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
                   </div>
                 </div>
-                <div className="ai-unified-input">
+                <div className={`ai-unified-input ${isAIInputCollapsed ? 'collapsed' : ''}`}>
                   {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
-                  <textarea
-                    placeholder="直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作"
-                    value={aiUnifiedPrompt}
-                    onChange={(event) => setAiUnifiedPrompt(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.nativeEvent.isComposing) {
-                        return
-                      }
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault()
-                        void runUnifiedAI()
-                      }
-                    }}
-                  />
-                  <div className="agent-mode-row">
-                    <label title="AI 给出命令后需要人工点击执行">
-                      <input checked={agentMode === 'review'} type="radio" onChange={() => setAgentMode('review')} />
-                      <span>审核模式</span>
-                    </label>
-                    <label title="AI 给出低风险命令后自动执行，高风险命令仍会暂停确认">
-                      <input checked={agentMode === 'auto'} type="radio" onChange={() => setAgentMode('auto')} />
-                      <span>自动模式</span>
-                    </label>
-                  </div>
-                  <div className="agent-actions">
-                    <button
-                      className="ai-icon-button"
-                      type="button"
-                      title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'}
-                      onClick={() => setIsAIHistoryOpen((current) => !current)}
-                    >
-                      {isAIHistoryOpen ? '◧' : '☰'}
-                    </button>
-                    <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
-                      ＋
-                    </button>
-                    <button
-                      className="ai-icon-button ai-send-button"
-                      disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
-                      type="button"
-                      title="发送给统一 AI 助手"
-                      onClick={() => void runUnifiedAI()}
-                    >
-                      {aiAssistantState === 'loading' ? '…' : '➤'}
-                    </button>
-                    <button
-                      className="ai-icon-button"
-                      type="button"
-                      title="清空当前 AI 输入框"
-                      onClick={() => {
-                        setAiUnifiedPrompt('')
-                        setAiAssistantError('')
+                  {!isAIInputCollapsed ? (
+                    <textarea
+                      placeholder="直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作"
+                      value={aiUnifiedPrompt}
+                      onChange={(event) => setAiUnifiedPrompt(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) {
+                          return
+                        }
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault()
+                          void runUnifiedAI()
+                        }
                       }}
-                    >
-                      ⌫
-                    </button>
-                    <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={continueAgentTask}>
-                      ↻
-                    </button>
-                    <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={stopAgentTask}>
-                      ■
-                    </button>
-                  </div>
+                    />
+                  ) : null}
+                  {!isAIInputCollapsed ? (
+                    <div className="agent-mode-row">
+                      <label title="AI 给出命令后需要人工点击执行">
+                        <input checked={agentMode === 'review'} type="radio" onChange={() => setAgentMode('review')} />
+                        <span>审核模式</span>
+                      </label>
+                      <label title="AI 给出低风险命令后自动执行，高风险命令仍会暂停确认">
+                        <input checked={agentMode === 'auto'} type="radio" onChange={() => setAgentMode('auto')} />
+                        <span>自动模式</span>
+                      </label>
+                    </div>
+                  ) : null}
+                  {isAIInputCollapsed ? (
+                    <div className="agent-actions">
+                      <button
+                        className="ai-icon-button"
+                        type="button"
+                        title="展开 AI 输入区域"
+                        onClick={() => setIsAIInputCollapsed(false)}
+                      >
+                        ▴
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="agent-actions">
+                      <button
+                        className="ai-icon-button"
+                        type="button"
+                        title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'}
+                        onClick={() => setIsAIHistoryOpen((current) => !current)}
+                      >
+                        {isAIHistoryOpen ? '◧' : '☰'}
+                      </button>
+                      <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
+                        ＋
+                      </button>
+                      <button
+                        className="ai-icon-button ai-send-button"
+                        disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
+                        type="button"
+                        title="发送给统一 AI 助手"
+                        onClick={() => void runUnifiedAI()}
+                      >
+                        {aiAssistantState === 'loading' ? '…' : '➤'}
+                      </button>
+                      <button
+                        className="ai-icon-button"
+                        type="button"
+                        title="清空当前 AI 输入框"
+                        onClick={() => {
+                          setAiUnifiedPrompt('')
+                          setAiAssistantError('')
+                        }}
+                      >
+                        ⌫
+                      </button>
+                      <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={continueAgentTask}>
+                        ↻
+                      </button>
+                      <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={stopAgentTask}>
+                        ■
+                      </button>
+                      <button
+                        className="ai-icon-button"
+                        type="button"
+                        title="收起 AI 输入区域"
+                        onClick={() => setIsAIInputCollapsed(true)}
+                      >
+                        ▾
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : rightTool === 'history' ? (
@@ -7322,7 +7387,7 @@ export function App() {
               {errorNotice.detail ? <small>{errorNotice.detail}</small> : null}
             </article>
           ) : null}
-          {health ? <p className="core-line">{health.service} · {health.version}</p> : null}
+
         </aside>
       </div>
 
