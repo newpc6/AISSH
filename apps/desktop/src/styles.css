@@ -897,8 +897,14 @@ button {
 }
 
 .session-tab.active {
-  background: #0d1520;
-  border-color: rgba(79, 140, 255, 0.32);
+  background: rgba(79, 140, 255, 0.1);
+  border-color: rgba(79, 140, 255, 0.55);
+  box-shadow: 0 -2px 12px rgba(79, 140, 255, 0.12);
+}
+
+.session-tab.active .tab-title {
+  color: #bfdbfe;
+  font-weight: 600;
 }
 
 .file-preview-tab {
