@@ -1595,7 +1595,6 @@ export function App() {
     }
     const buffer = terminalLineBufferRef.current[sessionId] ?? ''
     const combined = buffer + data
-    const segments = combined.split(/\r?\n/)
 
     const writeTerminalData = (output: string) => {
       if (!output) return
@@ -1622,8 +1621,20 @@ export function App() {
       }
     }
 
+    const hasMarkerContent = combined.includes('__AI_SSH_AGENT_DONE')
+    if (!hasMarkerContent && !buffer) {
+      writeTerminalData(data)
+      return
+    }
+
+    const segments = combined.split(/\r?\n/)
+    const last = segments[segments.length - 1]
+    const isMarkerFragment =
+      last.includes('__AI_SSH_AGENT_DONE') ||
+      last.includes("printf '__AI_SSH_AGENT_DONE_")
+
     if (segments.length === 1) {
-      if (combined.includes('__AI_SSH_AGENT_DONE') || combined.includes("printf '__AI_SSH_AGENT_DONE_")) {
+      if (isMarkerFragment) {
         terminalLineBufferRef.current[sessionId] = combined
       } else {
         terminalLineBufferRef.current[sessionId] = ''
@@ -1632,14 +1643,11 @@ export function App() {
       return
     }
 
-    const last = segments[segments.length - 1]
     const completeLines = segments.slice(0, -1)
     const isMarkerLine = (line: string) =>
       line.includes('__AI_SSH_AGENT_DONE_') || /^\s*printf '__AI_SSH_AGENT_DONE_/.test(line)
-    const isLastMarkerFragment =
-      last.includes('__AI_SSH_AGENT_DONE') ||
-      last.includes("printf '__AI_SSH_AGENT_DONE_")
-    if (isLastMarkerFragment) {
+
+    if (isMarkerFragment) {
       terminalLineBufferRef.current[sessionId] = last
     } else {
       terminalLineBufferRef.current[sessionId] = ''
@@ -7184,7 +7192,7 @@ export function App() {
                         if (event.nativeEvent.isComposing) {
                           return
                         }
-                        if (event.key === 'Enter' && !event.shiftKey) {
+                        if (event.key === 'Enter' && event.ctrlKey) {
                           event.preventDefault()
                           void runUnifiedAI()
                         }
