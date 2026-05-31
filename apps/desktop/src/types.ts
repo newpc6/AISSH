@@ -175,8 +175,14 @@ export type AIChatMessageDraft = AIChatMessage & {
 export type BatchHostResult = {
   hostId: string
   hostName: string
-  status: 'pending' | 'running' | 'success' | 'failed'
+  sessionId?: string
+  status: 'pending' | 'connecting' | 'running' | 'success' | 'failed'
+  stepCount: number
   summary?: string
+}
+
+export type BatchRunRequest = {
+  task: string
 }
 
 export type DesktopWindow = Window & {
