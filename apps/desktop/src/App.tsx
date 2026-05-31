@@ -6491,156 +6491,138 @@ export function App() {
                     {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
                   </div>
                 </div>
-                {batchMode && (batchSelectedHostIds.length > 0 || batchActive) ? (
-                  <div className="batch-exec-panel">
-                    {!batchActive ? (
-                      <>
-                        <div className="batch-exec-header">
-                          <span>批量执行 · 已选 {batchSelectedHostIds.length} 台</span>
-                          <div>
-                            <button className="batch-clear-button" type="button" onClick={() => { setBatchSelectedHostIds([]); batchSelectedHostIdsRef.current = [] }}>
-                              清空
-                            </button>
-                            <button className="batch-clear-button" type="button" onClick={() => {
-                              const allIds = hostsRef.current.map((h) => h.id)
-                              setBatchSelectedHostIds(allIds)
-                              batchSelectedHostIdsRef.current = allIds
-                            }}>
-                              全选
-                            </button>
-                          </div>
-                        </div>
-                        <textarea
-                          className="batch-task-input"
-                          placeholder="输入批量任务，例如：更新 apt、检查磁盘空间、重启 nginx 服务"
-                          value={batchTask}
-                          onChange={(event) => setBatchTask(event.target.value)}
-                        />
-                        <button
-                          className="primary-button"
-                          type="button"
-                          disabled={batchSelectedHostIds.length === 0 || !batchTask.trim()}
-                          onClick={() => void startBatchExecution()}
-                        >
-                          开始批量执行
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <div className="batch-exec-header">
-                          <span>批量执行中 · {batchHostIndex + 1}/{batchHostResults.length}</span>
-                          <button className="batch-clear-button" type="button" onClick={stopBatchExecution}>
-                            停止
-                          </button>
-                        </div>
-                        <div className="batch-exec-cards" ref={batchCardsRef}>
-                          {batchHostResults.map((result) => {
-                            const isCurrent = result.hostId === batchHostResults[batchHostIndex]?.hostId
-                            return (
-                              <div
-                                key={result.hostId}
-                                className={`batch-exec-card batch-${result.status} ${isCurrent ? 'batch-current' : ''}`}
-                              >
-                                <div className="batch-card-header">
-                                  <span className="batch-card-host">{result.hostName}</span>
-                                  <button
-                                    className="batch-card-close"
-                                    type="button"
-                                    title="关闭此服务器任务"
-                                    onClick={() => closeBatchHostCard(result.hostId)}
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                                <span className="batch-card-status">
-                                  {result.status === 'pending' ? '等待中'
-                                    : result.status === 'connecting' ? '连接中...'
-                                    : result.status === 'running' ? `执行中 · ${result.stepCount} 步`
-                                    : result.status === 'success' ? '✓ 完成'
-                                    : `✗ ${result.summary || '失败'}`}
-                                </span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className={`ai-unified-input ${isAIInputCollapsed ? 'collapsed' : ''}`}>
-                    {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
-                    {!isAIInputCollapsed ? (
-                      <textarea
-                        placeholder="直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作"
-                        value={aiUnifiedPrompt}
-                        onChange={(event) => setAiUnifiedPrompt(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.nativeEvent.isComposing) {
-                            return
-                          }
-                          if (event.key === 'Enter' && event.ctrlKey) {
-                            event.preventDefault()
+                <div className={`ai-unified-input ${isAIInputCollapsed ? 'collapsed' : ''}`}>
+                  {aiAssistantError ? <p className="error-text">{aiAssistantError}</p> : null}
+                  {!isAIInputCollapsed ? (
+                    <textarea
+                      placeholder={batchMode && batchSelectedHostIds.length > 0 && !batchActive
+                        ? '批量任务：输入自然语言任务描述（如"更新 apt、检查磁盘空间"），点击右侧 ⚡ 按钮启动'
+                        : '直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作'}
+                      value={batchMode && batchSelectedHostIds.length > 0 && !batchActive ? batchTask : aiUnifiedPrompt}
+                      onChange={(event) => {
+                        if (batchMode && batchSelectedHostIds.length > 0 && !batchActive) {
+                          setBatchTask(event.target.value)
+                        } else {
+                          setAiUnifiedPrompt(event.target.value)
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) return
+                        if (event.key === 'Enter' && event.ctrlKey) {
+                          event.preventDefault()
+                          if (batchMode && batchSelectedHostIds.length > 0 && !batchActive) {
+                            void startBatchExecution()
+                          } else {
                             void runUnifiedAI()
                           }
-                        }}
-                      />
-                    ) : null}
-                    {!isAIInputCollapsed ? (
-                      <div className="agent-mode-row">
-                        <label title="AI 给出命令后需要人工点击执行">
-                          <input checked={agentMode === 'review'} type="radio" onChange={() => setAgentMode('review')} />
-                          <span>审核模式</span>
-                        </label>
-                        <label title="AI 给出低风险命令后自动执行，高风险命令仍会暂停确认">
-                          <input checked={agentMode === 'auto'} type="radio" onChange={() => setAgentMode('auto')} />
-                          <span>自动模式</span>
-                        </label>
-                      </div>
-                    ) : null}
-                    {isAIInputCollapsed ? (
-                      <div className="agent-actions">
-                        <button className="ai-icon-button" type="button" title="展开 AI 输入区域" onClick={() => setIsAIInputCollapsed(false)}>
-                          ▴
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="agent-actions">
-                        <button className="ai-icon-button" type="button" title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'} onClick={() => setIsAIHistoryOpen((current) => !current)}>
-                          {isAIHistoryOpen ? '◧' : '☰'}
-                        </button>
-                        <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
-                          ＋
-                        </button>
+                        }
+                      }}
+                    />
+                  ) : null}
+                  {!isAIInputCollapsed ? (
+                    <div className="agent-mode-row">
+                      {batchMode && batchSelectedHostIds.length > 0 ? (
+                        <span className="batch-mode-hint">⚡ 批量模式 · 已选 {batchSelectedHostIds.length} 台</span>
+                      ) : (
+                        <>
+                          <label title="AI 给出命令后需要人工点击执行">
+                            <input checked={agentMode === 'review'} type="radio" onChange={() => setAgentMode('review')} />
+                            <span>审核模式</span>
+                          </label>
+                          <label title="AI 给出低风险命令后自动执行，高风险命令仍会暂停确认">
+                            <input checked={agentMode === 'auto'} type="radio" onChange={() => setAgentMode('auto')} />
+                            <span>自动模式</span>
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                  {isAIInputCollapsed ? (
+                    <div className="agent-actions">
+                      <button className="ai-icon-button" type="button" title="展开 AI 输入区域" onClick={() => setIsAIInputCollapsed(false)}>
+                        ▴
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="agent-actions">
+                      <button className="ai-icon-button" type="button" title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'} onClick={() => setIsAIHistoryOpen((current) => !current)}>
+                        {isAIHistoryOpen ? '◧' : '☰'}
+                      </button>
+                      <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
+                        ＋
+                      </button>
+                      <button
+                        className="ai-icon-button ai-send-button"
+                        disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
+                        type="button"
+                        title="发送给统一 AI 助手"
+                        onClick={() => void runUnifiedAI()}
+                      >
+                        {aiAssistantState === 'loading' ? '…' : '➤'}
+                      </button>
+                      <button
+                        className="ai-icon-button"
+                        type="button"
+                        title="清空当前 AI 输入框"
+                        onClick={() => { setAiUnifiedPrompt(''); setAiAssistantError(''); setBatchTask('') }}
+                      >
+                        ⌫
+                      </button>
+                      <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={continueAgentTask}>
+                        ↻
+                      </button>
+                      <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={stopAgentTask}>
+                        ■
+                      </button>
+                      {batchMode && batchSelectedHostIds.length > 0 && !batchActive ? (
                         <button
-                          className="ai-icon-button ai-send-button"
-                          disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
+                          className="ai-icon-button batch-run-button"
                           type="button"
-                          title="发送给统一 AI 助手"
-                          onClick={() => void runUnifiedAI()}
+                          title={`批量执行 · 已选 ${batchSelectedHostIds.length} 台`}
+                          disabled={!batchTask.trim()}
+                          onClick={() => void startBatchExecution()}
                         >
-                          {aiAssistantState === 'loading' ? '…' : '➤'}
+                          ⚡
                         </button>
-                        <button
-                          className="ai-icon-button"
-                          type="button"
-                          title="清空当前 AI 输入框"
-                          onClick={() => { setAiUnifiedPrompt(''); setAiAssistantError('') }}
+                      ) : null}
+                      <button className="ai-icon-button" type="button" title="收起 AI 输入区域" onClick={() => setIsAIInputCollapsed(true)}>
+                        ▾
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {batchActive ? (
+                  <div className="batch-exec-cards" ref={batchCardsRef}>
+                    {batchHostResults.map((result) => {
+                      const isCurrent = result.hostId === batchHostResults[batchHostIndex]?.hostId
+                      return (
+                        <div
+                          key={result.hostId}
+                          className={`batch-exec-card batch-${result.status} ${isCurrent ? 'batch-current' : ''}`}
                         >
-                          ⌫
-                        </button>
-                        <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={continueAgentTask}>
-                          ↻
-                        </button>
-                        <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={stopAgentTask}>
-                          ■
-                        </button>
-                        <button className="ai-icon-button" type="button" title="收起 AI 输入区域" onClick={() => setIsAIInputCollapsed(true)}>
-                          ▾
-                        </button>
-                      </div>
-                    )}
+                          <div className="batch-card-header">
+                            <span className="batch-card-host">{result.hostName}</span>
+                            <button
+                              className="batch-card-close"
+                              type="button"
+                              title="关闭此服务器任务"
+                              onClick={() => closeBatchHostCard(result.hostId)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <span className="batch-card-status">
+                            {result.status === 'pending' ? '等待中'
+                              : result.status === 'connecting' ? '连接中...'
+                              : result.status === 'running' ? `执行中 · ${result.stepCount} 步`
+                              : result.status === 'success' ? '✓ 完成'
+                              : `✗ ${result.summary || '失败'}`}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
-                )}
+                ) : null}
               </div>
             ) : rightTool === 'history' ? (
               <div className="history-list">
