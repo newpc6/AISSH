@@ -1640,7 +1640,7 @@ export function App() {
     if (filtered.length === 0) {
       return
     }
-    writeTerminalData(filtered.join('\r\n') + '\r\n')
+    writeTerminalData(filtered.join('\r\n'))
   }
 
   const setSessionCommandDraft = (sessionId: string, draft: string) => {
