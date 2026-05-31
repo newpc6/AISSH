@@ -1239,6 +1239,7 @@ export function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [selectedHostId, setSelectedHostId] = useState<string>('')
   const [batchSelectedHostIds, setBatchSelectedHostIds] = useState<string[]>([])
+  const [batchMode, setBatchMode] = useState(false)
   const [batchActive, setBatchActive] = useState(false)
   const [batchTask, setBatchTask] = useState('')
   const [batchHostIndex, setBatchHostIndex] = useState(0)
@@ -6539,6 +6540,21 @@ export function App() {
                 <strong>服务器</strong>
                 <div>
                   <button type="button" title="折叠左侧面板" onClick={() => setIsLeftRailCollapsed(true)}>◁</button>
+                  <button
+                    type="button"
+                    className={batchMode ? 'batch-mode-active' : ''}
+                    title="批量任务模式"
+                    onClick={() => {
+                      setBatchMode((current) => !current)
+                      if (batchMode) {
+                        setBatchSelectedHostIds([])
+                        batchSelectedHostIdsRef.current = []
+                        setBatchTask('')
+                      }
+                    }}
+                  >
+                    批量
+                  </button>
                   <button type="button" title="新增 SSH 连接" onClick={openAddHostDialog}>+</button>
                   <button type="button" title="管理 SSH 分组" onClick={openGroupDialog}>分组</button>
                   <button type="button" title="导出服务器列表" onClick={() => void exportHosts(false)}>⇅</button>
@@ -6553,7 +6569,7 @@ export function App() {
                     {group.hosts.map((host) => (
                       <div
                         key={host.id}
-                        className={`server-row ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''}`}
+                        className={`server-row ${batchMode ? 'batch-mode-row' : ''} ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''}`}
                         onClick={() => {
                           setSelectedHostId(host.id)
                           setOpenHostMenuId('')
@@ -6567,21 +6583,23 @@ export function App() {
                           }
                         }}
                       >
-                        <label className="batch-checkbox" onClick={(event) => event.stopPropagation()} title="勾选批量执行">
-                          <input
-                            type="checkbox"
-                            checked={batchSelectedHostIds.includes(host.id)}
-                            onChange={() => {
-                              setBatchSelectedHostIds((current) => {
-                                const next = current.includes(host.id)
-                                  ? current.filter((id) => id !== host.id)
-                                  : [...current, host.id]
-                                batchSelectedHostIdsRef.current = next
-                                return next
-                              })
-                            }}
-                          />
-                        </label>
+                        {batchMode ? (
+                          <label className="batch-checkbox" onClick={(event) => event.stopPropagation()} title="勾选批量执行">
+                            <input
+                              type="checkbox"
+                              checked={batchSelectedHostIds.includes(host.id)}
+                              onChange={() => {
+                                setBatchSelectedHostIds((current) => {
+                                  const next = current.includes(host.id)
+                                    ? current.filter((id) => id !== host.id)
+                                    : [...current, host.id]
+                                  batchSelectedHostIdsRef.current = next
+                                  return next
+                                })
+                              }}
+                            />
+                          </label>
+                        ) : null}
                         <div className="server-row-main">
                           <span>{host.name}</span>
                           <small>
@@ -6615,16 +6633,29 @@ export function App() {
                   </section>
                 ))}
               </div>
-              {batchSelectedHostIds.length > 0 || batchActive ? (
+              {batchMode || batchActive ? (
                 <div className="batch-panel">
                   <div className="batch-header">
                     <span>
-                      批量执行 · {batchActive ? `进度 ${batchHostIndex + 1}/${batchSelectedHostIds.length}` : `已选 ${batchSelectedHostIds.length} 台`}
+                      批量执行 · {batchActive ? `进度 ${batchHostIndex + 1}/${batchHostResults.length}` : `已选 ${batchSelectedHostIds.length} 台`}
                     </span>
                     {!batchActive ? (
-                      <button className="batch-clear-button" type="button" onClick={() => { setBatchSelectedHostIds([]); batchSelectedHostIdsRef.current = [] }}>
-                        清空
-                      </button>
+                      <div>
+                        <button className="batch-clear-button" type="button" onClick={() => { setBatchSelectedHostIds([]); batchSelectedHostIdsRef.current = [] }}>
+                          清空
+                        </button>
+                        <button
+                          className="batch-clear-button"
+                          type="button"
+                          onClick={() => {
+                            const allIds = hostsRef.current.map((h) => h.id)
+                            setBatchSelectedHostIds(allIds)
+                            batchSelectedHostIdsRef.current = allIds
+                          }}
+                        >
+                          全选
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                   {!batchActive ? (

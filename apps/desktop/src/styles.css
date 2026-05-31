@@ -473,7 +473,7 @@ button {
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-items: start;
   gap: 8px;
   text-align: left;
@@ -532,9 +532,19 @@ button {
   cursor: pointer;
 }
 
+.server-row.batch-mode-row {
+  grid-template-columns: 20px minmax(0, 1fr) 28px;
+}
+
 .server-row.batch-checked {
   border-color: rgba(99, 102, 241, 0.42);
   background: rgba(99, 102, 241, 0.06);
+}
+
+.batch-mode-active {
+  border-color: rgba(99, 102, 241, 0.7) !important;
+  background: rgba(99, 102, 241, 0.18) !important;
+  color: #c7d2fe !important;
 }
 
 .batch-panel {
@@ -554,6 +564,11 @@ button {
   gap: 8px;
   color: #c7d2fe;
   font-size: 12px;
+}
+
+.batch-header div {
+  display: flex;
+  gap: 6px;
 }
 
 .batch-clear-button {
