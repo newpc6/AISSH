@@ -6018,6 +6018,7 @@ export function App() {
                   复制
                 </button>
               </div>
+            </div>
             ) : null}
           <CodeMirrorEditor
             fileName={tab.name}
