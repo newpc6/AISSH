@@ -1621,19 +1621,12 @@ export function App() {
       }
     }
 
-    const hasMarkerContent = combined.includes('__AI_SSH_AGENT_DONE')
-    if (!hasMarkerContent && !buffer) {
-      writeTerminalData(data)
-      return
-    }
-
     const segments = combined.split(/\r?\n/)
-    const last = segments[segments.length - 1]
-    const isMarkerFragment =
-      last.includes('__AI_SSH_AGENT_DONE') ||
-      last.includes("printf '__AI_SSH_AGENT_DONE_")
 
     if (segments.length === 1) {
+      const isMarkerFragment =
+        combined.includes('__AI_SSH_AGENT_DONE') ||
+        combined.includes("printf '__AI_SSH_AGENT_DONE_")
       if (isMarkerFragment) {
         terminalLineBufferRef.current[sessionId] = combined
       } else {
@@ -1643,21 +1636,20 @@ export function App() {
       return
     }
 
+    const last = segments[segments.length - 1]
     const completeLines = segments.slice(0, -1)
-    const isMarkerLine = (line: string) =>
-      line.includes('__AI_SSH_AGENT_DONE_') || /^\s*printf '__AI_SSH_AGENT_DONE_/.test(line)
+    const filtered = completeLines.filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '__AI_SSH_AGENT_DONE_/.test(line))
+    if (filtered.length > 0) {
+      writeTerminalData(filtered.join('\r\n'))
+    }
 
-    if (isMarkerFragment) {
+    if (last === '') {
+      terminalLineBufferRef.current[sessionId] = ''
+    } else if (last.includes('__AI_SSH_AGENT_DONE') || last.includes("printf '__AI_SSH_AGENT_DONE_")) {
       terminalLineBufferRef.current[sessionId] = last
     } else {
       terminalLineBufferRef.current[sessionId] = ''
-      completeLines.push(last)
     }
-    const filtered = completeLines.filter((line) => !isMarkerLine(line))
-    if (filtered.length === 0) {
-      return
-    }
-    writeTerminalData(filtered.join('\r\n'))
   }
 
   const setSessionCommandDraft = (sessionId: string, draft: string) => {
