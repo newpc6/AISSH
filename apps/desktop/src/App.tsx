@@ -1480,17 +1480,21 @@ export function App() {
     const wrapRect = wrap?.getBoundingClientRect() ?? surface.getBoundingClientRect()
     const surfaceRect = surface.getBoundingClientRect()
     const rowRect = cursorRow.getBoundingClientRect()
-    const cellWidth = cursorRow.children.length > 0
-      ? rowRect.width / Math.max(cursorRow.children.length, 1)
-      : surfaceRect.width / Math.max(terminal.cols, 1)
+
+    if (rowRect.bottom <= surfaceRect.top || rowRect.top >= surfaceRect.bottom) {
+      setPredictionGhostPosition(null)
+      return
+    }
+
+    const cellWidth = wrapRect.width / Math.max(terminal.cols, 1)
     const cellHeight = rowRect.height
 
-    const cursorX = Math.min(terminal.buffer.active.cursorX + 1, Math.max(terminal.cols - 1, 0))
+    const cursorX = terminal.buffer.active.cursorX
     const left = Math.min(
       Math.max(8, rowRect.left - wrapRect.left + cursorX * cellWidth + 2),
       Math.max(8, wrapRect.width - 80),
     )
-    const top = rowRect.top - wrapRect.top
+    const top = Math.max(0, rowRect.top - wrapRect.top)
 
     setPredictionGhostPosition({
       left,
