@@ -1624,11 +1624,19 @@ export function App() {
     }
 
     const last = segments[segments.length - 1]
-    terminalLineBufferRef.current[sessionId] = last
     const completeLines = segments.slice(0, -1)
-    const filtered = completeLines.filter(
-      (line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '\\n__AI_SSH_AGENT_DONE_/.test(line),
-    )
+    const isMarkerLine = (line: string) =>
+      line.includes('__AI_SSH_AGENT_DONE_') || /^\s*printf '\\n__AI_SSH_AGENT_DONE_/.test(line)
+    const isLastMarkerFragment =
+      last.includes('__AI_SSH_AGENT_DONE') ||
+      last.includes("printf '\\n__AI_SSH_AGENT_DONE_")
+    if (isLastMarkerFragment) {
+      terminalLineBufferRef.current[sessionId] = last
+    } else {
+      terminalLineBufferRef.current[sessionId] = ''
+      completeLines.push(last)
+    }
+    const filtered = completeLines.filter((line) => !isMarkerLine(line))
     if (filtered.length === 0) {
       return
     }
