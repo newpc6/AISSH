@@ -1618,7 +1618,7 @@ export function App() {
         terminalLineBufferRef.current[sessionId] = combined
       } else {
         terminalLineBufferRef.current[sessionId] = ''
-        writeTerminalData(data)
+        writeTerminalData(combined)
       }
       return
     }
