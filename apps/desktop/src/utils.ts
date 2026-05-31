@@ -26,21 +26,11 @@ import {
   CORE_API_BASE,
   CORE_DEFAULT_PORT,
 } from '@ai-ssh/shared-contracts'
-import type {
-  AIStreamEvent,
-  AIRiskLevel,
-  DesktopWindow,
-  FilePreviewKind,
-  FileSortKey,
-  FileSortState,
-  LoadState,
-  MetricChartKey,
-  MetricSample,
-  TerminalCache,
-  WindowWithSaveFilePicker,
-} from '../types'
+import type { AIStreamEvent, AIRiskLevel, DesktopWindow, FilePreviewKind, FileSortKey, FileSortState, LoadState, MetricChartKey, MetricSample, TerminalCache, WindowWithSaveFilePicker } from '../types'
 
 export const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
+export const AI_PREDICT_STREAM_API_PATH = '/api/ai/predict/stream'
+export const AI_ASSIST_STREAM_API_PATH = '/api/ai/assist/stream'
 export const MIN_PREDICTION_PANEL_HEIGHT = 160
 export const DEFAULT_PREDICTION_PANEL_HEIGHT = 300
 export const MAX_PREDICTION_PANEL_HEIGHT = 520
@@ -54,12 +44,40 @@ export const DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS = 10
 export const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified', 'ai-chat-history']
 export const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 export const ERROR_DETAIL_LIMIT = 1200
-export const DEFAULT_AI_SYSTEM_PROMPT = '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案。需要推进终端任务时，每次返回一条可执行的命令；如果是复杂任务，应该在 agentReason 中说明整体计划，命令执行后会拿到输出和退出码，你再根据结果决定下一步。复杂任务可以分多步推进，比如先查询信息、根据结果再做下一步操作。高风险命令必须等待人工确认。'
+export const DEFAULT_AI_SYSTEM_PROMPT =
+  '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案。需要推进终端任务时，每次返回一条可执行的命令；如果是复杂任务，应该在 agentReason 中说明整体计划，命令执行后会拿到输出和退出码，你再根据结果决定下一步。复杂任务可以分多步推进，比如先查询信息、根据结果再做下一步操作。高风险命令必须等待人工确认。'
 
 export const textFileExtensions = new Set([
-  'bash', 'c', 'conf', 'cpp', 'cs', 'css', 'csv', 'env', 'go', 'h', 'html', 'ini',
-  'java', 'js', 'json', 'jsx', 'log', 'md', 'properties', 'py', 'rs', 'sh', 'sql',
-  'toml', 'ts', 'tsx', 'txt', 'xml', 'yaml', 'yml',
+  'bash',
+  'c',
+  'conf',
+  'cpp',
+  'cs',
+  'css',
+  'csv',
+  'env',
+  'go',
+  'h',
+  'html',
+  'ini',
+  'java',
+  'js',
+  'json',
+  'jsx',
+  'log',
+  'md',
+  'properties',
+  'py',
+  'rs',
+  'sh',
+  'sql',
+  'toml',
+  'ts',
+  'tsx',
+  'txt',
+  'xml',
+  'yaml',
+  'yml',
 ])
 export const imageFileExtensions = new Set(['bmp', 'gif', 'ico', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
 export const videoFileExtensions = new Set(['m4v', 'mov', 'mp4', 'mpeg', 'ogv', 'webm'])
@@ -72,8 +90,15 @@ export const logLevelRank: Record<LogLevel, number> = {
 }
 
 export const emptyHostForm: HostUpsertRequest = {
-  name: '', address: '', port: 22, username: '', authType: 'password',
-  group: '默认', description: '', password: '', privateKey: '',
+  name: '',
+  address: '',
+  port: 22,
+  username: '',
+  authType: 'password',
+  group: '默认',
+  description: '',
+  password: '',
+  privateKey: '',
 }
 
 export const defaultSettings: AppSettings = {
@@ -272,7 +297,10 @@ export function formatEditableText(name: string, content: string) {
     return { content: `${formatted}${normalized.endsWith('\n') ? '\n' : ''}`, message: 'JSON 已格式化' }
   }
   return {
-    content: normalized.split('\n').map((line) => line.replace(/[ \t]+$/g, '')).join('\n'),
+    content: normalized
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+$/g, ''))
+      .join('\n'),
     message: '已整理行尾空白',
   }
 }
@@ -323,10 +351,13 @@ export function normalizeRemotePath(path: string) {
   const parts: string[] = []
   for (const part of trimmed.split('/')) {
     if (!part || part === '.') continue
-    if (part === '..') { parts.pop(); continue }
+    if (part === '..') {
+      parts.pop()
+      continue
+    }
     parts.push(part)
   }
-  return isAbsolute ? (parts.length === 0 ? '/' : `/${parts.join('/')}`) : (parts.length === 0 ? '.' : parts.join('/'))
+  return isAbsolute ? (parts.length === 0 ? '/' : `/${parts.join('/')}`) : parts.length === 0 ? '.' : parts.join('/')
 }
 
 export function unquoteShellPath(value: string) {
@@ -425,14 +456,18 @@ export function updateTerminalDraft(cache: TerminalCache | undefined, draft: str
 
 export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
   return {
-    ...defaultSettings, ...value,
+    ...defaultSettings,
+    ...value,
     healthCheckIntervalSeconds: Math.max(3, Math.min(300, Number(value.healthCheckIntervalSeconds ?? defaultSettings.healthCheckIntervalSeconds) || DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS)),
     metricsRefreshIntervalSeconds: Math.max(1, Number(value.metricsRefreshIntervalSeconds ?? defaultSettings.metricsRefreshIntervalSeconds) || 2),
     metricsHistoryWindowMinutes: Math.max(1, Number(value.metricsHistoryWindowMinutes ?? defaultSettings.metricsHistoryWindowMinutes) || 5),
     metricsCompactPointLimit: Math.max(2, Math.min(30, Number(value.metricsCompactPointLimit ?? defaultSettings.metricsCompactPointLimit) || 5)),
     metricsExpandedPointLimit: Math.max(2, Math.min(120, Number(value.metricsExpandedPointLimit ?? defaultSettings.metricsExpandedPointLimit) || 20)),
     terminalRetainedLines: Math.max(100, Number(value.terminalRetainedLines ?? defaultSettings.terminalRetainedLines) || 1000),
-    rightServerInfoPanelHeight: Math.max(MIN_RIGHT_SERVER_INFO_HEIGHT, Math.min(MAX_RIGHT_SERVER_INFO_HEIGHT, Number(value.rightServerInfoPanelHeight ?? defaultSettings.rightServerInfoPanelHeight) || DEFAULT_RIGHT_SERVER_INFO_HEIGHT)),
+    rightServerInfoPanelHeight: Math.max(
+      MIN_RIGHT_SERVER_INFO_HEIGHT,
+      Math.min(MAX_RIGHT_SERVER_INFO_HEIGHT, Number(value.rightServerInfoPanelHeight ?? defaultSettings.rightServerInfoPanelHeight) || DEFAULT_RIGHT_SERVER_INFO_HEIGHT),
+    ),
     rightPanelWidth: Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(MAX_RIGHT_PANEL_WIDTH, Number(value.rightPanelWidth ?? defaultSettings.rightPanelWidth) || DEFAULT_RIGHT_PANEL_WIDTH)),
     aiEnabled: value.aiEnabled ?? defaultSettings.aiEnabled,
     aiPredictionCount: Math.max(1, Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3)),
@@ -464,7 +499,10 @@ export function isVisibleLogLevel(entryLevel: LogLevel, selectedLevel: LogLevel)
 }
 
 export function looksLikeStructuredPredictionFragment(command: string) {
-  const trimmed = stripTerminalControlSequences(command).trim().replace(/^`+|`+$/g, '').trim()
+  const trimmed = stripTerminalControlSequences(command)
+    .trim()
+    .replace(/^`+|`+$/g, '')
+    .trim()
   const lower = trimmed.toLowerCase()
   return trimmed.startsWith('{') || trimmed.startsWith('[') || lower.includes('"commands"')
 }
@@ -486,7 +524,31 @@ export function normalizePredictedCommands(values: unknown, limit: number) {
 export function classifyCommandRisk(command: string): AIRiskLevel {
   const lower = stripTerminalControlSequences(command).trim().toLowerCase()
   if (!lower) return 'low'
-  const highSignals = ['sudo ', 'su -', 'rm ', 'chmod 777', 'chown ', 'mkfs', 'dd if=', 'shutdown', 'reboot', 'systemctl restart', 'systemctl stop', 'service ', 'apt install', 'apt-get install', 'yum install', 'dnf install', 'docker rm', 'docker system prune', 'iptables', 'ufw ', 'firewall-cmd', 'curl ', 'wget ']
+  const highSignals = [
+    'sudo ',
+    'su -',
+    'rm ',
+    'chmod 777',
+    'chown ',
+    'mkfs',
+    'dd if=',
+    'shutdown',
+    'reboot',
+    'systemctl restart',
+    'systemctl stop',
+    'service ',
+    'apt install',
+    'apt-get install',
+    'yum install',
+    'dnf install',
+    'docker rm',
+    'docker system prune',
+    'iptables',
+    'ufw ',
+    'firewall-cmd',
+    'curl ',
+    'wget ',
+  ]
   if (highSignals.some((signal) => lower.includes(signal))) return 'high'
   const mediumSignals = ['docker run', 'docker compose', 'npm install', 'pip install', 'cp ', 'mv ']
   if (mediumSignals.some((signal) => lower.includes(signal))) return 'medium'
@@ -531,11 +593,17 @@ export function extractAgentExitCode(output: string, marker: string) {
 }
 
 export function stripAgentMarker(output: string, marker: string) {
-  return output.split(/\r?\n/).filter((line) => !line.includes(marker) && !line.includes(`printf '${marker}`)).join('\n')
+  return output
+    .split(/\r?\n/)
+    .filter((line) => !line.includes(marker) && !line.includes(`printf '${marker}`))
+    .join('\n')
 }
 
 export function stripVisibleAgentMarkers(output: string) {
-  return output.split(/\r?\n/).filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '__AI_SSH_AGENT_DONE_/.test(line)).join('\r\n')
+  return output
+    .split(/\r?\n/)
+    .filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '__AI_SSH_AGENT_DONE_/.test(line))
+    .join('\r\n')
 }
 
 export function clampPredictionPanelHeight(value: number) {
@@ -559,11 +627,13 @@ export function buildMetricPath(samples: MetricSample[], key: MetricChartKey, wi
     const y = height - (Math.max(0, Math.min(100, samples[0][key])) / 100) * height
     return `M 0 ${y.toFixed(1)} L ${width} ${y.toFixed(1)}`
   }
-  return samples.map((sample, index) => {
-    const x = (index / (samples.length - 1)) * width
-    const y = height - (Math.max(0, Math.min(100, sample[key])) / 100) * height
-    return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
-  }).join(' ')
+  return samples
+    .map((sample, index) => {
+      const x = (index / (samples.length - 1)) * width
+      const y = height - (Math.max(0, Math.min(100, sample[key])) / 100) * height
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
+    })
+    .join(' ')
 }
 
 export function metricPointIndexes(sampleCount: number, maxPoints: number) {
@@ -615,8 +685,11 @@ export function truncateErrorDetail(value: string) {
 }
 
 export async function readResponseErrorDetail(response: Response) {
-  try { return truncateErrorDetail(await response.clone().text()) }
-  catch { return '' }
+  try {
+    return truncateErrorDetail(await response.clone().text())
+  } catch {
+    return ''
+  }
 }
 
 export function normalizeRequestPath(path: string) {
@@ -633,11 +706,18 @@ export async function readSSEStream(response: Response, onEvent: (event: AIStrea
     while (separatorIndex >= 0) {
       const frame = buffer.slice(0, separatorIndex)
       buffer = buffer.slice(separatorIndex + 2)
-      const dataLines = frame.split('\n').map((line) => line.trimEnd()).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart())
+      const dataLines = frame
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
       if (dataLines.length > 0) {
         let parsed: AIStreamEvent | null = null
-        try { parsed = JSON.parse(dataLines.join('\n')) as AIStreamEvent }
-        catch { /* Ignore malformed stream fragments */ }
+        try {
+          parsed = JSON.parse(dataLines.join('\n')) as AIStreamEvent
+        } catch {
+          /* Ignore malformed stream fragments */
+        }
         if (parsed) onEvent(parsed)
       }
       separatorIndex = buffer.indexOf('\n\n')
