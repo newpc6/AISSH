@@ -1468,29 +1468,34 @@ export function App() {
       return
     }
 
-    const viewport = surface.querySelector('.xterm-viewport') as HTMLElement | null
-    const screen = surface.querySelector('.xterm-screen') as HTMLElement | null
     const xtermRows = surface.querySelector('.xterm-rows') as HTMLElement | null
-    const firstRow = xtermRows?.querySelector('div') as HTMLElement | null
-    const viewportRect = viewport?.getBoundingClientRect() ?? surface.getBoundingClientRect()
-    const surfaceRect = surface.getBoundingClientRect()
-    const screenRect = screen?.getBoundingClientRect() ?? viewportRect
-    const cellWidth = firstRow ? firstRow.getBoundingClientRect().width / Math.max(terminal.cols, 1) : viewportRect.width / Math.max(terminal.cols, 1)
-    const cellHeight = firstRow?.getBoundingClientRect().height || viewportRect.height / Math.max(terminal.rows, 1)
-    const cursorX = Math.min(terminal.buffer.active.cursorX + 1, Math.max(terminal.cols - 1, 0))
     const cursorY = terminal.buffer.active.cursorY
+    const cursorRow = xtermRows?.children[cursorY] as HTMLElement | null
+    if (!cursorRow) {
+      setPredictionGhostPosition(null)
+      return
+    }
+
+    const wrap = surface.parentElement
+    const wrapRect = wrap?.getBoundingClientRect() ?? surface.getBoundingClientRect()
+    const surfaceRect = surface.getBoundingClientRect()
+    const rowRect = cursorRow.getBoundingClientRect()
+    const cellWidth = cursorRow.children.length > 0
+      ? rowRect.width / Math.max(cursorRow.children.length, 1)
+      : surfaceRect.width / Math.max(terminal.cols, 1)
+    const cellHeight = rowRect.height
+
+    const cursorX = Math.min(terminal.buffer.active.cursorX + 1, Math.max(terminal.cols - 1, 0))
     const left = Math.min(
-      Math.max(8, screenRect.left - surfaceRect.left + cursorX * cellWidth + 2),
-      Math.max(8, surfaceRect.width - 80),
+      Math.max(8, rowRect.left - wrapRect.left + cursorX * cellWidth + 2),
+      Math.max(8, wrapRect.width - 80),
     )
-    const top = Math.min(
-      Math.max(8, screenRect.top - surfaceRect.top + cursorY * cellHeight),
-      Math.max(8, surfaceRect.height - cellHeight - 8),
-    )
+    const top = rowRect.top - wrapRect.top
+
     setPredictionGhostPosition({
       left,
       top,
-      maxWidth: Math.max(120, surfaceRect.width - left - 12),
+      maxWidth: Math.max(120, wrapRect.width - left - 12),
       height: Math.max(17, cellHeight),
     })
   }
