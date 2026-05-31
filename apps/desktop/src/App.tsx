@@ -162,6 +162,7 @@ import {
   metricXAxisLabels,
   missingCoreCapabilities,
   normalizeApiRequestPath,
+  normalizeAppSettings,
   normalizeAssistCommands,
   normalizeFavoriteCommands,
   normalizeFileSearchText,
