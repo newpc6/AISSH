@@ -1491,7 +1491,7 @@ export function App() {
       left,
       top,
       maxWidth: Math.max(120, surfaceRect.width - left - 12),
-      height: Math.max(18, cellHeight),
+      height: Math.max(17, cellHeight),
     })
   }
 
