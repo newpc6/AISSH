@@ -884,7 +884,7 @@ function agentExitMarker(stepId: string) {
 }
 
 function wrapAgentCommand(command: string, marker: string) {
-  return `${command}\nprintf '\\n${marker}%s\\n' "$?"`
+  return `${command}\nprintf '${marker}%s\\n' "$?"`
 }
 
 function escapeRegExp(value: string) {
@@ -903,14 +903,14 @@ function extractAgentExitCode(output: string, marker: string) {
 function stripAgentMarker(output: string, marker: string) {
   return output
     .split(/\r?\n/)
-    .filter((line) => !line.includes(marker) && !line.includes(`printf '\\n${marker}`))
+    .filter((line) => !line.includes(marker) && !line.includes(`printf '${marker}`))
     .join('\n')
 }
 
 function stripVisibleAgentMarkers(output: string) {
   return output
     .split(/\r?\n/)
-    .filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '\\n__AI_SSH_AGENT_DONE_/.test(line))
+    .filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '__AI_SSH_AGENT_DONE_/.test(line))
     .join('\r\n')
 }
 
@@ -1614,7 +1614,7 @@ export function App() {
     }
 
     if (segments.length === 1) {
-      if (combined.includes('__AI_SSH_AGENT_DONE') || combined.includes("printf '\\n__AI_SSH_AGENT_DONE_")) {
+      if (combined.includes('__AI_SSH_AGENT_DONE') || combined.includes("printf '__AI_SSH_AGENT_DONE_")) {
         terminalLineBufferRef.current[sessionId] = combined
       } else {
         terminalLineBufferRef.current[sessionId] = ''
@@ -1626,10 +1626,10 @@ export function App() {
     const last = segments[segments.length - 1]
     const completeLines = segments.slice(0, -1)
     const isMarkerLine = (line: string) =>
-      line.includes('__AI_SSH_AGENT_DONE_') || /^\s*printf '\\n__AI_SSH_AGENT_DONE_/.test(line)
+      line.includes('__AI_SSH_AGENT_DONE_') || /^\s*printf '__AI_SSH_AGENT_DONE_/.test(line)
     const isLastMarkerFragment =
       last.includes('__AI_SSH_AGENT_DONE') ||
-      last.includes("printf '\\n__AI_SSH_AGENT_DONE_")
+      last.includes("printf '__AI_SSH_AGENT_DONE_")
     if (isLastMarkerFragment) {
       terminalLineBufferRef.current[sessionId] = last
     } else {
