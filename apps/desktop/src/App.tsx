@@ -265,7 +265,7 @@ const DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS = 10
 const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified', 'ai-chat-history']
 const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 const ERROR_DETAIL_LIMIT = 1200
-const DEFAULT_AI_SYSTEM_PROMPT = '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案；需要推进终端任务时只给一个下一步命令，并标明风险。高风险命令必须等待人工确认。'
+const DEFAULT_AI_SYSTEM_PROMPT = '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案。需要推进终端任务时，每次返回一条可执行的命令；如果是复杂任务，应该在 agentReason 中说明整体计划，命令执行后会拿到输出和退出码，你再根据结果决定下一步。复杂任务可以分多步推进，比如先查询信息、根据结果再做下一步操作。高风险命令必须等待人工确认。'
 type DesktopWindow = Window & {
   __TAURI__?: unknown
   __TAURI_INTERNALS__?: unknown
@@ -1614,8 +1614,7 @@ export function App() {
     }
 
     if (segments.length === 1) {
-      const markerPrefix = "printf '\\n__AI_SSH_AGENT_DONE_"
-      if (markerPrefix.startsWith(combined) || combined.includes('__AI_SSH_AGENT_DONE_')) {
+      if (combined.includes('__AI_SSH_AGENT_DONE') || combined.includes("printf '\\n__AI_SSH_AGENT_DONE_")) {
         terminalLineBufferRef.current[sessionId] = combined
       } else {
         terminalLineBufferRef.current[sessionId] = ''

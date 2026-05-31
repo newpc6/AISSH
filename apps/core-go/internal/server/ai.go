@@ -873,7 +873,7 @@ func buildAssistSystemPrompt(customPrompt string) string {
 
 你只有一个统一入口，必须自行判断用户意图：
 1. 如果用户是在问答、解释错误、总结日志、分析现象或询问建议，直接给出结论、依据和下一步建议，不要生成 agentCommand。
-2. 如果用户希望你驱动终端完成目标，或者已经有 Agent 执行步骤需要继续判断，每次只生成一个下一步命令，或者判断目标已完成，或者提出需要用户补充的问题。
+2. 如果用户希望你驱动终端完成目标，或者已经有 Agent 执行步骤需要继续判断，每次返回一条可执行命令，同时用 agentReason 说明整体计划和当前这一步的目的。你的命令执行后会拿到输出和退出码，你必须根据实际结果决定下一步。复杂任务要分多步推进，比如先查询系统信息、根据查询结果筛选、再做配置或安装；不能假设一条命令就能拿到所有需要的信息。
 3. 如果 Agent 已执行步骤 JSON 中已有 output 和 exitCode，必须优先把它作为最新事实判断任务是否完成；不要只根据终端上下文或用户最初输入判断。
 4. 如果执行结果已经足以回答用户目标，例如命令返回路径、版本号、服务状态、明确的不存在信息或退出码已经说明结果，必须返回 agentStatus:"done"，在 answer 中直接给出结论和依据，不要继续生成无必要命令。
 5. 不要输出交互式编辑器命令，不要输出需要长时间阻塞的命令。优先使用可验证、可回滚、保守的命令推进。
@@ -1123,9 +1123,10 @@ func buildPredictionPrompt(request aiPredictionRequest) string {
 终端上下文：
 %s
 
-必须预测下一步命令。即使不确定，也返回保守的查看型命令，例如 ls -la、pwd、tail -n 100 nohup.out、ps -ef | grep 进程名。
+必须预测下一步命令。即使不确定，也返回保守的查看型命令
 不要在 content 中输出解释、分析、Markdown 或空内容。
 请只返回严格 JSON：{"commands":["命令1","命令2"]}`,
+		// ，例如 ls -la、pwd、tail -n 100 nohup.out、ps -ef | grep 进程名。
 		emptyAsDash(request.HostName),
 		emptyAsDash(request.Username),
 		emptyAsDash(request.HostAddress),
