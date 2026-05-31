@@ -2882,6 +2882,21 @@ code {
   line-height: 1.5;
 }
 
+.password-change-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.password-change-section h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
 .side-error {
   padding: 10px 12px;
   border-radius: 8px;

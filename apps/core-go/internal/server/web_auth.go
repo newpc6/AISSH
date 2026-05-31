@@ -26,6 +26,7 @@ type webAuthConfig struct {
 	Username             string
 	Password             string
 	DesktopLoginRequired bool
+	WebAccessEnabled     bool
 }
 
 type webLoginRequest struct {
@@ -48,17 +49,25 @@ type webAuthSetupRequest struct {
 }
 
 type webAuthSettingsRequest struct {
-	DesktopLoginRequired bool `json:"desktopLoginRequired"`
+	DesktopLoginRequired bool  `json:"desktopLoginRequired"`
+	WebAccessEnabled     *bool `json:"webAccessEnabled,omitempty"`
 }
 
 type webAuthSettingsResponse struct {
 	DesktopLoginRequired bool `json:"desktopLoginRequired"`
+	WebAccessEnabled     bool `json:"webAccessEnabled"`
+}
+
+type webAuthChangePasswordRequest struct {
+	OldPassword string `json:"oldPassword"`
+	NewPassword string `json:"newPassword"`
 }
 
 type webAuthStoreFile struct {
 	Username             string `json:"username"`
 	Password             string `json:"password"`
 	DesktopLoginRequired bool   `json:"desktopLoginRequired"`
+	WebAccessEnabled     bool   `json:"webAccessEnabled"`
 }
 
 type webSession struct {
@@ -73,6 +82,7 @@ type webAuthenticator struct {
 	username             string
 	password             string
 	desktopLoginRequired bool
+	webAccessEnabled     bool
 	configPath           string
 	sessions             map[string]webSession
 	logger               *appLogger
@@ -86,6 +96,7 @@ func newWebAuthenticator(logger *appLogger) *webAuthenticator {
 		username:             config.Username,
 		password:             config.Password,
 		desktopLoginRequired: config.DesktopLoginRequired,
+		webAccessEnabled:     config.WebAccessEnabled,
 		configPath:           webAuthConfigPath(),
 		sessions:             map[string]webSession{},
 		logger:               logger,
@@ -112,6 +123,7 @@ func loadWebAuthConfig(logger *appLogger) webAuthConfig {
 			Username:             username,
 			Password:             password,
 			DesktopLoginRequired: desktopLoginRequired,
+			WebAccessEnabled:     true,
 		}
 	}
 
@@ -127,6 +139,7 @@ func loadWebAuthConfig(logger *appLogger) webAuthConfig {
 			Username:             username,
 			Password:             config.Password,
 			DesktopLoginRequired: config.DesktopLoginRequired,
+			WebAccessEnabled:     config.WebAccessEnabled,
 		}
 	}
 
@@ -136,6 +149,7 @@ func loadWebAuthConfig(logger *appLogger) webAuthConfig {
 		Initialized:          false,
 		Username:             username,
 		DesktopLoginRequired: desktopLoginRequired,
+		WebAccessEnabled:     true,
 	}
 }
 
@@ -239,6 +253,7 @@ func (a *webAuthenticator) setup(w http.ResponseWriter, request webAuthSetupRequ
 		Username:             username,
 		Password:             request.Password,
 		DesktopLoginRequired: request.DesktopLoginRequired,
+		WebAccessEnabled:     true,
 	}
 	if err := writeWebAuthStore(a.configPath, config); err != nil {
 		return err
@@ -247,6 +262,7 @@ func (a *webAuthenticator) setup(w http.ResponseWriter, request webAuthSetupRequ
 	a.username = username
 	a.password = request.Password
 	a.desktopLoginRequired = request.DesktopLoginRequired
+	a.webAccessEnabled = true
 	a.initialized = true
 	a.logger.info("auth", "web auth initialized", map[string]any{
 		"path":                 a.configPath,
@@ -312,7 +328,7 @@ func (a *webAuthenticator) settings(r *http.Request) (webAuthSettingsResponse, b
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return webAuthSettingsResponse{DesktopLoginRequired: a.desktopLoginRequired}, true
+	return webAuthSettingsResponse{DesktopLoginRequired: a.desktopLoginRequired, WebAccessEnabled: a.webAccessEnabled}, true
 }
 
 func (a *webAuthenticator) updateSettings(r *http.Request, request webAuthSettingsRequest) (webAuthSettingsResponse, bool, error) {
@@ -322,20 +338,55 @@ func (a *webAuthenticator) updateSettings(r *http.Request, request webAuthSettin
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.enabled || !a.initialized {
-		return webAuthSettingsResponse{DesktopLoginRequired: false}, true, nil
+		return webAuthSettingsResponse{DesktopLoginRequired: false, WebAccessEnabled: a.webAccessEnabled}, true, nil
+	}
+	if request.WebAccessEnabled != nil {
+		a.webAccessEnabled = *request.WebAccessEnabled
 	}
 	config := webAuthStoreFile{
 		Username:             a.username,
 		Password:             a.password,
 		DesktopLoginRequired: request.DesktopLoginRequired,
+		WebAccessEnabled:     a.webAccessEnabled,
 	}
 	if err := writeWebAuthStore(a.configPath, config); err != nil {
 		return webAuthSettingsResponse{}, true, err
 	}
 	a.desktopLoginRequired = request.DesktopLoginRequired
-	a.logger.info("auth", "auth settings updated", map[string]any{"desktopLoginRequired": request.DesktopLoginRequired})
-	return webAuthSettingsResponse{DesktopLoginRequired: a.desktopLoginRequired}, true, nil
+	a.logger.info("auth", "auth settings updated", map[string]any{"desktopLoginRequired": request.DesktopLoginRequired, "webAccessEnabled": a.webAccessEnabled})
+	return webAuthSettingsResponse{DesktopLoginRequired: a.desktopLoginRequired, WebAccessEnabled: a.webAccessEnabled}, true, nil
 }
+
+func (a *webAuthenticator) changePassword(r *http.Request, request webAuthChangePasswordRequest) error {
+	if !a.requestAuthenticated(r) {
+		return errWebAuthUnauthorized
+	}
+	if strings.TrimSpace(request.NewPassword) == "" {
+		return errWebAuthPasswordRequired
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.enabled || !a.initialized {
+		return &webAuthError{message: "认证系统未初始化"}
+	}
+	if subtle.ConstantTimeCompare(hashString(request.OldPassword), hashString(a.password)) != 1 {
+		return &webAuthError{message: "旧密码不正确"}
+	}
+	a.password = request.NewPassword
+	config := webAuthStoreFile{
+		Username:             a.username,
+		Password:             a.password,
+		DesktopLoginRequired: a.desktopLoginRequired,
+		WebAccessEnabled:     a.webAccessEnabled,
+	}
+	if err := writeWebAuthStore(a.configPath, config); err != nil {
+		return err
+	}
+	a.logger.info("auth", "password changed", nil)
+	return nil
+}
+
+var errWebAuthUnauthorized = &webAuthError{message: "未登录，请先登录"}
 
 func (a *webAuthenticator) createSessionLocked(w http.ResponseWriter, username string, source string) error {
 	token, err := generateSessionToken()

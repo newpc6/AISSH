@@ -1211,6 +1211,10 @@ export function App() {
   const [authRequired, setAuthRequired] = useState(true)
   const [authInitialized, setAuthInitialized] = useState(true)
   const [desktopLoginRequired, setDesktopLoginRequired] = useState(false)
+  const [webAccessEnabled, setWebAccessEnabled] = useState(true)
+  const [changePasswordForm, setChangePasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' })
+  const [changePasswordError, setChangePasswordError] = useState('')
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState('')
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: '' })
   const [setupForm, setSetupForm] = useState(emptySetupForm)
   const [showLoginPassword, setShowLoginPassword] = useState(false)
@@ -3073,7 +3077,7 @@ export function App() {
 
   const saveAuthSettings = async () => {
     try {
-      const payload: AuthSettingsUpdateRequest = { desktopLoginRequired }
+      const payload: AuthSettingsUpdateRequest = { desktopLoginRequired, webAccessEnabled }
       const response = await apiFetch('/auth/settings', {
         method: 'PUT',
         headers: {
@@ -3087,6 +3091,7 @@ export function App() {
       }
       const data = (await response.json()) as AuthSettingsResponse
       setDesktopLoginRequired(data.desktopLoginRequired)
+      setWebAccessEnabled(data.webAccessEnabled)
       return true
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '保存安全设置失败', {
@@ -3096,6 +3101,39 @@ export function App() {
         source: '安全设置',
       })
       return false
+    }
+  }
+
+  const changePassword = async () => {
+    setChangePasswordError('')
+    setChangePasswordSuccess('')
+    if (!changePasswordForm.oldPassword) {
+      setChangePasswordError('请输入旧密码')
+      return
+    }
+    if (!changePasswordForm.newPassword) {
+      setChangePasswordError('请输入新密码')
+      return
+    }
+    if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
+      setChangePasswordError('两次输入的新密码不一致')
+      return
+    }
+    try {
+      const response = await apiFetch('/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPassword: changePasswordForm.oldPassword, newPassword: changePasswordForm.newPassword }),
+      })
+      if (!response.ok) {
+        const detail = await readResponseErrorDetail(response)
+        throw new Error(detail || '修改密码失败')
+      }
+      setChangePasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' })
+      setChangePasswordSuccess('密码已修改')
+      window.setTimeout(() => setChangePasswordSuccess(''), 2200)
+    } catch (error) {
+      setChangePasswordError(error instanceof Error ? error.message : '修改密码失败')
     }
   }
 
@@ -7838,6 +7876,57 @@ export function App() {
                     <p className="hint-text">
                       网页访问始终需要登录；关闭此项后，本机安装版客户端会使用本机安全会话自动进入。
                     </p>
+                    <label className="checkbox-row">
+                      <input
+                        checked={webAccessEnabled}
+                        type="checkbox"
+                        onChange={(event) => setWebAccessEnabled(event.target.checked)}
+                      />
+                      <span>启用网页远程访问</span>
+                    </label>
+                    <p className="hint-text">
+                      关闭后禁止浏览器网页登录，仅允许本机桌面客户端访问。
+                    </p>
+                    {authInitialized ? (
+                      <div className="password-change-section">
+                        <h3>修改登录密码</h3>
+                        <label>
+                          <span>旧密码</span>
+                          <input
+                            type="password"
+                            value={changePasswordForm.oldPassword}
+                            onChange={(event) =>
+                              setChangePasswordForm((current) => ({ ...current, oldPassword: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>新密码</span>
+                          <input
+                            type="password"
+                            value={changePasswordForm.newPassword}
+                            onChange={(event) =>
+                              setChangePasswordForm((current) => ({ ...current, newPassword: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>确认新密码</span>
+                          <input
+                            type="password"
+                            value={changePasswordForm.confirmPassword}
+                            onChange={(event) =>
+                              setChangePasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))
+                            }
+                          />
+                        </label>
+                        {changePasswordError ? <p className="error-text">{changePasswordError}</p> : null}
+                        {changePasswordSuccess ? <p className="success-text">{changePasswordSuccess}</p> : null}
+                        <button className="primary-button" type="button" onClick={changePassword}>
+                          修改密码
+                        </button>
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
 

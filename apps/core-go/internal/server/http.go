@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"bufio"
@@ -186,6 +186,26 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
+	})
+	mux.HandleFunc("/api/auth/change-password", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var request webAuthChangePasswordRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if err := authenticator.changePassword(r, request); err != nil {
+			code := http.StatusInternalServerError
+			if strings.Contains(err.Error(), "未登录") {
+				code = http.StatusUnauthorized
+			}
+			http.Error(w, err.Error(), code)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

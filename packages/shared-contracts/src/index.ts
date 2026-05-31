@@ -1,4 +1,4 @@
-﻿export const CORE_API_BASE = '/api'
+export const CORE_API_BASE = '/api'
 export const CORE_DEFAULT_PORT = 18555
 
 export type HealthStatus = 'ok'
@@ -55,10 +55,12 @@ export interface AuthSetupRequest {
 
 export interface AuthSettingsResponse {
   desktopLoginRequired: boolean
+  webAccessEnabled: boolean
 }
 
 export interface AuthSettingsUpdateRequest {
   desktopLoginRequired: boolean
+  webAccessEnabled?: boolean
 }
 
 export interface AppSettings {
