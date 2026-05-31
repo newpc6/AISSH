@@ -240,6 +240,13 @@ type AIChatMessageDraft = AIChatMessage & {
   pending?: boolean
 }
 
+type BatchHostResult = {
+  hostId: string
+  hostName: string
+  status: 'pending' | 'running' | 'success' | 'failed'
+  summary?: string
+}
+
 const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
   predictions: [],
   index: 0,
@@ -1231,6 +1238,11 @@ export function App() {
   const [groupDialogError, setGroupDialogError] = useState('')
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [selectedHostId, setSelectedHostId] = useState<string>('')
+  const [batchSelectedHostIds, setBatchSelectedHostIds] = useState<string[]>([])
+  const [batchActive, setBatchActive] = useState(false)
+  const [batchTask, setBatchTask] = useState('')
+  const [batchHostIndex, setBatchHostIndex] = useState(0)
+  const [batchHostResults, setBatchHostResults] = useState<BatchHostResult[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string>('')
   const [leftMode, setLeftMode] = useState<LeftMode>('servers')
   const [rightTool, setRightTool] = useState<RightTool>('ai')
@@ -1348,6 +1360,8 @@ export function App() {
   const agentModeRef = useRef<AIAgentMode>('review')
   const agentWaiterRef = useRef<AgentCommandWaiter | null>(null)
   const terminalLineBufferRef = useRef<Record<string, string>>({})
+  const batchAbortRef = useRef(false)
+  const batchSelectedHostIdsRef = useRef<string[]>([])
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
@@ -3135,6 +3149,148 @@ export function App() {
     } catch (error) {
       setChangePasswordError(error instanceof Error ? error.message : '修改密码失败')
     }
+  }
+
+  const stopBatchExecution = () => {
+    batchAbortRef.current = true
+    setBatchActive(false)
+    setBatchHostIndex(0)
+    setBatchHostResults([])
+    setBatchSelectedHostIds([])
+    batchSelectedHostIdsRef.current = []
+    agentRunningRef.current = false
+    clearAgentWaiter()
+    setAgentState('idle')
+    setAgentMessage('批量任务已停止')
+  }
+
+  const executeBatchPerHost = async (hostId: string, hostName: string, task: string, index: number, total: number) => {
+    if (batchAbortRef.current) return
+
+    setBatchHostResults((current) =>
+      current.map((r) => (r.hostId === hostId ? { ...r, status: 'running' as const } : r)),
+    )
+    setAgentMessage(`[${index + 1}/${total}] 正在连接 ${hostName}...`)
+
+    let sessionId = ''
+    try {
+      const response = await apiFetch('/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostId }),
+      })
+      if (!response.ok) {
+        throw new Error(`创建会话失败：${response.status}`)
+      }
+      const data = (await response.json()) as SessionOpenResponse
+      sessionId = data.session.id
+      setSessions((current) => [data.session, ...current])
+      openSessionStream(data.session, false)
+
+      await new Promise<void>((resolve, reject) => {
+        const start = Date.now()
+        const check = () => {
+          if (batchAbortRef.current) {
+            reject(new Error('aborted'))
+            return
+          }
+          const session = sessionsRef.current.find((s) => s.id === sessionId)
+          if (session?.status === 'connected') {
+            resolve()
+            return
+          }
+          if (session?.status === 'error') {
+            reject(new Error(session.lastError || '连接失败'))
+            return
+          }
+          if (Date.now() - start > 30000) {
+            reject(new Error('连接超时（30 秒）'))
+            return
+          }
+          window.setTimeout(check, 500)
+        }
+        check()
+      })
+
+      setAgentMessage(`[${index + 1}/${total}] 正在 ${hostName} 上执行：${task}`)
+
+      agentGoalRef.current = task
+      agentModeRef.current = 'auto'
+      setAgentMode('auto')
+      setAgentState('loading')
+      agentRunningRef.current = true
+      activeSessionIdRef.current = sessionId
+      void requestAgentNextStep([], sessionId)
+      if (activeSessionIdRef.current !== sessionId) {
+        setActiveSession(sessionId)
+      }
+
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (batchAbortRef.current || !agentRunningRef.current) {
+            resolve()
+            return
+          }
+          window.setTimeout(check, 500)
+        }
+        check()
+      })
+
+      await closeSessionStream(sessionId)
+      void apiFetch(`/sessions/${sessionId}/close`, { method: 'POST' })
+      setSessions((current) => current.filter((s) => s.id !== sessionId))
+      removeTerminalCache(sessionId)
+
+      if (batchAbortRef.current) {
+        setBatchHostResults((current) =>
+          current.map((r) => (r.hostId === hostId ? { ...r, status: 'failed' as const, summary: '已取消' } : r)),
+        )
+        return
+      }
+
+      setBatchHostResults((current) =>
+        current.map((r) => (r.hostId === hostId ? { ...r, status: 'success' as const, summary: '任务已完成' } : r)),
+      )
+    } catch (error) {
+      if (sessionId) {
+        closeSessionStream(sessionId)
+        void apiFetch(`/sessions/${sessionId}/close`, { method: 'POST' })
+        setSessions((current) => current.filter((s) => s.id !== sessionId))
+        removeTerminalCache(sessionId)
+      }
+      setBatchHostResults((current) =>
+        current.map((r) =>
+          r.hostId === hostId
+            ? { ...r, status: 'failed' as const, summary: error instanceof Error ? error.message : '执行失败' }
+            : r,
+        ),
+      )
+    }
+  }
+
+  const startBatchExecution = async () => {
+    const ids = batchSelectedHostIdsRef.current
+    if (ids.length === 0 || !batchTask.trim()) return
+    batchAbortRef.current = false
+    const hosts = hostsRef.current.filter((h) => ids.includes(h.id))
+    const results: BatchHostResult[] = hosts.map((h) => ({ hostId: h.id, hostName: h.name, status: 'pending' }))
+    setBatchHostResults(results)
+    setBatchActive(true)
+    setBatchHostIndex(0)
+    agentRunningRef.current = false
+    clearAgentWaiter()
+    setAgentState('success')
+    setAgentMessage('')
+
+    for (let i = 0; i < hosts.length; i++) {
+      setBatchHostIndex(i)
+      await executeBatchPerHost(hosts[i].id, hosts[i].name, batchTask.trim(), i, hosts.length)
+      if (batchAbortRef.current) break
+    }
+
+    setBatchActive(false)
+    setBatchHostIndex(0)
+    setAgentMessage('批量任务已全部完成')
   }
 
   const saveAllSettings = async () => {
@@ -5861,8 +6017,7 @@ export function App() {
                   复制
                 </button>
               </div>
-            </div>
-          ) : null}
+            ) : null}
           <CodeMirrorEditor
             fileName={tab.name}
             ref={codeMirrorRef}
@@ -6398,7 +6553,7 @@ export function App() {
                     {group.hosts.map((host) => (
                       <div
                         key={host.id}
-                        className={`server-row ${selectedHostId === host.id ? 'selected' : ''}`}
+                        className={`server-row ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''}`}
                         onClick={() => {
                           setSelectedHostId(host.id)
                           setOpenHostMenuId('')
@@ -6412,6 +6567,21 @@ export function App() {
                           }
                         }}
                       >
+                        <label className="batch-checkbox" onClick={(event) => event.stopPropagation()} title="勾选批量执行">
+                          <input
+                            type="checkbox"
+                            checked={batchSelectedHostIds.includes(host.id)}
+                            onChange={() => {
+                              setBatchSelectedHostIds((current) => {
+                                const next = current.includes(host.id)
+                                  ? current.filter((id) => id !== host.id)
+                                  : [...current, host.id]
+                                batchSelectedHostIdsRef.current = next
+                                return next
+                              })
+                            }}
+                          />
+                        </label>
                         <div className="server-row-main">
                           <span>{host.name}</span>
                           <small>
@@ -6445,6 +6615,54 @@ export function App() {
                   </section>
                 ))}
               </div>
+              {batchSelectedHostIds.length > 0 || batchActive ? (
+                <div className="batch-panel">
+                  <div className="batch-header">
+                    <span>
+                      批量执行 · {batchActive ? `进度 ${batchHostIndex + 1}/${batchSelectedHostIds.length}` : `已选 ${batchSelectedHostIds.length} 台`}
+                    </span>
+                    {!batchActive ? (
+                      <button className="batch-clear-button" type="button" onClick={() => { setBatchSelectedHostIds([]); batchSelectedHostIdsRef.current = [] }}>
+                        清空
+                      </button>
+                    ) : null}
+                  </div>
+                  {!batchActive ? (
+                    <>
+                      <textarea
+                        className="batch-task-input"
+                        placeholder="输入批量任务，例如：更新 apt、检查磁盘空间、重启 nginx 服务"
+                        value={batchTask}
+                        onChange={(event) => setBatchTask(event.target.value)}
+                      />
+                      <button
+                        className="primary-button batch-start-button"
+                        type="button"
+                        disabled={batchSelectedHostIds.length === 0 || !batchTask.trim()}
+                        onClick={() => void startBatchExecution()}
+                      >
+                        开始批量执行
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="batch-results">
+                        {batchHostResults.map((result) => (
+                          <div key={result.hostId} className={`batch-result-item batch-${result.status}`}>
+                            <span className="batch-result-host">{result.hostName}</span>
+                            <span className="batch-result-status">
+                              {result.status === 'pending' ? '等待中' : result.status === 'running' ? '执行中...' : result.status === 'success' ? '✓ 完成' : `✗ ${result.summary || '失败'}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <button className="batch-stop-button" type="button" onClick={stopBatchExecution}>
+                        停止批量任务
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="left-content">
