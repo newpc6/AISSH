@@ -1,5 +1,7 @@
 use tauri::Manager;
 
+struct CoreProcess(std::sync::Mutex<Option<std::process::Child>>);
+
 #[derive(serde::Serialize)]
 struct LocalUploadFile {
     path: String,
@@ -27,9 +29,14 @@ pub fn run() {
             active_explorer_directory
         ])
         .setup(|app| {
-            if let Err(error) = start_core_server(app.handle()) {
-                eprintln!("failed to start AI SSH core: {error}");
-            }
+            let child = match start_core_server(app.handle()) {
+                Ok(child) => child,
+                Err(error) => {
+                    eprintln!("failed to start AI SSH core: {error}");
+                    None
+                }
+            };
+            app.manage(CoreProcess(std::sync::Mutex::new(child)));
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -39,8 +46,18 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = app_handle.state::<CoreProcess>();
+                let mut guard = state.0.lock().unwrap();
+                if let Some(mut child) = guard.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        });
 }
 
 #[tauri::command]
@@ -153,14 +170,14 @@ fn platform_active_explorer_directory() -> Result<Option<String>, String> {
     Ok(None)
 }
 
-fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
+fn start_core_server(app: &tauri::AppHandle) -> Result<Option<std::process::Child>, String> {
     if std::env::var("AI_SSH_DESKTOP_NO_CORE").is_ok() {
-        return Ok(());
+        return Ok(None);
     }
     if core_accepts_desktop_token(&std::env::var("AI_SSH_DESKTOP_TOKEN").unwrap_or_default())
         && core_has_required_capabilities()
     {
-        return Ok(());
+        return Ok(None);
     }
     let core_path = resolve_core_path(app)?;
     let core_dir = core_path
@@ -186,8 +203,9 @@ fn start_core_server(app: &tauri::AppHandle) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    command.spawn().map_err(|error| error.to_string())?;
-    wait_core_listen(bind_host)
+    let child = command.spawn().map_err(|error| error.to_string())?;
+    wait_core_listen(bind_host)?;
+    Ok(Some(child))
 }
 
 fn find_debug_repo_root() -> Option<std::path::PathBuf> {
