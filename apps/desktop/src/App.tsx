@@ -319,6 +319,7 @@ export function App() {
   const [batchTask, setBatchTask] = useState('')
   const [batchHostIndex, setBatchHostIndex] = useState(0)
   const [batchHostResults, setBatchHostResults] = useState<BatchHostResult[]>([])
+  const [batchSummary, setBatchSummary] = useState('')
   const [activeSessionId, setActiveSessionId] = useState<string>('')
   const [leftMode, setLeftMode] = useState<LeftMode>('servers')
   const [rightTool, setRightTool] = useState<RightTool>('ai')
@@ -438,6 +439,7 @@ export function App() {
   const terminalLineBufferRef = useRef<Record<string, string>>({})
   const batchAbortRef = useRef(false)
   const batchSelectedHostIdsRef = useRef<string[]>([])
+  const batchHostResultsRef = useRef<BatchHostResult[]>([])
   const batchCardsRef = useRef<HTMLDivElement | null>(null)
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
@@ -1599,6 +1601,10 @@ export function App() {
   }, [agentSteps])
 
   useEffect(() => {
+    batchHostResultsRef.current = batchHostResults
+  }, [batchHostResults])
+
+  useEffect(() => {
     agentModeRef.current = agentMode
   }, [agentMode])
 
@@ -2292,13 +2298,14 @@ export function App() {
     batchAbortRef.current = true
     setBatchActive(false)
     setBatchHostIndex(0)
-    batchHostResults.forEach((r) => {
+    setBatchSummary('批量任务已停止')
+    batchHostResultsRef.current.forEach((r) => {
       if (r.sessionId) {
         closeSessionStream(r.sessionId)
         void apiFetch(`/sessions/${r.sessionId}/close`, { method: 'POST' })
       }
     })
-    setBatchHostResults([])
+    updateBatchHostResults([])
     setBatchSelectedHostIds([])
     batchSelectedHostIdsRef.current = []
     agentRunningRef.current = false
@@ -2308,22 +2315,61 @@ export function App() {
   }
 
   const closeBatchHostCard = (hostId: string) => {
-    setBatchHostResults((current) => current.filter((r) => r.hostId !== hostId))
+    updateBatchHostResults((current) => current.filter((r) => r.hostId !== hostId))
+    if (!batchActive) {
+      setBatchSummary(summarizeBatchResults(batchHostResultsRef.current))
+    }
     if (!batchActive) return
-    const hostResult = batchHostResults.find((r) => r.hostId === hostId)
+    const hostResult = batchHostResultsRef.current.find((r) => r.hostId === hostId)
     if (hostResult?.sessionId) {
       closeSessionStream(hostResult.sessionId)
       void apiFetch(`/sessions/${hostResult.sessionId}/close`, { method: 'POST' })
     }
   }
 
+  const updateBatchHostResults = (
+    updater: BatchHostResult[] | ((current: BatchHostResult[]) => BatchHostResult[]),
+  ) => {
+    const next = typeof updater === 'function' ? updater(batchHostResultsRef.current) : updater
+    batchHostResultsRef.current = next
+    setBatchHostResults(next)
+  }
+
+  const summarizeBatchHostSteps = (steps: AIAgentPlanStep[]) => {
+    if (steps.length === 0) {
+      return '未执行命令'
+    }
+    const latestStepWithOutput = [...steps].find((step) => step.output?.trim())
+    const output = stripTerminalControlSequences(latestStepWithOutput?.output ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const exitCode = typeof latestStepWithOutput?.exitCode === 'number' ? `退出码 ${latestStepWithOutput.exitCode}` : ''
+    const outputText = output ? `输出：${output.slice(-220)}` : '无输出摘要'
+    return [`执行 ${steps.length} 步`, exitCode, outputText].filter(Boolean).join('；')
+  }
+
+  const summarizeBatchResults = (results: BatchHostResult[]) => {
+    if (results.length === 0) {
+      return ''
+    }
+    const successCount = results.filter((result) => result.status === 'success').length
+    const failedResults = results.filter((result) => result.status === 'failed')
+    const totalSteps = results.reduce((sum, result) => sum + result.stepCount, 0)
+    const detailText = results
+      .map((result) => `${result.hostName}：${result.status === 'success' ? '成功' : result.status === 'failed' ? '失败' : result.status}${result.summary ? `（${result.summary}）` : ''}`)
+      .join('；')
+    return `批量任务完成：共 ${results.length} 台，成功 ${successCount} 台，失败 ${failedResults.length} 台，累计执行 ${totalSteps} 步。${detailText}`
+  }
+
   const executeBatchPerHost = async (hostId: string, hostName: string, task: string, index: number, total: number) => {
     if (batchAbortRef.current) return
 
-    setBatchHostResults((current) =>
+    updateBatchHostResults((current) =>
       current.map((r) => (r.hostId === hostId ? { ...r, status: 'connecting' as const } : r)),
     )
     setAgentMessage(`[${index + 1}/${total}] 正在连接 ${hostName}...`)
+    setAgentSteps([])
+    agentStepsRef.current = []
 
     let sessionId = ''
     try {
@@ -2335,10 +2381,14 @@ export function App() {
       if (!response.ok) throw new Error(`创建会话失败：${response.status}`)
       const data = (await response.json()) as SessionOpenResponse
       sessionId = data.session.id
-      setSessions((current) => [data.session, ...current])
+      setSessions((current) => {
+        const next = [data.session, ...current.filter((session) => session.id !== data.session.id)]
+        sessionsRef.current = next
+        return next
+      })
       openSessionStream(data.session, false)
 
-      setBatchHostResults((current) =>
+      updateBatchHostResults((current) =>
         current.map((r) => (r.hostId === hostId ? { ...r, sessionId } : r)),
       )
 
@@ -2355,7 +2405,7 @@ export function App() {
         check()
       })
 
-      setBatchHostResults((current) =>
+      updateBatchHostResults((current) =>
         current.map((r) => (r.hostId === hostId ? { ...r, status: 'running' as const, stepCount: 0 } : r)),
       )
       setAgentMessage(`[${index + 1}/${total}] 正在 ${hostName} 上执行：${task}`)
@@ -2365,8 +2415,12 @@ export function App() {
       setAgentMode('auto')
       setAgentState('loading')
       agentRunningRef.current = true
-      activeSessionIdRef.current = sessionId
-      if (activeSessionIdRef.current !== sessionId) setActiveSession(sessionId)
+      setAgentSteps([])
+      agentStepsRef.current = []
+      setActiveSession(sessionId)
+      replaceTerminalWithCache(sessionId)
+      fitAddonRef.current?.fit()
+      syncTerminalSize(sessionId)
       void requestAgentNextStep([], sessionId)
 
       await new Promise<void>((resolve) => {
@@ -2374,8 +2428,8 @@ export function App() {
         const check = () => {
           if (batchAbortRef.current || !agentRunningRef.current) {
             const steps = agentStepsRef.current.filter((s) => s.sessionId === sessionId)
-            setBatchHostResults((current) =>
-              current.map((r) => (r.hostId === hostId ? { ...r, stepCount: steps.length } : r)),
+            updateBatchHostResults((current) =>
+              current.map((r) => (r.hostId === hostId ? { ...r, stepCount: steps.length, summary: summarizeBatchHostSteps(steps) } : r)),
             )
             resolve()
             return
@@ -2383,7 +2437,7 @@ export function App() {
           const steps = agentStepsRef.current.filter((s) => s.sessionId === sessionId)
           if (steps.length !== lastStepCountRef.value) {
             lastStepCountRef.value = steps.length
-            setBatchHostResults((current) =>
+            updateBatchHostResults((current) =>
               current.map((r) => (r.hostId === hostId ? { ...r, stepCount: steps.length } : r)),
             )
           }
@@ -2392,15 +2446,21 @@ export function App() {
         check()
       })
 
-      setBatchHostResults((current) =>
+      updateBatchHostResults((current) =>
         current.map((r) =>
           r.hostId === hostId
-            ? { ...r, status: batchAbortRef.current ? 'failed' as const : 'success' as const, summary: batchAbortRef.current ? '已取消' : '任务已完成' }
+            ? {
+                ...r,
+                status: batchAbortRef.current ? 'failed' as const : 'success' as const,
+                summary: batchAbortRef.current
+                  ? '已取消'
+                  : summarizeBatchHostSteps(agentStepsRef.current.filter((step) => step.sessionId === sessionId)),
+              }
             : r,
         ),
       )
     } catch (error) {
-      setBatchHostResults((current) =>
+      updateBatchHostResults((current) =>
         current.map((r) =>
           r.hostId === hostId
             ? { ...r, status: 'failed' as const, summary: error instanceof Error ? error.message : '执行失败' }
@@ -2414,9 +2474,12 @@ export function App() {
     const ids = batchSelectedHostIdsRef.current
     if (ids.length === 0 || !batchTask.trim()) return
     batchAbortRef.current = false
-    const hosts = hostsRef.current.filter((h) => ids.includes(h.id))
+    setBatchSummary('')
+    const hosts = ids
+      .map((id) => hostsRef.current.find((host) => host.id === id))
+      .filter((host): host is HostRecord => Boolean(host))
     const results: BatchHostResult[] = hosts.map((h) => ({ hostId: h.id, hostName: h.name, status: 'pending' as const, stepCount: 0 }))
-    setBatchHostResults(results)
+    updateBatchHostResults(results)
     setBatchActive(true)
     setBatchHostIndex(0)
     agentRunningRef.current = false
@@ -2432,7 +2495,10 @@ export function App() {
 
     setBatchActive(false)
     setBatchHostIndex(0)
-    setAgentMessage('批量任务已全部完成')
+    const finalResults = batchHostResultsRef.current
+    const summary = summarizeBatchResults(finalResults)
+    setBatchSummary(summary)
+    setAgentMessage(summary || '批量任务已全部完成')
   }
 
   useEffect(() => {
@@ -6653,36 +6719,44 @@ export function App() {
                     </div>
                   )}
                 </div>
-                {batchActive ? (
-                  <div className="batch-exec-cards" ref={batchCardsRef}>
-                    {batchHostResults.map((result) => {
-                      const isCurrent = result.hostId === batchHostResults[batchHostIndex]?.hostId
-                      return (
-                        <div
-                          key={result.hostId}
-                          className={`batch-exec-card batch-${result.status} ${isCurrent ? 'batch-current' : ''}`}
-                        >
-                          <div className="batch-card-header">
-                            <span className="batch-card-host">{result.hostName}</span>
-                            <button
-                              className="batch-card-close"
-                              type="button"
-                              title="关闭此服务器任务"
-                              onClick={() => closeBatchHostCard(result.hostId)}
-                            >
-                              ✕
-                            </button>
+                {batchActive || batchSummary ? (
+                  <div className="batch-exec-panel">
+                    {batchSummary ? (
+                      <div className="batch-summary-card">
+                        <strong>批量执行总结</strong>
+                        <span>{batchSummary}</span>
+                      </div>
+                    ) : null}
+                    <div className="batch-exec-cards" ref={batchCardsRef}>
+                      {batchHostResults.map((result) => {
+                        const isCurrent = batchActive && result.hostId === batchHostResults[batchHostIndex]?.hostId
+                        return (
+                          <div
+                            key={result.hostId}
+                            className={`batch-exec-card batch-${result.status} ${isCurrent ? 'batch-current' : ''}`}
+                          >
+                            <div className="batch-card-header">
+                              <span className="batch-card-host">{result.hostName}</span>
+                              <button
+                                className="batch-card-close"
+                                type="button"
+                                title="关闭此服务器任务"
+                                onClick={() => closeBatchHostCard(result.hostId)}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            <span className="batch-card-status">
+                              {result.status === 'pending' ? '等待中'
+                                : result.status === 'connecting' ? '连接中...'
+                                : result.status === 'running' ? `执行中 · ${result.stepCount} 步`
+                                : result.status === 'success' ? `✓ ${result.summary || '完成'}`
+                                : `✗ ${result.summary || '失败'}`}
+                            </span>
                           </div>
-                          <span className="batch-card-status">
-                            {result.status === 'pending' ? '等待中'
-                              : result.status === 'connecting' ? '连接中...'
-                              : result.status === 'running' ? `执行中 · ${result.stepCount} 步`
-                              : result.status === 'success' ? '✓ 完成'
-                              : `✗ ${result.summary || '失败'}`}
-                          </span>
-                        </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
                   </div>
                 ) : null}
               </div>

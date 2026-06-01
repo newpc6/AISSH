@@ -547,6 +547,31 @@ button {
   color: #c7d2fe !important;
 }
 
+.batch-exec-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.batch-summary-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.06);
+}
+
+.batch-summary-card strong {
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.batch-summary-card span {
+  color: #9fb1c8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .batch-exec-cards {
   display: grid;
   gap: 8px;
