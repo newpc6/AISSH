@@ -37,6 +37,7 @@ type CoreAppConfig struct {
 	AICommandHistoryLimit         int             `json:"aiCommandHistoryLimit,omitempty"`
 	AIConversationContextLimit    int             `json:"aiConversationContextLimit,omitempty"`
 	AISystemPrompt                string          `json:"aiSystemPrompt,omitempty"`
+	AIAgentThinkingEnabled        bool            `json:"aiAgentThinkingEnabled,omitempty"`
 	AIProviderTimeoutSeconds      int             `json:"aiProviderTimeoutSeconds,omitempty"`
 	AgentCommandTimeoutSeconds    int             `json:"agentCommandTimeoutSeconds,omitempty"`
 	FavoriteCommands              []string        `json:"favoriteCommands,omitempty"`
@@ -202,6 +203,9 @@ func mergeCoreAppConfig(target *CoreAppConfig, incoming *CoreAppConfig, fields m
 	}
 	if _, ok := fields["aiSystemPrompt"]; ok {
 		target.AISystemPrompt = incoming.AISystemPrompt
+	}
+	if _, ok := fields["aiAgentThinkingEnabled"]; ok {
+		target.AIAgentThinkingEnabled = incoming.AIAgentThinkingEnabled
 	}
 	if _, ok := fields["aiProviderTimeoutSeconds"]; ok && incoming.AIProviderTimeoutSeconds > 0 {
 		target.AIProviderTimeoutSeconds = incoming.AIProviderTimeoutSeconds

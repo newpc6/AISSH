@@ -133,23 +133,25 @@ type aiPredictionResponse struct {
 }
 
 type aiAssistRequest struct {
-	BaseURL         string        `json:"baseUrl"`
-	APIKey          string        `json:"apiKey,omitempty"`
-	Model           string        `json:"model"`
-	TimeoutSeconds  int           `json:"timeoutSeconds,omitempty"`
-	SystemPrompt    string        `json:"systemPrompt,omitempty"`
-	Prompt          string        `json:"prompt"`
-	TerminalContext string        `json:"terminalContext,omitempty"`
-	SelectedText    string        `json:"selectedText,omitempty"`
-	CommandHistory  []string      `json:"commandHistory,omitempty"`
-	CurrentCommand  string        `json:"currentCommand,omitempty"`
-	CWD             string        `json:"cwd,omitempty"`
-	HostName        string        `json:"hostName,omitempty"`
-	HostAddress     string        `json:"hostAddress,omitempty"`
-	Username        string        `json:"username,omitempty"`
-	AgentMode       string        `json:"agentMode,omitempty"`
-	AgentGoal       string        `json:"agentGoal,omitempty"`
-	AgentSteps      []aiAgentStep `json:"agentSteps,omitempty"`
+	BaseURL              string        `json:"baseUrl"`
+	APIKey               string        `json:"apiKey,omitempty"`
+	Model                string        `json:"model"`
+	Provider             string        `json:"provider,omitempty"`
+	AgentThinkingEnabled *bool         `json:"agentThinkingEnabled,omitempty"`
+	TimeoutSeconds       int           `json:"timeoutSeconds,omitempty"`
+	SystemPrompt         string        `json:"systemPrompt,omitempty"`
+	Prompt               string        `json:"prompt"`
+	TerminalContext      string        `json:"terminalContext,omitempty"`
+	SelectedText         string        `json:"selectedText,omitempty"`
+	CommandHistory       []string      `json:"commandHistory,omitempty"`
+	CurrentCommand       string        `json:"currentCommand,omitempty"`
+	CWD                  string        `json:"cwd,omitempty"`
+	HostName             string        `json:"hostName,omitempty"`
+	HostAddress          string        `json:"hostAddress,omitempty"`
+	Username             string        `json:"username,omitempty"`
+	AgentMode            string        `json:"agentMode,omitempty"`
+	AgentGoal            string        `json:"agentGoal,omitempty"`
+	AgentSteps           []aiAgentStep `json:"agentSteps,omitempty"`
 }
 
 type aiAgentStep struct {

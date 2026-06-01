@@ -97,6 +97,7 @@ export interface AppSettings {
   aiCommandHistoryLimit: number
   aiConversationContextLimit: number
   aiSystemPrompt: string
+  aiAgentThinkingEnabled: boolean
   aiProviderTimeoutSeconds: number
   agentCommandTimeoutSeconds: number
 }
@@ -286,6 +287,8 @@ export interface AIAssistRequest {
   baseUrl: string
   apiKey?: string
   model: string
+  provider?: AIModelProvider
+  agentThinkingEnabled?: boolean
   timeoutSeconds?: number
   systemPrompt?: string
   prompt: string

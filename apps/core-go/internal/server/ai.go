@@ -18,12 +18,15 @@ import (
 )
 
 type openAIChatRequest struct {
-	Model          string                `json:"model"`
-	Messages       []openAIChatMessage   `json:"messages"`
-	Temperature    float64               `json:"temperature"`
-	MaxTokens      int                   `json:"max_tokens,omitempty"`
-	ResponseFormat *openAIResponseFormat `json:"response_format,omitempty"`
-	Stream         bool                  `json:"stream,omitempty"`
+	Model           string                `json:"model"`
+	Messages        []openAIChatMessage   `json:"messages"`
+	Temperature     float64               `json:"temperature"`
+	MaxTokens       int                   `json:"max_tokens,omitempty"`
+	ResponseFormat  *openAIResponseFormat `json:"response_format,omitempty"`
+	Stream          bool                  `json:"stream,omitempty"`
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
+	Think           *bool                 `json:"think,omitempty"`
+	EnableThinking  *bool                 `json:"enable_thinking,omitempty"`
 }
 
 type openAIResponseFormat struct {
@@ -267,7 +270,7 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		return aiAssistResponse{}, err
 	}
 
-	body, err := json.Marshal(openAIChatRequest{
+	chatRequest := openAIChatRequest{
 		Model:          normalized.Model,
 		Temperature:    0,
 		MaxTokens:      aiAssistMaxTokens,
@@ -275,14 +278,16 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: buildAssistSystemPrompt(normalized.SystemPrompt),
+				Content: buildAssistSystemPrompt(normalized),
 			},
 			{
 				Role:    "user",
 				Content: buildAssistPrompt(normalized),
 			},
 		},
-	})
+	}
+	applyAgentThinkingOptions(&chatRequest, normalized)
+	body, err := json.Marshal(chatRequest)
 	if err != nil {
 		return aiAssistResponse{}, err
 	}
@@ -494,7 +499,7 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(openAIChatRequest{
+	chatRequest := openAIChatRequest{
 		Model:          normalized.Model,
 		Temperature:    0,
 		MaxTokens:      aiAssistMaxTokens,
@@ -503,14 +508,16 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: buildAssistSystemPrompt(normalized.SystemPrompt),
+				Content: buildAssistSystemPrompt(normalized),
 			},
 			{
 				Role:    "user",
 				Content: buildAssistPrompt(normalized),
 			},
 		},
-	})
+	}
+	applyAgentThinkingOptions(&chatRequest, normalized)
+	body, err := json.Marshal(chatRequest)
 	if err != nil {
 		return err
 	}
@@ -818,6 +825,7 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) {
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
+	request.Provider = strings.TrimSpace(request.Provider)
 	request.TimeoutSeconds = normalizeAIRequestTimeoutSeconds(request.TimeoutSeconds)
 	request.SystemPrompt = trimToLastRunes(strings.TrimSpace(request.SystemPrompt), aiAssistPromptLimit)
 	request.Prompt = trimToLastRunes(strings.TrimSpace(request.Prompt), aiAssistPromptLimit)
@@ -851,6 +859,10 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	if request.AgentMode == "" {
 		request.AgentMode = "review"
 	}
+	if request.AgentThinkingEnabled == nil {
+		enabled := true
+		request.AgentThinkingEnabled = &enabled
+	}
 	return request, nil
 }
 
@@ -870,6 +882,22 @@ func normalizeAIRequestTimeoutSeconds(value int) int {
 
 func aiRequestTimeout(timeoutSeconds int) time.Duration {
 	return time.Duration(normalizeAIRequestTimeoutSeconds(timeoutSeconds)) * time.Second
+}
+
+func aiAgentThinkingEnabled(request aiAssistRequest) bool {
+	return request.AgentThinkingEnabled == nil || *request.AgentThinkingEnabled
+}
+
+func applyAgentThinkingOptions(request *openAIChatRequest, assist aiAssistRequest) {
+	if aiAgentThinkingEnabled(assist) {
+		return
+	}
+	disabled := false
+	request.EnableThinking = &disabled
+	request.ReasoningEffort = "none"
+	if strings.EqualFold(assist.Provider, "ollama") {
+		request.Think = &disabled
+	}
 }
 
 func trimToLastRunes(value string, limit int) string {
@@ -896,7 +924,7 @@ func redactSensitiveText(value string) string {
 	return redacted
 }
 
-func buildAssistSystemPrompt(customPrompt string) string {
+func buildAssistSystemPrompt(request aiAssistRequest) string {
 	base := `你是 AI SSH 的统一运维助手。所有回答必须使用中文。你会看到终端上下文、当前对话上下文、历史命令、当前目录、主机信息、用户选中文本、用户目标和 Agent 已执行步骤。
 
 你只有一个统一入口，必须自行判断用户意图：
@@ -912,6 +940,10 @@ func buildAssistSystemPrompt(customPrompt string) string {
 {"answer":"给用户看的回答或说明","summary":"可选一句话摘要","commands":["可选命令草稿"],"warnings":["注意事项"],"riskLevel":"low|medium|high","riskReason":"风险原因","agentStatus":"command|done|question","agentCommand":"需要驱动终端时的一条下一步命令","agentReason":"为什么这样做"}
 
 普通问答、解释和总结通常返回 answer，可附带 commands 作为用户可手动采用的草稿，但不要设置 agentCommand。需要继续驱动终端时返回 agentStatus:"command" 和 agentCommand；任务已完成时返回 agentStatus:"done"；信息不足时返回 agentStatus:"question"。`
+	customPrompt := request.SystemPrompt
+	if !aiAgentThinkingEnabled(request) {
+		base += "\n/no_think\n不要输出思考过程，不要进行长时间深度推理；直接按已有上下文给出严格 JSON 结果。"
+	}
 	if customPrompt != "" {
 		base += "\n用户自定义系统提示词：\n" + customPrompt
 	}

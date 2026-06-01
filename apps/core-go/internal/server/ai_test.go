@@ -65,12 +65,41 @@ func TestFinalizeAssistResponseNormalizesCommandWithoutTask(t *testing.T) {
 }
 
 func TestBuildAssistSystemPromptUsesCustomPromptAsUnifiedPrompt(t *testing.T) {
-	prompt := buildAssistSystemPrompt("优先给出简短结论。")
+	prompt := buildAssistSystemPrompt(aiAssistRequest{SystemPrompt: "优先给出简短结论。"})
 	if !strings.Contains(prompt, "只有一个统一入口") {
 		t.Fatalf("expected unified entry guidance in prompt")
 	}
 	if !strings.Contains(prompt, "优先给出简短结论。") {
 		t.Fatalf("expected custom system prompt to be included")
+	}
+}
+
+func TestAssistThinkingCanBeDisabled(t *testing.T) {
+	disabled := false
+	request, err := normalizeAIAssistRequest(aiAssistRequest{
+		BaseURL:              "http://127.0.0.1:11434/v1",
+		Model:                "qwen3.6:latest",
+		Provider:             "ollama",
+		Prompt:               "检查服务状态",
+		AgentThinkingEnabled: &disabled,
+	})
+	if err != nil {
+		t.Fatalf("normalize assist request: %v", err)
+	}
+
+	chatRequest := openAIChatRequest{}
+	applyAgentThinkingOptions(&chatRequest, request)
+	if chatRequest.EnableThinking == nil || *chatRequest.EnableThinking {
+		t.Fatalf("expected enable_thinking false, got %#v", chatRequest.EnableThinking)
+	}
+	if chatRequest.Think == nil || *chatRequest.Think {
+		t.Fatalf("expected ollama think false, got %#v", chatRequest.Think)
+	}
+	if chatRequest.ReasoningEffort != "none" {
+		t.Fatalf("expected reasoning_effort none, got %q", chatRequest.ReasoningEffort)
+	}
+	if prompt := buildAssistSystemPrompt(request); !strings.Contains(prompt, "/no_think") {
+		t.Fatalf("expected no_think instruction in prompt")
 	}
 }
 

@@ -128,6 +128,7 @@ export const defaultSettings: AppSettings = {
   aiCommandHistoryLimit: 20,
   aiConversationContextLimit: 30,
   aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
+  aiAgentThinkingEnabled: true,
   aiProviderTimeoutSeconds: 120,
   agentCommandTimeoutSeconds: 120,
 }
@@ -573,6 +574,7 @@ export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSetti
     aiCommandHistoryLimit: Math.max(1, Math.min(200, Number(value.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit) || 20)),
     aiConversationContextLimit: Math.max(1, Math.min(100, Number(value.aiConversationContextLimit ?? defaultSettings.aiConversationContextLimit) || 30)),
     aiSystemPrompt: typeof value.aiSystemPrompt === 'string' && value.aiSystemPrompt.trim() ? value.aiSystemPrompt : defaultSettings.aiSystemPrompt,
+    aiAgentThinkingEnabled: value.aiAgentThinkingEnabled ?? defaultSettings.aiAgentThinkingEnabled,
     aiProviderTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.aiProviderTimeoutSeconds ?? defaultSettings.aiProviderTimeoutSeconds) || 120)),
     agentCommandTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.agentCommandTimeoutSeconds ?? defaultSettings.agentCommandTimeoutSeconds) || 120)),
   }

@@ -1296,6 +1296,7 @@ export function App() {
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
       aiConversationContextLimit: normalized.aiConversationContextLimit,
       aiSystemPrompt: normalized.aiSystemPrompt,
+      aiAgentThinkingEnabled: normalized.aiAgentThinkingEnabled,
       aiProviderTimeoutSeconds: normalized.aiProviderTimeoutSeconds,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
       favoriteCommands: normalizeFavoriteCommands(overrides?.favoriteCommands ?? existingApp.favoriteCommands ?? backupApp.favoriteCommands ?? favoriteCommands),
@@ -1388,6 +1389,7 @@ export function App() {
             aiCommandHistoryLimit: app.aiCommandHistoryLimit as number,
             aiConversationContextLimit: app.aiConversationContextLimit as number,
             aiSystemPrompt: (app.aiSystemPrompt ?? '') as string,
+            aiAgentThinkingEnabled: app.aiAgentThinkingEnabled as boolean,
             aiProviderTimeoutSeconds: app.aiProviderTimeoutSeconds as number,
             agentCommandTimeoutSeconds: app.agentCommandTimeoutSeconds as number,
           })
@@ -2381,6 +2383,7 @@ export function App() {
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
       aiConversationContextLimit: normalized.aiConversationContextLimit,
+      aiAgentThinkingEnabled: normalized.aiAgentThinkingEnabled,
       aiProviderTimeoutSeconds: normalized.aiProviderTimeoutSeconds,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
     })
@@ -4332,6 +4335,8 @@ export function App() {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
       model: activeModel.model,
+      provider: activeModel.provider,
+      agentThinkingEnabled: normalized.aiAgentThinkingEnabled,
       timeoutSeconds: normalized.aiProviderTimeoutSeconds,
       systemPrompt: normalized.aiSystemPrompt,
       prompt,
@@ -8061,6 +8066,20 @@ export function App() {
                       />
                       <span>显示预测 thinking</span>
                     </label>
+                    <label className="checkbox-row">
+                      <input
+                        checked={settings.aiAgentThinkingEnabled}
+                        disabled={!settings.aiEnabled}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setSettings((current) => ({ ...current, aiAgentThinkingEnabled: event.target.checked }))
+                        }
+                      />
+                      <span>开启 Agent 思考</span>
+                    </label>
+                    <p className="ai-model-help">
+                      关闭后会尽量让 OpenAI 兼容接口和 Ollama 跳过深度思考；Qwen/Ollama 会额外发送 /no_think，适合 qwen3 系列思考太久的场景。
+                    </p>
                     <label>
                       <span>预测命令数量</span>
                       <input
