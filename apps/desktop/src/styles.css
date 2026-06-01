@@ -1708,59 +1708,36 @@ button {
 }
 
 .unified-ai-box {
+  position: relative;
   min-height: 0;
   display: grid;
-  grid-template-rows: 56px minmax(0, 1fr) max-content;
+  grid-template-rows: minmax(0, 1fr) max-content;
   gap: 8px;
 }
 
-.ai-active-model-banner {
-  height: 56px;
-  min-height: 56px;
-  max-height: 56px;
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-  padding: 8px 10px;
-  border: 1px solid rgba(79, 140, 255, 0.24);
-  border-radius: 8px;
-  background: rgba(79, 140, 255, 0.08);
-}
-
-.ai-active-model-banner div {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.ai-active-model-banner span,
-.ai-active-model-banner small {
-  min-width: 0;
-  color: #8ca0b8;
-  font-size: 12px;
-}
-
-.ai-active-model-banner strong {
-  min-width: 0;
-  color: #e2e8f0;
-  font-size: 13px;
+.ai-model-corner-badge {
+  position: absolute;
+  right: 10px;
+  bottom: 58px;
+  z-index: 3;
+  max-width: min(210px, calc(100% - 20px));
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(79, 140, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.88);
+  color: #bfdbfe;
+  font-size: 11px;
+  line-height: 22px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  pointer-events: none;
 }
 
-.ai-active-model-banner small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-active-model-banner.unconfigured {
+.ai-model-corner-badge.unconfigured {
   border-color: rgba(245, 158, 11, 0.32);
-  background: rgba(245, 158, 11, 0.08);
+  color: #facc15;
 }
 
 .ai-unified-input {

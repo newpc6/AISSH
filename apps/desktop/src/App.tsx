@@ -1817,7 +1817,6 @@ export function App() {
     activePrediction.state === 'loading' || expandedPredictionThinkingSessionId === activeSession?.id
   const activeAIModelConfig = getActiveAIModelConfig(settings)
   const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
-  const activeAIModelProviderLabel = activeAIModelConfig?.provider === 'ollama' ? 'Ollama' : 'OpenAI 兼容'
   const visibleLogs = useMemo(
     () => {
       const keyword = logSearch.trim().toLowerCase()
@@ -7099,17 +7098,6 @@ export function App() {
 
             {rightTool === 'ai' ? (
               <div className={`ai-box unified-ai-box ${isAIHistoryOpen ? 'history-open' : ''}`}>
-                <div className={`ai-active-model-banner${isAIProviderConfigured ? '' : ' unconfigured'}`}>
-                  <div>
-                    <span>当前模型</span>
-                    <strong>{activeAIModelConfig?.name || '未配置'}</strong>
-                  </div>
-                  {activeAIModelConfig ? (
-                    <small>{activeAIModelProviderLabel} · {activeAIModelConfig.model || '未填写模型'} · {activeAIModelConfig.baseUrl || '未填写地址'}</small>
-                  ) : (
-                    <small>请在设置中新增并启用一个 AI 模型。</small>
-                  )}
-                </div>
                 <div className="ai-conversation-shell">
                   {isAIHistoryOpen ? (
                     <aside className="ai-chat-sidebar">
@@ -7308,6 +7296,9 @@ export function App() {
                     </div>
                   </div>
                 ) : null}
+                <div className={`ai-model-corner-badge${isAIProviderConfigured ? '' : ' unconfigured'}`} title={activeAIModelConfig ? `当前模型：${activeAIModelConfig.model || activeAIModelConfig.name}` : '未配置 AI 模型'}>
+                  {activeAIModelConfig?.model || activeAIModelConfig?.name || '未配置'}
+                </div>
               </div>
             ) : rightTool === 'history' ? (
               <div className="history-list">
