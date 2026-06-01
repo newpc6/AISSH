@@ -77,7 +77,9 @@ const (
 	aiAssistContextLimit     = 50000
 	aiAssistPromptLimit      = 12000
 	aiAssistStepsLimit       = 30
-	aiRequestTimeout         = 18 * time.Second
+	aiDefaultRequestTimeout  = 120 * time.Second
+	aiMinRequestTimeout      = 10 * time.Second
+	aiMaxRequestTimeout      = 30 * time.Minute
 	aiMaxTokens              = 1024
 	aiAssistMaxTokens        = 1600
 	aiProviderBodyReadLimit  = 1024 * 1024
@@ -138,7 +140,7 @@ func predictCommands(ctx context.Context, request aiPredictionRequest, logger *a
 		httpRequest.Header.Set("Authorization", "Bearer "+normalized.APIKey)
 	}
 
-	client := &http.Client{Timeout: aiRequestTimeout}
+	client := &http.Client{Timeout: aiRequestTimeout(normalized.TimeoutSeconds)}
 	response, err := client.Do(httpRequest)
 	if err != nil {
 		if logger != nil {
@@ -307,7 +309,7 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		httpRequest.Header.Set("Authorization", "Bearer "+normalized.APIKey)
 	}
 
-	client := &http.Client{Timeout: aiRequestTimeout}
+	client := &http.Client{Timeout: aiRequestTimeout(normalized.TimeoutSeconds)}
 	response, err := client.Do(httpRequest)
 	if err != nil {
 		if logger != nil {
@@ -440,7 +442,7 @@ func streamPredictedCommands(ctx context.Context, request aiPredictionRequest, l
 	}
 
 	started := time.Now()
-	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, body, logger, func(event aiStreamEvent) error {
+	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, normalized.TimeoutSeconds, body, logger, func(event aiStreamEvent) error {
 		if event.Type == "thinking" {
 			if normalized.IncludeThinking {
 				return write(event)
@@ -515,7 +517,7 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 
 	started := time.Now()
 	contentExtractor := &assistContentStreamExtractor{}
-	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, body, logger, func(event aiStreamEvent) error {
+	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, normalized.TimeoutSeconds, body, logger, func(event aiStreamEvent) error {
 		if event.Type == "thinking" {
 			return write(event)
 		}
@@ -563,7 +565,7 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 	return write(aiStreamEvent{Type: "done", Response: &result, FinishReason: finishReason})
 }
 
-func streamOpenAIChat(ctx context.Context, endpoint string, apiKey string, model string, body []byte, logger *appLogger, write aiStreamWriter) (string, string, string, error) {
+func streamOpenAIChat(ctx context.Context, endpoint string, apiKey string, model string, timeoutSeconds int, body []byte, logger *appLogger, write aiStreamWriter) (string, string, string, error) {
 	started := time.Now()
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -573,7 +575,7 @@ func streamOpenAIChat(ctx context.Context, endpoint string, apiKey string, model
 	if apiKey != "" {
 		httpRequest.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	client := &http.Client{Timeout: aiRequestTimeout}
+	client := &http.Client{Timeout: aiRequestTimeout(timeoutSeconds)}
 	response, err := client.Do(httpRequest)
 	if err != nil {
 		if logger != nil {
@@ -791,6 +793,7 @@ func decodePartialJSONString(value string) string {
 func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error) {
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
+	request.TimeoutSeconds = normalizeAIRequestTimeoutSeconds(request.TimeoutSeconds)
 	if request.BaseURL == "" {
 		return request, errors.New("ai base url is required")
 	}
@@ -815,6 +818,7 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) {
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
+	request.TimeoutSeconds = normalizeAIRequestTimeoutSeconds(request.TimeoutSeconds)
 	request.SystemPrompt = trimToLastRunes(strings.TrimSpace(request.SystemPrompt), aiAssistPromptLimit)
 	request.Prompt = trimToLastRunes(strings.TrimSpace(request.Prompt), aiAssistPromptLimit)
 	if request.BaseURL == "" {
@@ -848,6 +852,24 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 		request.AgentMode = "review"
 	}
 	return request, nil
+}
+
+func normalizeAIRequestTimeoutSeconds(value int) int {
+	duration := aiDefaultRequestTimeout
+	if value > 0 {
+		duration = time.Duration(value) * time.Second
+	}
+	if duration < aiMinRequestTimeout {
+		duration = aiMinRequestTimeout
+	}
+	if duration > aiMaxRequestTimeout {
+		duration = aiMaxRequestTimeout
+	}
+	return int(duration / time.Second)
+}
+
+func aiRequestTimeout(timeoutSeconds int) time.Duration {
+	return time.Duration(normalizeAIRequestTimeoutSeconds(timeoutSeconds)) * time.Second
 }
 
 func trimToLastRunes(value string, limit int) string {

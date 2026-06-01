@@ -117,6 +117,7 @@ type aiPredictionRequest struct {
 	BaseURL         string   `json:"baseUrl"`
 	APIKey          string   `json:"apiKey,omitempty"`
 	Model           string   `json:"model"`
+	TimeoutSeconds  int      `json:"timeoutSeconds,omitempty"`
 	PredictionCount int      `json:"predictionCount"`
 	IncludeThinking bool     `json:"includeThinking,omitempty"`
 	TerminalContext string   `json:"terminalContext"`
@@ -135,6 +136,7 @@ type aiAssistRequest struct {
 	BaseURL         string        `json:"baseUrl"`
 	APIKey          string        `json:"apiKey,omitempty"`
 	Model           string        `json:"model"`
+	TimeoutSeconds  int           `json:"timeoutSeconds,omitempty"`
 	SystemPrompt    string        `json:"systemPrompt,omitempty"`
 	Prompt          string        `json:"prompt"`
 	TerminalContext string        `json:"terminalContext,omitempty"`

@@ -100,13 +100,14 @@ func TestMergeCoreConfigPayloadMergesAIModelList(t *testing.T) {
 		BindHost: "127.0.0.1",
 		Port:     18555,
 		App: &CoreAppConfig{
-			AIBaseUrl:       "https://old.example/v1",
-			AIApiKey:        "old-key",
-			AIModel:         "old-model",
-			ActiveAIModelID: "old",
+			AIBaseUrl:                "https://old.example/v1",
+			AIApiKey:                 "old-key",
+			AIModel:                  "old-model",
+			AIProviderTimeoutSeconds: 120,
+			ActiveAIModelID:          "old",
 		},
 	}
-	payload := []byte(`{"app":{"aiModels":[{"id":"ollama","name":"Ollama","provider":"ollama","baseUrl":"http://127.0.0.1:11434/v1","apiKey":"","model":"llama3.1"}],"activeAIModelId":"ollama"}}`)
+	payload := []byte(`{"app":{"aiModels":[{"id":"ollama","name":"Ollama","provider":"ollama","baseUrl":"http://127.0.0.1:11434/v1","apiKey":"","model":"llama3.1"}],"activeAIModelId":"ollama","aiProviderTimeoutSeconds":300}}`)
 
 	merged, err := MergeCoreConfigPayload(existing, payload)
 	if err != nil {
@@ -120,6 +121,9 @@ func TestMergeCoreConfigPayloadMergesAIModelList(t *testing.T) {
 	}
 	if len(merged.App.AIModels) != 1 || merged.App.AIModels[0].Provider != "ollama" || merged.App.AIModels[0].Model != "llama3.1" {
 		t.Fatalf("unexpected ai models: %#v", merged.App.AIModels)
+	}
+	if merged.App.AIProviderTimeoutSeconds != 300 {
+		t.Fatalf("expected ai provider timeout 300, got %d", merged.App.AIProviderTimeoutSeconds)
 	}
 	if merged.App.AIBaseUrl != "https://old.example/v1" || merged.App.AIApiKey != "old-key" || merged.App.AIModel != "old-model" {
 		t.Fatalf("expected legacy active model mirror fields to be preserved, got %#v", merged.App)

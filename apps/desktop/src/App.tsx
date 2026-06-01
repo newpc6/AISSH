@@ -1296,6 +1296,7 @@ export function App() {
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
       aiConversationContextLimit: normalized.aiConversationContextLimit,
       aiSystemPrompt: normalized.aiSystemPrompt,
+      aiProviderTimeoutSeconds: normalized.aiProviderTimeoutSeconds,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
       favoriteCommands: normalizeFavoriteCommands(overrides?.favoriteCommands ?? existingApp.favoriteCommands ?? backupApp.favoriteCommands ?? favoriteCommands),
     }
@@ -1387,6 +1388,7 @@ export function App() {
             aiCommandHistoryLimit: app.aiCommandHistoryLimit as number,
             aiConversationContextLimit: app.aiConversationContextLimit as number,
             aiSystemPrompt: (app.aiSystemPrompt ?? '') as string,
+            aiProviderTimeoutSeconds: app.aiProviderTimeoutSeconds as number,
             agentCommandTimeoutSeconds: app.agentCommandTimeoutSeconds as number,
           })
           setSettings(settings)
@@ -2379,6 +2381,7 @@ export function App() {
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
       aiConversationContextLimit: normalized.aiConversationContextLimit,
+      aiProviderTimeoutSeconds: normalized.aiProviderTimeoutSeconds,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
     })
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
@@ -3812,6 +3815,7 @@ export function App() {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
       model: activeModel.model,
+      timeoutSeconds: normalized.aiProviderTimeoutSeconds,
       predictionCount: normalized.aiPredictionCount,
       includeThinking: normalized.aiPredictionThinkingEnabled,
       terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
@@ -4328,6 +4332,7 @@ export function App() {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
       model: activeModel.model,
+      timeoutSeconds: normalized.aiProviderTimeoutSeconds,
       systemPrompt: normalized.aiSystemPrompt,
       prompt,
       terminalContext,
@@ -8133,6 +8138,22 @@ export function App() {
                           }))
                         }
                       />
+                    </label>
+                    <label>
+                      <span>AI 请求超时（秒）</span>
+                      <input
+                        min="10"
+                        max="1800"
+                        type="number"
+                        value={settings.aiProviderTimeoutSeconds ?? defaultSettings.aiProviderTimeoutSeconds}
+                        onChange={(event) =>
+                          setSettings((current) => ({
+                            ...current,
+                            aiProviderTimeoutSeconds: Number(event.target.value) || 120,
+                          }))
+                        }
+                      />
+                      <small>远程 Ollama 或大模型首次加载较慢时可调大，例如 120-300 秒。</small>
                     </label>
                     <label>
                       <span>预测触发延迟（毫秒）</span>

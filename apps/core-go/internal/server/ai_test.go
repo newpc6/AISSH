@@ -112,3 +112,24 @@ func TestRedactSensitiveText(t *testing.T) {
 		t.Fatalf("redaction did not apply: %q", redacted)
 	}
 }
+
+func TestNormalizeAIRequestTimeoutSeconds(t *testing.T) {
+	tests := []struct {
+		name  string
+		input int
+		want  int
+	}{
+		{name: "default", input: 0, want: 120},
+		{name: "minimum", input: 1, want: 10},
+		{name: "custom", input: 300, want: 300},
+		{name: "maximum", input: 3600, want: 1800},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeAIRequestTimeoutSeconds(tt.input); got != tt.want {
+				t.Fatalf("expected %d, got %d", tt.want, got)
+			}
+		})
+	}
+}
