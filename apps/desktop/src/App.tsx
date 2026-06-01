@@ -733,17 +733,24 @@ export function App() {
 
     const last = segments[segments.length - 1]
     const completeLines = segments.slice(0, -1)
-    const filtered = completeLines.filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '__AI_SSH_AGENT_DONE_/.test(line))
+    const isAgentMarkerLine = (line: string) => line.includes('__AI_SSH_AGENT_DONE_') || /^\s*printf '__AI_SSH_AGENT_DONE_/.test(line)
+    const filtered = completeLines.filter((line) => !isAgentMarkerLine(line))
+    const visibleOutput: string[] = []
     if (filtered.length > 0) {
-      writeTerminalData(filtered.join('\r\n'))
+      visibleOutput.push(`${filtered.join('\r\n')}\r\n`)
     }
 
     if (last === '') {
       terminalLineBufferRef.current[sessionId] = ''
-    } else if (last.includes('__AI_SSH_AGENT_DONE') || last.includes("printf '__AI_SSH_AGENT_DONE_")) {
+    } else if (isAgentMarkerLine(last)) {
       terminalLineBufferRef.current[sessionId] = last
     } else {
+      visibleOutput.push(last)
       terminalLineBufferRef.current[sessionId] = ''
+    }
+
+    if (visibleOutput.length > 0) {
+      writeTerminalData(visibleOutput.join(''))
     }
   }
 
