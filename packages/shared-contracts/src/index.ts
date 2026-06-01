@@ -63,6 +63,17 @@ export interface AuthSettingsUpdateRequest {
   webAccessEnabled?: boolean
 }
 
+export type AIModelProvider = 'openai-compatible' | 'ollama'
+
+export interface AIModelConfig {
+  id: string
+  name: string
+  provider: AIModelProvider
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
 export interface AppSettings {
   healthCheckIntervalSeconds: number
   metricsRefreshIntervalSeconds: number
@@ -76,6 +87,8 @@ export interface AppSettings {
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string
+  aiModels: AIModelConfig[]
+  activeAIModelId: string
   aiPredictionEnabled: boolean
   aiPredictionThinkingEnabled: boolean
   aiPredictionCount: number

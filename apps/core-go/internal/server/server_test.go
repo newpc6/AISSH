@@ -95,6 +95,37 @@ func containsCapability(capabilities []any, expected string) bool {
 	return false
 }
 
+func TestMergeCoreConfigPayloadMergesAIModelList(t *testing.T) {
+	existing := CoreConfig{
+		BindHost: "127.0.0.1",
+		Port:     18555,
+		App: &CoreAppConfig{
+			AIBaseUrl:       "https://old.example/v1",
+			AIApiKey:        "old-key",
+			AIModel:         "old-model",
+			ActiveAIModelID: "old",
+		},
+	}
+	payload := []byte(`{"app":{"aiModels":[{"id":"ollama","name":"Ollama","provider":"ollama","baseUrl":"http://127.0.0.1:11434/v1","apiKey":"","model":"llama3.1"}],"activeAIModelId":"ollama"}}`)
+
+	merged, err := MergeCoreConfigPayload(existing, payload)
+	if err != nil {
+		t.Fatalf("merge config payload: %v", err)
+	}
+	if merged.App == nil {
+		t.Fatalf("expected app config")
+	}
+	if merged.App.ActiveAIModelID != "ollama" {
+		t.Fatalf("expected active model id ollama, got %q", merged.App.ActiveAIModelID)
+	}
+	if len(merged.App.AIModels) != 1 || merged.App.AIModels[0].Provider != "ollama" || merged.App.AIModels[0].Model != "llama3.1" {
+		t.Fatalf("unexpected ai models: %#v", merged.App.AIModels)
+	}
+	if merged.App.AIBaseUrl != "https://old.example/v1" || merged.App.AIApiKey != "old-key" || merged.App.AIModel != "old-model" {
+		t.Fatalf("expected legacy active model mirror fields to be preserved, got %#v", merged.App)
+	}
+}
+
 func TestWebAuthProtectsAPIAndAllowsLogin(t *testing.T) {
 	t.Setenv("AI_SSH_WEB_AUTH", "1")
 	t.Setenv("AI_SSH_WEB_USER", "admin")

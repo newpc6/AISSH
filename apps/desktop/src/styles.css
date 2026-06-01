@@ -3271,6 +3271,60 @@ code {
   min-width: 0;
 }
 
+.ai-model-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-model-settings-head,
+.ai-model-row-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-model-settings-head > span {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-model-actions button,
+.ai-model-row-footer button {
+  min-height: 32px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.ai-model-config-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.ai-model-config-row.active {
+  border-color: rgba(79, 140, 255, 0.48);
+  box-shadow: 0 0 0 1px rgba(79, 140, 255, 0.12);
+}
+
+.ai-model-row-footer small {
+  min-width: 0;
+  color: #8ca0b8;
+}
+
 .group-list-editor {
   display: grid;
   gap: 8px;

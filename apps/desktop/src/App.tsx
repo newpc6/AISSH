@@ -27,6 +27,8 @@ import {
   type AIAgentMode,
   type AIAssistRequest,
   type AIAssistResponse,
+  type AIModelConfig,
+  type AIModelProvider,
   type AIChatConversation,
   type AIChatConversationCreateRequest,
   type AIChatConversationListResponse,
@@ -101,6 +103,7 @@ import {
   CORE_API_FALLBACK_BASE,
   DEFAULT_AI_SYSTEM_PROMPT,
   DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
+  DEFAULT_OLLAMA_BASE_URL,
   DEFAULT_PREDICTION_PANEL_HEIGHT,
   DEFAULT_RIGHT_PANEL_WIDTH,
   DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
@@ -137,6 +140,7 @@ import {
   formatMemorySummary,
   formatMetricDateTime,
   formatRate,
+  getActiveAIModelConfig,
   inferRemotePathFromCommand,
   isLikelyStatic405,
   isVisibleLogLevel,
@@ -152,6 +156,8 @@ import {
   normalizeHostGroups,
   normalizePredictedCommands,
   normalizeRequestPath,
+  newOllamaModelConfig,
+  newOpenAICompatibleModelConfig,
   parentPath,
   previewKindLabel,
   previewMimeType,
@@ -182,7 +188,8 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
 }
 
 const APP_CONFIG_BACKUP_STORAGE_KEY = 'ai-ssh:app-config-backup'
-const AI_PROVIDER_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel'] as const
+const AI_PROVIDER_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel', 'aiModels', 'activeAIModelId'] as const
+const AI_PROVIDER_STRING_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel'] as const
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -1239,7 +1246,7 @@ export function App() {
       ...existingApp,
       ...(overrides?.settings ?? settings),
     } as Partial<AppSettings>
-    for (const key of AI_PROVIDER_SETTING_KEYS) {
+    for (const key of AI_PROVIDER_STRING_SETTING_KEYS) {
       const overrideValue = overrides?.settings?.[key]
       const currentValue = settings[key]
       const existingValue = existingApp[key]
@@ -1279,6 +1286,8 @@ export function App() {
       aiBaseUrl: normalized.aiBaseUrl,
       aiApiKey: normalized.aiApiKey,
       aiModel: normalized.aiModel,
+      aiModels: normalized.aiModels,
+      activeAIModelId: normalized.activeAIModelId,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
@@ -1344,7 +1353,7 @@ export function App() {
           ? {
               ...rawApp,
               ...Object.fromEntries(
-                AI_PROVIDER_SETTING_KEYS
+                AI_PROVIDER_STRING_SETTING_KEYS
                   .filter((key) =>
                     !String(rawApp[key] ?? '').trim() &&
                     typeof backupApp[key] === 'string' &&
@@ -1368,6 +1377,8 @@ export function App() {
             aiBaseUrl: (app.aiBaseUrl ?? '') as string,
             aiApiKey: (app.aiApiKey ?? '') as string,
             aiModel: (app.aiModel ?? '') as string,
+            aiModels: app.aiModels as AIModelConfig[] | undefined,
+            activeAIModelId: (app.activeAIModelId ?? '') as string,
             aiPredictionEnabled: app.aiPredictionEnabled as boolean,
             aiPredictionThinkingEnabled: app.aiPredictionThinkingEnabled as boolean,
             aiPredictionCount: app.aiPredictionCount as number,
@@ -1800,7 +1811,8 @@ export function App() {
     : (activePredictions[activePredictionIndex] ?? activePredictions[0] ?? '')
   const isPredictionThinkingExpanded =
     activePrediction.state === 'loading' || expandedPredictionThinkingSessionId === activeSession?.id
-  const isAIProviderConfigured = Boolean(settings.aiBaseUrl.trim() && settings.aiModel.trim())
+  const activeAIModelConfig = getActiveAIModelConfig(settings)
+  const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
   const visibleLogs = useMemo(
     () => {
       const keyword = logSearch.trim().toLowerCase()
@@ -2817,6 +2829,40 @@ export function App() {
     }
   }
 
+  const addAIModelConfig = (provider: AIModelProvider) => {
+    const nextModel = provider === 'ollama' ? newOllamaModelConfig() : newOpenAICompatibleModelConfig()
+    setSettings((current) => ({
+      ...current,
+      aiModels: [...current.aiModels, nextModel],
+      activeAIModelId: current.activeAIModelId || nextModel.id,
+    }))
+  }
+
+  const updateAIModelConfig = (id: string, patch: Partial<AIModelConfig>) => {
+    setSettings((current) => {
+      const aiModels = current.aiModels.map((model) => {
+        if (model.id !== id) return model
+        const next = { ...model, ...patch }
+        if (patch.provider === 'ollama' && !next.baseUrl.trim()) {
+          next.baseUrl = DEFAULT_OLLAMA_BASE_URL
+        }
+        return next
+      })
+      return normalizeAppSettings({ ...current, aiModels })
+    })
+  }
+
+  const removeAIModelConfig = (id: string) => {
+    setSettings((current) => {
+      const aiModels = current.aiModels.filter((model) => model.id !== id)
+      return normalizeAppSettings({
+        ...current,
+        aiModels,
+        activeAIModelId: current.activeAIModelId === id ? (aiModels[0]?.id ?? '') : current.activeAIModelId,
+      })
+    })
+  }
+
   const updateLogSettings = async (nextSettings: Partial<LogSettings>) => {
     const payload: LogSettings = {
       level: nextSettings.level ?? logLevel,
@@ -3736,7 +3782,8 @@ export function App() {
     if (inFlightRequestID) {
       return
     }
-    if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
+    const activeModel = getActiveAIModelConfig(normalized)
+    if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       updateAIPredictionForSession(sessionId, {
         predictions: [],
         index: 0,
@@ -3761,9 +3808,9 @@ export function App() {
     })
 
     const payload: AIPredictionRequest = {
-      baseUrl: normalized.aiBaseUrl,
-      apiKey: normalized.aiApiKey,
-      model: normalized.aiModel,
+      baseUrl: activeModel.baseUrl,
+      apiKey: activeModel.apiKey,
+      model: activeModel.model,
       predictionCount: normalized.aiPredictionCount,
       includeThinking: normalized.aiPredictionThinkingEnabled,
       terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
@@ -3862,8 +3909,8 @@ export function App() {
       delete pendingAIPredictionCommandRef.current[sessionId]
       appendLog('warn', 'ui.ai', 'prediction failed', {
         error: error instanceof Error ? error.message : String(error),
-        model: normalized.aiModel,
-        endpoint: normalized.aiBaseUrl,
+        model: activeModel.model,
+        endpoint: activeModel.baseUrl,
         predictionCount: normalized.aiPredictionCount,
         terminalContextChars: payload.terminalContext.length,
         commandHistoryCount: payload.commandHistory.length,
@@ -4270,15 +4317,16 @@ export function App() {
     if (!normalized.aiEnabled) {
       throw new Error('AI 功能已关闭，请先在设置中开启')
     }
-    if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
+    const activeModel = getActiveAIModelConfig(normalized)
+    if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
     const { ignoreAmbientContext, ignoreConversationContext, suppressStreamingMessages, ...requestOptions } = options
     const conversationContext = ignoreConversationContext ? '' : currentConversationContext(activeAIConversationIdRef.current)
     const payload: AIAssistRequest = {
-      baseUrl: normalized.aiBaseUrl,
-      apiKey: normalized.aiApiKey,
-      model: normalized.aiModel,
+      baseUrl: activeModel.baseUrl,
+      apiKey: activeModel.apiKey,
+      model: activeModel.model,
       systemPrompt: normalized.aiSystemPrompt,
       prompt,
       terminalContext,
@@ -8093,8 +8141,8 @@ export function App() {
                     <label>
                       <span>大模型地址</span>
                       <input
-                        value={settings.aiBaseUrl}
-                        onChange={(event) => setSettings((current) => ({ ...current, aiBaseUrl: event.target.value }))}
+                        value={activeAIModelConfig?.baseUrl ?? ''}
+                        readOnly
                         placeholder="https://api.openai.com/v1"
                       />
                     </label>
@@ -8102,19 +8150,91 @@ export function App() {
                       <span>API Key</span>
                       <input
                         type="password"
-                        value={settings.aiApiKey}
-                        onChange={(event) => setSettings((current) => ({ ...current, aiApiKey: event.target.value }))}
+                        value={activeAIModelConfig?.apiKey ?? ''}
+                        readOnly
                         placeholder="sk-..."
                       />
                     </label>
                     <label>
                       <span>模型</span>
                       <input
-                        value={settings.aiModel}
-                        onChange={(event) => setSettings((current) => ({ ...current, aiModel: event.target.value }))}
+                        value={activeAIModelConfig?.model ?? ''}
+                        readOnly
                         placeholder="gpt-4.1-mini"
                       />
                     </label>
+                    <div className="ai-model-settings">
+                      <div className="ai-model-settings-head">
+                        <span>AI 模型配置</span>
+                        <div className="ai-model-actions">
+                          <button type="button" title="新增 OpenAI 兼容模型" onClick={() => addAIModelConfig('openai-compatible')}>+ OpenAI</button>
+                          <button type="button" title="新增 Ollama 模型" onClick={() => addAIModelConfig('ollama')}>+ Ollama</button>
+                        </div>
+                      </div>
+                      {settings.aiModels.length === 0 ? (
+                        <p className="hint-text">尚未配置 AI 模型。</p>
+                      ) : null}
+                      {settings.aiModels.map((model) => (
+                        <div className={`ai-model-config-row${model.id === settings.activeAIModelId ? ' active' : ''}`} key={model.id}>
+                          <label className="checkbox-row">
+                            <input
+                              checked={model.id === settings.activeAIModelId}
+                              name="active-ai-model"
+                              type="radio"
+                              onChange={() => setSettings((current) => normalizeAppSettings({ ...current, activeAIModelId: model.id }))}
+                            />
+                            <span>启用</span>
+                          </label>
+                          <label>
+                            <span>名称</span>
+                            <input
+                              value={model.name}
+                              onChange={(event) => updateAIModelConfig(model.id, { name: event.target.value })}
+                              placeholder={model.provider === 'ollama' ? 'Ollama' : 'OpenAI Compatible'}
+                            />
+                          </label>
+                          <label>
+                            <span>类型</span>
+                            <select
+                              value={model.provider}
+                              onChange={(event) => updateAIModelConfig(model.id, { provider: event.target.value as AIModelProvider })}
+                            >
+                              <option value="openai-compatible">OpenAI 兼容</option>
+                              <option value="ollama">Ollama</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>地址</span>
+                            <input
+                              value={model.baseUrl}
+                              onChange={(event) => updateAIModelConfig(model.id, { baseUrl: event.target.value })}
+                              placeholder={model.provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL : 'https://api.openai.com/v1'}
+                            />
+                          </label>
+                          <label>
+                            <span>API Key</span>
+                            <input
+                              type="password"
+                              value={model.apiKey}
+                              onChange={(event) => updateAIModelConfig(model.id, { apiKey: event.target.value })}
+                              placeholder={model.provider === 'ollama' ? 'Ollama 通常可留空' : 'sk-...'}
+                            />
+                          </label>
+                          <label>
+                            <span>模型</span>
+                            <input
+                              value={model.model}
+                              onChange={(event) => updateAIModelConfig(model.id, { model: event.target.value })}
+                              placeholder={model.provider === 'ollama' ? 'llama3.1' : 'gpt-4.1-mini'}
+                            />
+                          </label>
+                          <div className="ai-model-row-footer">
+                            <small>{model.provider === 'ollama' ? '使用 Ollama 的 OpenAI 兼容接口 /v1/chat/completions。' : '适用于 OpenAI、DeepSeek、通义千问等兼容接口。'}</small>
+                            <button type="button" title="删除这个模型配置" onClick={() => removeAIModelConfig(model.id)}>删除</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                     <label>
                       <span>系统提示词</span>
                       <textarea

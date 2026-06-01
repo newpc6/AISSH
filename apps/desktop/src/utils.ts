@@ -14,6 +14,8 @@ import { properties } from '@codemirror/legacy-modes/mode/properties'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import {
+  type AIModelConfig,
+  type AIModelProvider,
   type AppSettings,
   type FileEntry,
   type HealthResponse,
@@ -45,6 +47,7 @@ export const DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS = 10
 export const REQUIRED_CORE_CAPABILITIES = ['ai-assist', 'ai-agent', 'ai-stream', 'ai-unified', 'ai-chat-history']
 export const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 export const ERROR_DETAIL_LIMIT = 1200
+export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434/v1'
 export const DEFAULT_AI_SYSTEM_PROMPT =
   '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案。需要推进终端任务时，每次返回一条可执行的命令；如果是复杂任务，应该在 agentReason 中说明整体计划，命令执行后会拿到输出和退出码，你再根据结果决定下一步。复杂任务可以分多步推进，比如先查询信息、根据结果再做下一步操作。高风险命令必须等待人工确认。'
 
@@ -115,6 +118,8 @@ export const defaultSettings: AppSettings = {
   aiBaseUrl: '',
   aiApiKey: '',
   aiModel: '',
+  aiModels: [],
+  activeAIModelId: '',
   aiPredictionEnabled: true,
   aiPredictionThinkingEnabled: false,
   aiPredictionCount: 3,
@@ -124,6 +129,79 @@ export const defaultSettings: AppSettings = {
   aiConversationContextLimit: 30,
   aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
   agentCommandTimeoutSeconds: 120,
+}
+
+export function createAIModelId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `ai-model-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function newOpenAICompatibleModelConfig(): AIModelConfig {
+  return {
+    id: createAIModelId(),
+    name: 'OpenAI Compatible',
+    provider: 'openai-compatible',
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+  }
+}
+
+export function newOllamaModelConfig(): AIModelConfig {
+  return {
+    id: createAIModelId(),
+    name: 'Ollama',
+    provider: 'ollama',
+    baseUrl: DEFAULT_OLLAMA_BASE_URL,
+    apiKey: '',
+    model: 'llama3.1',
+  }
+}
+
+function normalizeAIModelProvider(value: unknown): AIModelProvider {
+  return value === 'ollama' ? 'ollama' : 'openai-compatible'
+}
+
+export function normalizeAIModelConfigs(value: unknown, legacy?: Pick<AppSettings, 'aiBaseUrl' | 'aiApiKey' | 'aiModel'>): AIModelConfig[] {
+  const configs = Array.isArray(value) ? value : []
+  const normalized = configs
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null
+      const raw = item as Record<string, unknown>
+      const provider = normalizeAIModelProvider(raw.provider)
+      const config: AIModelConfig = {
+        id: String(raw.id ?? '').trim() || createAIModelId(),
+        name: String(raw.name ?? '').trim() || (provider === 'ollama' ? 'Ollama' : `OpenAI Compatible ${index + 1}`),
+        provider,
+        baseUrl: String(raw.baseUrl ?? '').trim(),
+        apiKey: String(raw.apiKey ?? ''),
+        model: String(raw.model ?? '').trim(),
+      }
+      if (config.provider === 'ollama' && !config.baseUrl) {
+        config.baseUrl = DEFAULT_OLLAMA_BASE_URL
+      }
+      return config
+    })
+    .filter((item): item is AIModelConfig => Boolean(item))
+
+  if (normalized.length === 0 && legacy && (legacy.aiBaseUrl || legacy.aiApiKey || legacy.aiModel)) {
+    normalized.push({
+      id: createAIModelId(),
+      name: 'OpenAI Compatible',
+      provider: 'openai-compatible',
+      baseUrl: String(legacy.aiBaseUrl ?? '').trim(),
+      apiKey: String(legacy.aiApiKey ?? ''),
+      model: String(legacy.aiModel ?? '').trim(),
+    })
+  }
+
+  return normalized
+}
+
+export function getActiveAIModelConfig(settings: AppSettings): AIModelConfig | null {
+  return settings.aiModels.find((model) => model.id === settings.activeAIModelId) ?? settings.aiModels[0] ?? null
 }
 
 export const emptySetupForm = {
@@ -457,6 +535,15 @@ export function updateTerminalDraft(cache: TerminalCache | undefined, draft: str
 }
 
 export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSettings {
+  const aiModels = normalizeAIModelConfigs(value.aiModels, {
+    aiBaseUrl: value.aiBaseUrl ?? defaultSettings.aiBaseUrl,
+    aiApiKey: value.aiApiKey ?? defaultSettings.aiApiKey,
+    aiModel: value.aiModel ?? defaultSettings.aiModel,
+  })
+  const activeAIModelId = aiModels.some((model) => model.id === value.activeAIModelId)
+    ? String(value.activeAIModelId)
+    : (aiModels[0]?.id ?? '')
+  const activeAIModel = aiModels.find((model) => model.id === activeAIModelId) ?? aiModels[0]
   return {
     ...defaultSettings,
     ...value,
@@ -472,6 +559,11 @@ export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSetti
     ),
     rightPanelWidth: Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(MAX_RIGHT_PANEL_WIDTH, Number(value.rightPanelWidth ?? defaultSettings.rightPanelWidth) || DEFAULT_RIGHT_PANEL_WIDTH)),
     aiEnabled: value.aiEnabled ?? defaultSettings.aiEnabled,
+    aiBaseUrl: activeAIModel?.baseUrl ?? '',
+    aiApiKey: activeAIModel?.apiKey ?? '',
+    aiModel: activeAIModel?.model ?? '',
+    aiModels,
+    activeAIModelId,
     aiPredictionEnabled: value.aiPredictionEnabled ?? defaultSettings.aiPredictionEnabled,
     aiPredictionThinkingEnabled: value.aiPredictionThinkingEnabled ?? defaultSettings.aiPredictionThinkingEnabled,
     aiPredictionCount: Math.max(1, Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3)),
