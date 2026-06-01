@@ -1710,8 +1710,50 @@ button {
 .unified-ai-box {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) max-content;
+  grid-template-rows: auto minmax(0, 1fr) max-content;
   gap: 8px;
+}
+
+.ai-active-model-banner {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(79, 140, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(79, 140, 255, 0.08);
+}
+
+.ai-active-model-banner div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-active-model-banner span,
+.ai-active-model-banner small {
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.ai-active-model-banner strong {
+  min-width: 0;
+  color: #e2e8f0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-active-model-banner small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-active-model-banner.unconfigured {
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .ai-unified-input {
@@ -3288,6 +3330,13 @@ code {
   color: #e2e8f0;
   font-size: 13px;
   font-weight: 600;
+}
+
+.ai-model-help {
+  margin: 0;
+  color: #a8b6ca;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .ai-model-actions {

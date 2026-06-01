@@ -1813,6 +1813,7 @@ export function App() {
     activePrediction.state === 'loading' || expandedPredictionThinkingSessionId === activeSession?.id
   const activeAIModelConfig = getActiveAIModelConfig(settings)
   const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
+  const activeAIModelProviderLabel = activeAIModelConfig?.provider === 'ollama' ? 'Ollama' : 'OpenAI 兼容'
   const visibleLogs = useMemo(
     () => {
       const keyword = logSearch.trim().toLowerCase()
@@ -4500,7 +4501,7 @@ export function App() {
       await appendAIMessage('error', message, {}, conversationId)
       const detail =
         message.includes('404') || message.includes('not found')
-          ? 'Go core 返回 404，通常表示当前客户端还在使用旧版 core。请关闭旧的 ai-ssh-core.exe 后重启客户端，或重新运行 npm run dev:tauri。'
+          ? 'AI provider 返回 404。请先检查当前启用模型的地址是否为 OpenAI 兼容地址；Ollama 需要填写到 /v1，例如 http://111.4.141.154:41000/v1。只填 host:port 会请求 /chat/completions，常见结果就是 404。'
           : '这是通过 Go core 调用大模型的统一 AI 接口失败，可在“工具 -> 日志”搜索 source=ai 查看详情。'
       setAiAssistantState('error')
       setErrorMessage(message, {
@@ -7088,6 +7089,17 @@ export function App() {
 
             {rightTool === 'ai' ? (
               <div className={`ai-box unified-ai-box ${isAIHistoryOpen ? 'history-open' : ''}`}>
+                <div className={`ai-active-model-banner${isAIProviderConfigured ? '' : ' unconfigured'}`}>
+                  <div>
+                    <span>当前模型</span>
+                    <strong>{activeAIModelConfig?.name || '未配置'}</strong>
+                  </div>
+                  {activeAIModelConfig ? (
+                    <small>{activeAIModelProviderLabel} · {activeAIModelConfig.model || '未填写模型'} · {activeAIModelConfig.baseUrl || '未填写地址'}</small>
+                  ) : (
+                    <small>请在设置中新增并启用一个 AI 模型。</small>
+                  )}
+                </div>
                 <div className="ai-conversation-shell">
                   {isAIHistoryOpen ? (
                     <aside className="ai-chat-sidebar">
@@ -8171,6 +8183,9 @@ export function App() {
                           <button type="button" title="新增 Ollama 模型" onClick={() => addAIModelConfig('ollama')}>+ Ollama</button>
                         </div>
                       </div>
+                      <p className="ai-model-help">
+                        Ollama 请填写 OpenAI 兼容地址，例如 http://111.4.141.154:41000/v1；不要只填 http://111.4.141.154:41000，否则会请求到 /chat/completions 并返回 404。API Key 通常可留空；模型名填写 ollama list 中的名称。
+                      </p>
                       {settings.aiModels.length === 0 ? (
                         <p className="hint-text">尚未配置 AI 模型。</p>
                       ) : null}
