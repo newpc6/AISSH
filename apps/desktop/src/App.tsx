@@ -325,6 +325,7 @@ export function App() {
   const [rightTool, setRightTool] = useState<RightTool>('ai')
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [openTopMenu, setOpenTopMenu] = useState<TopMenu>('')
+  const [sessionTabMenu, setSessionTabMenu] = useState<{ sessionId: string; x: number; y: number } | null>(null)
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [isServerInfoCollapsed, setIsServerInfoCollapsed] = useState(false)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
@@ -450,6 +451,7 @@ export function App() {
   const fileTypeaheadRef = useRef('')
   const fileTypeaheadTimerRef = useRef<number | undefined>(undefined)
   const sessionTabsRef = useRef<HTMLDivElement | null>(null)
+  const sessionTabMenuRef = useRef<HTMLDivElement | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
   const desktopTokenRef = useRef('')
@@ -1445,6 +1447,21 @@ export function App() {
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [openHostMenuId])
+
+  useEffect(() => {
+    if (!sessionTabMenu) {
+      return
+    }
+
+    const closeMenu = (event: MouseEvent) => {
+      if (sessionTabMenuRef.current?.contains(event.target as Node)) {
+        return
+      }
+      setSessionTabMenu(null)
+    }
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [sessionTabMenu])
 
   useEffect(() => {
     const checkCoreHealth = async () => {
@@ -2449,13 +2466,19 @@ export function App() {
       updateBatchHostResults((current) =>
         current.map((r) =>
           r.hostId === hostId
-            ? {
-                ...r,
-                status: batchAbortRef.current ? 'failed' as const : 'success' as const,
-                summary: batchAbortRef.current
-                  ? '已取消'
-                  : summarizeBatchHostSteps(agentStepsRef.current.filter((step) => step.sessionId === sessionId)),
-              }
+            ? (() => {
+                const steps = agentStepsRef.current.filter((step) => step.sessionId === sessionId)
+                const status = batchAbortRef.current || steps.length === 0 ? 'failed' as const : 'success' as const
+                return {
+                  ...r,
+                  status,
+                  summary: batchAbortRef.current
+                    ? '已取消'
+                    : steps.length === 0
+                      ? '未执行命令，AI 未给出可执行步骤'
+                      : summarizeBatchHostSteps(steps),
+                }
+              })()
             : r,
         ),
       )
@@ -3957,7 +3980,7 @@ export function App() {
 
   const requestAIAssistStream = async (
     prompt: string,
-    options: Partial<AIAssistRequest> = {},
+    options: Partial<AIAssistRequest> & { ignoreConversationContext?: boolean } = {},
     sessionId = activeSessionIdRef.current,
   ): Promise<AIAssistResponse> => {
     const { normalized, session, host, terminalContext, commandHistory } = buildAIContextPayload(sessionId)
@@ -3967,7 +3990,8 @@ export function App() {
     if (!normalized.aiBaseUrl.trim() || !normalized.aiModel.trim()) {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
-    const conversationContext = currentConversationContext(activeAIConversationIdRef.current)
+    const { ignoreConversationContext, ...requestOptions } = options
+    const conversationContext = ignoreConversationContext ? '' : currentConversationContext(activeAIConversationIdRef.current)
     const payload: AIAssistRequest = {
       baseUrl: normalized.aiBaseUrl,
       apiKey: normalized.aiApiKey,
@@ -3987,10 +4011,10 @@ export function App() {
       hostName: session?.hostName,
       hostAddress: host?.address,
       username: host?.username,
-      agentMode: options.agentMode ?? agentModeRef.current,
-      agentGoal: options.agentGoal ?? resolveAgentGoal(prompt),
-      agentSteps: options.agentSteps ?? agentStepsRef.current,
-      ...options,
+      agentMode: requestOptions.agentMode ?? agentModeRef.current,
+      agentGoal: requestOptions.agentGoal ?? resolveAgentGoal(prompt),
+      agentSteps: requestOptions.agentSteps ?? agentStepsRef.current,
+      ...requestOptions,
     }
     const response = await apiFetch(AI_ASSIST_STREAM_API_PATH, {
       method: 'POST',
@@ -4179,6 +4203,7 @@ export function App() {
           agentGoal: goal,
           agentMode: agentModeRef.current,
           agentSteps: steps,
+          ignoreConversationContext: batchActive || batchHostResultsRef.current.some((result) => result.sessionId === sessionId),
         },
         sessionId,
       )
@@ -4623,6 +4648,42 @@ export function App() {
     }
   }
 
+  const closeSessionsNow = async (targetSessions: SessionRecord[]) => {
+    if (targetSessions.length === 0) {
+      return
+    }
+    await Promise.all(targetSessions.map((session) => {
+      closeSessionStream(session.id)
+      return apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
+    }))
+    const closeIds = new Set(targetSessions.map((session) => session.id))
+    const remainingSessions = sessionsRef.current.filter((item) => !closeIds.has(item.id))
+    sessionsRef.current = remainingSessions
+    setSessions(remainingSessions)
+    targetSessions.forEach((session) => removeTerminalCache(session.id))
+    if (closeIds.has(activeSessionIdRef.current)) {
+      const next = remainingSessions[0]
+      setActiveSession(next?.id ?? '')
+      if (next) {
+        replaceTerminalWithCache(next.id)
+        if (next.status === 'connected' || next.status === 'connecting') {
+          openSessionStream(next)
+        }
+        fitAddonRef.current?.fit()
+        syncTerminalSize(next.id)
+      } else {
+        commandBufferRef.current = ''
+        clearAIPrediction()
+        setServerMetrics(null)
+        setSystemInfo(null)
+        setMetricHistory([])
+        previousMetricsRef.current = null
+        setFileEntries([])
+        xtermRef.current?.clear()
+      }
+    }
+  }
+
   const closeSession = async (session: SessionRecord) => {
     requestConfirm({
       section: 'SSH 会话',
@@ -4632,6 +4693,45 @@ export function App() {
       danger: true,
       onConfirm: () => closeSessionNow(session),
     })
+  }
+
+  const closeOtherSessions = async (session: SessionRecord) => {
+    const targets = sessionsRef.current.filter((item) => item.id !== session.id)
+    await closeSessionsNow(targets)
+    setActiveSession(session.id)
+    replaceTerminalWithCache(session.id)
+  }
+
+  const closeSessionsToRight = async (session: SessionRecord) => {
+    const sessionList = sessionsRef.current
+    const index = sessionList.findIndex((item) => item.id === session.id)
+    if (index < 0) {
+      return
+    }
+    await closeSessionsNow(sessionList.slice(index + 1))
+  }
+
+  const closeAllSessions = async () => {
+    await closeSessionsNow(sessionsRef.current)
+  }
+
+  const copySessionSSHInfo = async (session: SessionRecord) => {
+    const host = hostsRef.current.find((item) => item.id === session.hostId)
+    const text = host
+      ? `ssh -p ${host.port} ${host.username}@${host.address}`
+      : session.hostName
+    try {
+      await navigator.clipboard.writeText(text)
+      setAgentMessage(`已复制 SSH 信息：${text}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '复制 SSH 信息失败'
+      setErrorMessage(message, {
+        title: '复制失败',
+        method: 'COPY',
+        path: 'clipboard',
+        source: '浏览器剪贴板',
+      })
+    }
   }
 
   const reconnectSession = async (session: SessionRecord) => {
@@ -6076,6 +6176,10 @@ export function App() {
                   key={session.id}
                   className={`session-tab ${activeViewId === `session:${session.id}` ? 'active' : ''}`}
                   onClick={() => activateSession(session)}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    setSessionTabMenu({ sessionId: session.id, x: event.clientX, y: event.clientY })
+                  }}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(event) => {
@@ -6136,6 +6240,42 @@ export function App() {
             <button className="session-new" type="button" title="新建 SSH 会话" onClick={() => void createSession()}>
               +
             </button>
+            {sessionTabMenu ? (() => {
+              const session = sessions.find((item) => item.id === sessionTabMenu.sessionId)
+              if (!session) {
+                return null
+              }
+              const sessionIndex = sessions.findIndex((item) => item.id === session.id)
+              return (
+                <div
+                  ref={sessionTabMenuRef}
+                  className="session-tab-menu"
+                  style={{ left: sessionTabMenu.x, top: sessionTabMenu.y }}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button type="button" title="复制当前 SSH 连接信息" onClick={() => { setSessionTabMenu(null); void copySessionSSHInfo(session) }}>
+                    复制 SSH
+                  </button>
+                  <button type="button" title="关闭当前 SSH 标签" onClick={() => { setSessionTabMenu(null); void closeSession(session) }}>
+                    关闭当前
+                  </button>
+                  <button type="button" title="关闭全部 SSH 标签" onClick={() => { setSessionTabMenu(null); void closeAllSessions() }}>
+                    关闭全部
+                  </button>
+                  <button type="button" title="关闭其他 SSH 标签" onClick={() => { setSessionTabMenu(null); void closeOtherSessions(session) }}>
+                    关闭其他
+                  </button>
+                  <button
+                    disabled={sessionIndex < 0 || sessionIndex >= sessions.length - 1}
+                    type="button"
+                    title="关闭右侧 SSH 标签"
+                    onClick={() => { setSessionTabMenu(null); void closeSessionsToRight(session) }}
+                  >
+                    关闭右侧
+                  </button>
+                </div>
+              )
+            })() : null}
           </div>
 
           <section className={`terminal-stage ${isFilePreviewActive ? 'show-file-preview' : ''}`}>

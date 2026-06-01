@@ -1074,6 +1074,40 @@ button {
   font-weight: 600;
 }
 
+.session-tab-menu {
+  position: fixed;
+  z-index: 30;
+  width: 132px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #111a24;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.34);
+  display: grid;
+  gap: 2px;
+}
+
+.session-tab-menu button {
+  width: 100%;
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #dbe5ef;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 9px;
+}
+
+.session-tab-menu button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.session-tab-menu button:disabled {
+  color: #64748b;
+  cursor: not-allowed;
+}
+
 .file-preview-tab {
   flex-basis: 210px;
   border-color: rgba(34, 211, 238, 0.2);
