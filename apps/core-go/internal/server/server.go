@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"crypto/aes"
@@ -48,6 +48,7 @@ type hostRecord struct {
 type hostGroup struct {
 	Name         string `json:"name"`
 	PreviousName string `json:"previousName,omitempty"`
+	Delete       bool   `json:"delete,omitempty"`
 }
 
 type hostGroupsResponse struct {
@@ -117,6 +118,7 @@ type aiPredictionRequest struct {
 	APIKey          string   `json:"apiKey,omitempty"`
 	Model           string   `json:"model"`
 	PredictionCount int      `json:"predictionCount"`
+	IncludeThinking bool     `json:"includeThinking,omitempty"`
 	TerminalContext string   `json:"terminalContext"`
 	CommandHistory  []string `json:"commandHistory"`
 	CurrentCommand  string   `json:"currentCommand,omitempty"`
@@ -254,13 +256,13 @@ type diskMetric struct {
 }
 
 type systemInfo struct {
-	HostID       string `json:"hostId"`
-	Hostname     string `json:"hostname"`
-	OS           string `json:"os"`
-	Kernel       string `json:"kernel"`
-	Arch         string `json:"arch"`
-	Uptime       string `json:"uptime"`
-	CollectedAt  string `json:"collectedAt"`
+	HostID      string `json:"hostId"`
+	Hostname    string `json:"hostname"`
+	OS          string `json:"os"`
+	Kernel      string `json:"kernel"`
+	Arch        string `json:"arch"`
+	Uptime      string `json:"uptime"`
+	CollectedAt string `json:"collectedAt"`
 }
 
 type terminalSession struct {
@@ -475,7 +477,20 @@ func (m *sessionManager) updateHostGroups(request hostGroupsUpdateRequest) []hos
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	deletedGroups := map[string]bool{}
+	keptGroups := make([]hostGroup, 0, len(request.Groups))
 	for _, group := range request.Groups {
+		if group.Delete {
+			name := strings.TrimSpace(group.PreviousName)
+			if name == "" {
+				name = strings.TrimSpace(group.Name)
+			}
+			if name != "" {
+				deletedGroups[name] = true
+			}
+			continue
+		}
+		keptGroups = append(keptGroups, group)
 		previousName := strings.TrimSpace(group.PreviousName)
 		nextName := strings.TrimSpace(group.Name)
 		if previousName == "" || nextName == "" || previousName == nextName {
@@ -487,12 +502,13 @@ func (m *sessionManager) updateHostGroups(request hostGroupsUpdateRequest) []hos
 			}
 		}
 	}
-	m.groups = mergeHostGroups(request.Groups, m.hosts)
 	for i := range m.hosts {
-		if strings.TrimSpace(m.hosts[i].Group) == "" {
+		groupName := strings.TrimSpace(m.hosts[i].Group)
+		if groupName == "" || deletedGroups[groupName] {
 			m.hosts[i].Group = "默认"
 		}
 	}
+	m.groups = mergeHostGroups(keptGroups, m.hosts)
 	_ = m.store.save(m.hosts, m.groups)
 	m.logger.info("hosts", "host groups updated", map[string]any{"count": len(m.groups)})
 	return m.groups

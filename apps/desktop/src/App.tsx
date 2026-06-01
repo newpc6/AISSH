@@ -308,6 +308,7 @@ export function App() {
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [groupDrafts, setGroupDrafts] = useState<string[]>(['默认'])
   const [originalGroupDrafts, setOriginalGroupDrafts] = useState<string[]>(['默认'])
+  const [deletedGroupDrafts, setDeletedGroupDrafts] = useState<string[]>([])
   const [groupDialogMessage, setGroupDialogMessage] = useState('')
   const [groupDialogError, setGroupDialogError] = useState('')
   const [sessions, setSessions] = useState<SessionRecord[]>([])
@@ -1107,14 +1108,21 @@ export function App() {
 
   const confirmDeleteGroupDraft = (index: number, group: string) => {
     const name = group.trim() || '未命名分组'
+    const originalName = originalGroupDrafts[index]?.trim()
+    const usedCount = hosts.filter((host) => (host.group || '默认') === (originalName || name)).length
     requestConfirm({
       section: 'SSH 分组',
       title: '删除分组',
       message: `确定删除分组「${name}」吗？`,
-      detail: '这里只会删除当前分组配置草稿，保存后才会写入配置。',
+      detail: usedCount > 0
+        ? `保存后该分组下的 ${usedCount} 台服务器会移动到默认分组。`
+        : '保存后会从分组配置中移除。',
       confirmText: '删除',
       danger: true,
       onConfirm: () => {
+        if (originalName) {
+          setDeletedGroupDrafts((current) => [...new Set([...current, originalName])])
+        }
         setGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
         setOriginalGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
         setGroupDialogMessage('')
@@ -1192,6 +1200,7 @@ export function App() {
         aiApiKey: normalized.aiApiKey,
         aiModel: normalized.aiModel,
         aiPredictionEnabled: normalized.aiPredictionEnabled,
+        aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
         aiPredictionCount: normalized.aiPredictionCount,
         aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
         aiTerminalContextLimit: normalized.aiTerminalContextLimit,
@@ -1236,6 +1245,7 @@ export function App() {
             aiApiKey: (app.aiApiKey ?? '') as string,
             aiModel: (app.aiModel ?? '') as string,
             aiPredictionEnabled: app.aiPredictionEnabled as boolean,
+            aiPredictionThinkingEnabled: app.aiPredictionThinkingEnabled as boolean,
             aiPredictionCount: app.aiPredictionCount as number,
             aiPredictionTriggerDelayMs: app.aiPredictionTriggerDelayMs as number,
             aiTerminalContextLimit: app.aiTerminalContextLimit as number,
@@ -2086,19 +2096,38 @@ export function App() {
     const names = groups.map((group) => group.name)
     setGroupDrafts(names)
     setOriginalGroupDrafts(names)
+    setDeletedGroupDrafts([])
     setGroupDialogMessage('')
     setGroupDialogError('')
     setIsGroupDialogOpen(true)
   }
 
   const saveHostGroups = async () => {
+    const groupEntries: HostGroup[] = []
+    const activeNames = new Set<string>()
+    const activeOriginalNames = new Set<string>()
+    groupDrafts.forEach((name, index) => {
+      const trimmedName = name.trim()
+      const previousName = originalGroupDrafts[index]?.trim()
+      if (!trimmedName) {
+        return
+      }
+      activeNames.add(trimmedName)
+      if (previousName) {
+        activeOriginalNames.add(previousName)
+      }
+      groupEntries.push({
+        name: trimmedName,
+        previousName: previousName && previousName !== trimmedName ? previousName : undefined,
+      })
+    })
+    for (const deletedName of deletedGroupDrafts) {
+      if (!activeNames.has(deletedName) && !activeOriginalNames.has(deletedName)) {
+        groupEntries.push({ name: deletedName, previousName: deletedName, delete: true })
+      }
+    }
     const payload: HostGroupsUpdateRequest = {
-      groups: normalizeHostGroups(
-        groupDrafts.map((name, index) => ({
-          name,
-          previousName: originalGroupDrafts[index],
-        })),
-      ),
+      groups: groupEntries,
     }
     const response = await apiFetch('/host-groups', {
       method: 'PUT',
@@ -2113,10 +2142,13 @@ export function App() {
       return
     }
     const data = (await response.json()) as HostGroupsResponse
-    setHostGroups(normalizeHostGroups(data.groups, hosts))
-    await loadHosts()
-    setOriginalGroupDrafts(payload.groups.map((group) => group.name))
-    setGroupDrafts(payload.groups.map((group) => group.name))
+    const nextHosts = await loadHosts()
+    const nextGroups = normalizeHostGroups(data.groups, nextHosts)
+    const nextGroupNames = nextGroups.map((group) => group.name)
+    setHostGroups(nextGroups)
+    setOriginalGroupDrafts(nextGroupNames)
+    setGroupDrafts(nextGroupNames)
+    setDeletedGroupDrafts([])
     setGroupDialogError('')
     setGroupDialogMessage('分组已保存')
   }
@@ -2155,6 +2187,7 @@ export function App() {
       rightPanelWidth: normalized.rightPanelWidth,
       aiEnabled: normalized.aiEnabled,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
+      aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
       aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
@@ -3344,6 +3377,7 @@ export function App() {
       apiKey: normalized.aiApiKey,
       model: normalized.aiModel,
       predictionCount: normalized.aiPredictionCount,
+      includeThinking: normalized.aiPredictionThinkingEnabled,
       terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
       commandHistory: history.slice(0, normalized.aiCommandHistoryLimit),
       currentCommand: commandBufferRef.current,
@@ -3378,7 +3412,7 @@ export function App() {
         if (aiPredictionIgnoredRequestRef.current[sessionId] === requestID) {
           return
         }
-        if (event.type === 'thinking' && event.text) {
+        if (event.type === 'thinking' && event.text && normalized.aiPredictionThinkingEnabled) {
           updateAIPredictionForSession(sessionId, (current) => ({
             ...current,
             thinking: `${current.thinking}${event.text}`,
@@ -6974,7 +7008,10 @@ export function App() {
 
             <div className="group-list-editor">
               {groupDrafts.map((group, index) => {
-                const usedCount = hosts.filter((host) => (host.group || '默认') === group.trim()).length
+                const groupName = group.trim()
+                const originalName = originalGroupDrafts[index]?.trim()
+                const usedCount = hosts.filter((host) => (host.group || '默认') === (originalName || groupName)).length
+                const isDefaultGroupInUse = (originalName || groupName) === '默认' && usedCount > 0
                 return (
                   <div className="group-edit-row" key={`${group}-${index}`}>
                     <input
@@ -6989,8 +7026,14 @@ export function App() {
                     />
                     <span>{usedCount} 台</span>
                     <button
-                      disabled={usedCount > 0 || groupDrafts.length <= 1}
-                      title={usedCount > 0 ? '该分组正在被服务器使用，不能删除' : '删除空分组'}
+                      disabled={groupDrafts.length <= 1 || isDefaultGroupInUse}
+                      title={
+                        isDefaultGroupInUse
+                          ? '默认分组正在被服务器使用，不能删除'
+                          : usedCount > 0
+                            ? '删除后该分组下服务器会移动到默认分组'
+                            : '删除空分组'
+                      }
                       type="button"
                       onClick={() => confirmDeleteGroupDraft(index, group)}
                     >
@@ -7342,6 +7385,17 @@ export function App() {
                         }
                       />
                       <span>开启 AI 命令预测</span>
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        checked={settings.aiPredictionThinkingEnabled}
+                        disabled={!settings.aiEnabled || !settings.aiPredictionEnabled}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setSettings((current) => ({ ...current, aiPredictionThinkingEnabled: event.target.checked }))
+                        }
+                      />
+                      <span>显示预测 thinking</span>
                     </label>
                     <label>
                       <span>预测命令数量</span>

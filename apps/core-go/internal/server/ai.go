@@ -441,7 +441,13 @@ func streamPredictedCommands(ctx context.Context, request aiPredictionRequest, l
 
 	started := time.Now()
 	content, reasoning, finishReason, err := streamOpenAIChat(ctx, endpoint, normalized.APIKey, normalized.Model, body, logger, func(event aiStreamEvent) error {
-		if event.Type == "thinking" || event.Type == "content" {
+		if event.Type == "thinking" {
+			if normalized.IncludeThinking {
+				return write(event)
+			}
+			return nil
+		}
+		if event.Type == "content" {
 			return write(event)
 		}
 		return nil

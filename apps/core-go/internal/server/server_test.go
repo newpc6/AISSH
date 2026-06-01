@@ -647,6 +647,49 @@ func TestHostGroupsRenameUpdatesHosts(t *testing.T) {
 	}
 }
 
+func TestHostGroupsDeleteMovesHostsToDefault(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
+	storePath := filepath.Join(t.TempDir(), "hosts.json")
+	srv := newServer("18555", newSessionManagerWithStores(&hostStore{path: storePath}, newMemoryCredentialStore(), newAppLogger()))
+	createBody := []byte(`{
+		"name":"Grouped Host",
+		"address":"192.168.1.23",
+		"port":22,
+		"username":"root",
+		"authType":"agent",
+		"group":"obsolete"
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewBuffer(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(createRecorder, createReq)
+	if createRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", createRecorder.Code)
+	}
+
+	updateBody := []byte(`{"groups":[{"name":"default"},{"name":"obsolete","previousName":"obsolete","delete":true}]}`)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/host-groups", bytes.NewBuffer(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(updateRecorder, updateReq)
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", updateRecorder.Code)
+	}
+	if bytes.Contains(updateRecorder.Body.Bytes(), []byte("obsolete")) {
+		t.Fatalf("expected deleted group to be omitted, got %q", updateRecorder.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/hosts", nil)
+	listRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(listRecorder, listReq)
+	if bytes.Contains(listRecorder.Body.Bytes(), []byte("obsolete")) {
+		t.Fatalf("expected host to leave deleted group, got %q", listRecorder.Body.String())
+	}
+	if !bytes.Contains(listRecorder.Body.Bytes(), []byte("默认")) {
+		t.Fatalf("expected host to move to default group, got %q", listRecorder.Body.String())
+	}
+}
+
 func TestHostsPersistAcrossServerRestartWithoutSecrets(t *testing.T) {
 	t.Setenv("AI_SSH_WEB_AUTH", "0")
 	storePath := filepath.Join(t.TempDir(), "hosts.json")

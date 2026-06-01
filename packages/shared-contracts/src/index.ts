@@ -77,6 +77,7 @@ export interface AppSettings {
   aiApiKey: string
   aiModel: string
   aiPredictionEnabled: boolean
+  aiPredictionThinkingEnabled: boolean
   aiPredictionCount: number
   aiPredictionTriggerDelayMs: number
   aiTerminalContextLimit: number
@@ -114,6 +115,7 @@ export interface HostUpsertRequest {
 export interface HostGroup {
   name: string
   previousName?: string
+  delete?: boolean
 }
 
 export interface HostGroupsResponse {
@@ -235,6 +237,7 @@ export interface AIPredictionRequest {
   apiKey?: string
   model: string
   predictionCount: number
+  includeThinking?: boolean
   terminalContext: string
   commandHistory: string[]
   currentCommand?: string

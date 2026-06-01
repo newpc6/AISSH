@@ -28,6 +28,7 @@ type CoreAppConfig struct {
 	AIApiKey                      string   `json:"aiApiKey,omitempty"`
 	AIModel                       string   `json:"aiModel,omitempty"`
 	AIPredictionEnabled           bool     `json:"aiPredictionEnabled,omitempty"`
+	AIPredictionThinkingEnabled   bool     `json:"aiPredictionThinkingEnabled,omitempty"`
 	AIPredictionCount             int      `json:"aiPredictionCount,omitempty"`
 	AIPredictionTriggerDelayMs    int      `json:"aiPredictionTriggerDelayMs,omitempty"`
 	AITerminalContextLimit        int      `json:"aiTerminalContextLimit,omitempty"`
