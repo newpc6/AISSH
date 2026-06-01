@@ -3224,6 +3224,15 @@ code {
   padding: 0 10px;
 }
 
+.group-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.group-row-actions button {
+  min-width: 34px;
+}
+
 .group-edit-row button:disabled {
   opacity: 0.45;
   cursor: not-allowed;

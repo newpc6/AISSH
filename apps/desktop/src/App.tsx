@@ -1130,6 +1130,27 @@ export function App() {
     })
   }
 
+  const moveGroupDraft = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction
+    setGroupDrafts((current) => {
+      if (targetIndex < 0 || targetIndex >= current.length) {
+        return current
+      }
+      const next = [...current]
+      ;[next[index], next[targetIndex]] = [next[targetIndex], next[index]]
+      return next
+    })
+    setOriginalGroupDrafts((current) => {
+      if (targetIndex < 0 || targetIndex >= current.length) {
+        return current
+      }
+      const next = [...current]
+      ;[next[index], next[targetIndex]] = [next[targetIndex], next[index]]
+      return next
+    })
+    setGroupDialogMessage('')
+  }
+
   const addFavoriteCommand = () => {
     const normalized = stripTerminalControlSequences(favoriteCommandDraft).trim()
     if (!normalized) {
@@ -7025,20 +7046,38 @@ export function App() {
                       placeholder="分组名称"
                     />
                     <span>{usedCount} 台</span>
-                    <button
-                      disabled={groupDrafts.length <= 1 || isDefaultGroupInUse}
-                      title={
-                        isDefaultGroupInUse
-                          ? '默认分组正在被服务器使用，不能删除'
-                          : usedCount > 0
-                            ? '删除后该分组下服务器会移动到默认分组'
-                            : '删除空分组'
-                      }
-                      type="button"
-                      onClick={() => confirmDeleteGroupDraft(index, group)}
-                    >
-                      删除
-                    </button>
+                    <div className="group-row-actions">
+                      <button
+                        disabled={index === 0}
+                        title="上移分组"
+                        type="button"
+                        onClick={() => moveGroupDraft(index, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        disabled={index === groupDrafts.length - 1}
+                        title="下移分组"
+                        type="button"
+                        onClick={() => moveGroupDraft(index, 1)}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        disabled={groupDrafts.length <= 1 || isDefaultGroupInUse}
+                        title={
+                          isDefaultGroupInUse
+                            ? '默认分组正在被服务器使用，不能删除'
+                            : usedCount > 0
+                              ? '删除后该分组下服务器会移动到默认分组'
+                              : '删除空分组'
+                        }
+                        type="button"
+                        onClick={() => confirmDeleteGroupDraft(index, group)}
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
                 )
               })}
