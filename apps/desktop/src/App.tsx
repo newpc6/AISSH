@@ -319,6 +319,7 @@ export function App() {
   const [batchTask, setBatchTask] = useState('')
   const [batchHostIndex, setBatchHostIndex] = useState(0)
   const [batchHostResults, setBatchHostResults] = useState<BatchHostResult[]>([])
+  const [serverSearch, setServerSearch] = useState('')
   const [activeSessionId, setActiveSessionId] = useState<string>('')
   const [leftMode, setLeftMode] = useState<LeftMode>('servers')
   const [rightTool, setRightTool] = useState<RightTool>('ai')
@@ -1738,11 +1739,31 @@ export function App() {
   )
   const groupedHosts = useMemo<HostGroupView[]>(() => {
     const groups = normalizeHostGroups(hostGroups, hosts)
+    const keyword = serverSearch.trim().toLowerCase()
+    const matchesSearch = (host: HostRecord) => {
+      if (!keyword) {
+        return true
+      }
+      const haystack = [
+        host.name,
+        host.address,
+        String(host.port),
+        `:${host.port}`,
+        `${host.address}:${host.port}`,
+        `${host.username}@${host.address}:${host.port}`,
+        host.username,
+      ].join('\n').toLowerCase()
+      return haystack.includes(keyword)
+    }
     return groups.map((group) => ({
       ...group,
-      hosts: hosts.filter((host) => (host.group || '默认') === group.name),
+      hosts: hosts.filter((host) => (host.group || '默认') === group.name && matchesSearch(host)),
     }))
-  }, [hostGroups, hosts])
+  }, [hostGroups, hosts, serverSearch])
+  const visibleHostCount = groupedHosts.reduce((count, group) => count + group.hosts.length, 0)
+  const visibleHostGroups = serverSearch.trim()
+    ? groupedHosts.filter((group) => group.hosts.length > 0)
+    : groupedHosts
 
   useEffect(() => {
     previousMetricsRef.current = null
@@ -6015,9 +6036,23 @@ export function App() {
                   <button type="button" title="导出服务器列表" onClick={() => void exportHosts(false)}>⇅</button>
                 </div>
               </div>
+              <label className="server-search">
+                <span>搜索服务器</span>
+                <input
+                  type="search"
+                  value={serverSearch}
+                  placeholder="名称、IP、端口"
+                  onChange={(event) => setServerSearch(event.target.value)}
+                />
+              </label>
 
               <div className="server-groups">
-                {groupedHosts.map((group) => (
+                {visibleHostCount === 0 ? (
+                  <p className="server-search-empty">
+                    {serverSearch.trim() ? '没有匹配的服务器' : '暂无服务器'}
+                  </p>
+                ) : null}
+                {visibleHostGroups.map((group) => (
                   <section className="server-group" key={group.name}>
                     <p>{group.name}<span>{group.hosts.length}</span></p>
                     {group.hosts.length === 0 ? <small className="empty-group-text">空分组</small> : null}

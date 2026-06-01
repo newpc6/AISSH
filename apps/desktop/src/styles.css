@@ -422,6 +422,43 @@ button {
   min-width: 0;
 }
 
+.server-search {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.server-search span {
+  color: #7f91a7;
+  font-size: 11px;
+}
+
+.server-search input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(8, 12, 18, 0.72);
+  color: #edf2f7;
+  outline: none;
+  padding: 0 10px;
+}
+
+.server-search input:focus {
+  border-color: rgba(79, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+
+.server-search-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
 .server-group {
   display: grid;
   gap: 8px;
