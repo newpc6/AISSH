@@ -202,6 +202,12 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
   streamingContent: '',
 }
 
+const APP_CONFIG_BACKUP_STORAGE_KEY = 'ai-ssh:app-config-backup'
+const AI_PROVIDER_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel'] as const
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
 type CodeMirrorEditorProps = {
   value: string
   fileName: string
@@ -406,6 +412,7 @@ export function App() {
   const commandBufferRef = useRef('')
   const activeSessionIdRef = useRef('')
   const sessionSettingsRef = useRef(defaultSettings)
+  const configLoadedRef = useRef(false)
   const hostsRef = useRef<HostRecord[]>([])
   const sessionsRef = useRef<SessionRecord[]>([])
   const filePreviewTabsRef = useRef<FilePreviewTab[]>([])
@@ -1226,36 +1233,87 @@ export function App() {
     predictionPanelHeight?: number
     favoriteCommands?: string[]
   }>) => {
-    const normalized = normalizeAppSettings(overrides?.settings ?? settings)
+    const shouldMergeExistingConfig =
+      !configLoadedRef.current ||
+      !overrides?.settings ||
+      AI_PROVIDER_SETTING_KEYS.some((key) => overrides.settings?.[key] === undefined)
+    let existingConfig: Record<string, unknown> = {}
+    let existingApp: Record<string, unknown> = {}
+    if (shouldMergeExistingConfig) {
+      try {
+        const response = await apiFetch('/config')
+        if (response.ok) {
+          existingConfig = (await response.json()) as Record<string, unknown>
+          existingApp = isRecord(existingConfig.app) ? existingConfig.app : {}
+        }
+      } catch (error) {
+        appendLog('warn', 'ui.config', 'load config before save failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    const backupApp = loadLocalAppConfigBackup()
+    const mergedSettings = {
+      ...backupApp,
+      ...existingApp,
+      ...(overrides?.settings ?? settings),
+    } as Partial<AppSettings>
+    for (const key of AI_PROVIDER_SETTING_KEYS) {
+      const overrideValue = overrides?.settings?.[key]
+      const currentValue = settings[key]
+      const existingValue = existingApp[key]
+      const backupValue = backupApp[key]
+      const shouldRestoreAIValue = !configLoadedRef.current || overrideValue === undefined
+      if (
+        shouldRestoreAIValue &&
+        (overrideValue === undefined || String(overrideValue).trim() === '') &&
+        !String(currentValue ?? '').trim() &&
+        (
+          (typeof existingValue === 'string' && existingValue.trim()) ||
+          (typeof backupValue === 'string' && backupValue.trim())
+        )
+      ) {
+        mergedSettings[key] = typeof existingValue === 'string' && existingValue.trim()
+          ? existingValue
+          : typeof backupValue === 'string'
+            ? backupValue
+            : ''
+      }
+    }
+    const normalized = normalizeAppSettings(mergedSettings)
+    const appConfig = {
+      ...backupApp,
+      ...existingApp,
+      healthCheckIntervalSeconds: normalized.healthCheckIntervalSeconds,
+      metricsRefreshIntervalSeconds: normalized.metricsRefreshIntervalSeconds,
+      metricsHistoryWindowMinutes: normalized.metricsHistoryWindowMinutes,
+      metricsCompactPointLimit: normalized.metricsCompactPointLimit,
+      metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
+      terminalRetainedLines: normalized.terminalRetainedLines,
+      rightServerInfoPanelHeight: overrides?.rightServerInfoPanelHeight ?? rightServerInfoPanelHeight,
+      rightPanelWidth: overrides?.rightPanelWidth ?? rightPanelWidth,
+      leftRailWidth: overrides?.leftRailWidth ?? leftRailWidth,
+      predictionPanelHeight: overrides?.predictionPanelHeight ?? predictionPanelHeight,
+      aiEnabled: normalized.aiEnabled,
+      aiBaseUrl: normalized.aiBaseUrl,
+      aiApiKey: normalized.aiApiKey,
+      aiModel: normalized.aiModel,
+      aiPredictionEnabled: normalized.aiPredictionEnabled,
+      aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
+      aiPredictionCount: normalized.aiPredictionCount,
+      aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
+      aiTerminalContextLimit: normalized.aiTerminalContextLimit,
+      aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
+      aiConversationContextLimit: normalized.aiConversationContextLimit,
+      aiSystemPrompt: normalized.aiSystemPrompt,
+      agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
+      favoriteCommands: normalizeFavoriteCommands(overrides?.favoriteCommands ?? existingApp.favoriteCommands ?? backupApp.favoriteCommands ?? favoriteCommands),
+    }
     const config: Record<string, unknown> = {
       bindHost: '',
       port: 0,
-      app: {
-        healthCheckIntervalSeconds: normalized.healthCheckIntervalSeconds,
-        metricsRefreshIntervalSeconds: normalized.metricsRefreshIntervalSeconds,
-        metricsHistoryWindowMinutes: normalized.metricsHistoryWindowMinutes,
-        metricsCompactPointLimit: normalized.metricsCompactPointLimit,
-        metricsExpandedPointLimit: normalized.metricsExpandedPointLimit,
-        terminalRetainedLines: normalized.terminalRetainedLines,
-        rightServerInfoPanelHeight: overrides?.rightServerInfoPanelHeight ?? rightServerInfoPanelHeight,
-        rightPanelWidth: overrides?.rightPanelWidth ?? rightPanelWidth,
-        leftRailWidth: overrides?.leftRailWidth ?? leftRailWidth,
-        predictionPanelHeight: overrides?.predictionPanelHeight ?? predictionPanelHeight,
-        aiEnabled: normalized.aiEnabled,
-        aiBaseUrl: normalized.aiBaseUrl,
-        aiApiKey: normalized.aiApiKey,
-        aiModel: normalized.aiModel,
-        aiPredictionEnabled: normalized.aiPredictionEnabled,
-        aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
-        aiPredictionCount: normalized.aiPredictionCount,
-        aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
-        aiTerminalContextLimit: normalized.aiTerminalContextLimit,
-        aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
-        aiConversationContextLimit: normalized.aiConversationContextLimit,
-        aiSystemPrompt: normalized.aiSystemPrompt,
-        agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
-        favoriteCommands: normalizeFavoriteCommands(overrides?.favoriteCommands ?? favoriteCommands),
-      },
+      ...existingConfig,
+      app: appConfig,
     }
     try {
       await apiFetch('/config', {
@@ -1268,14 +1326,53 @@ export function App() {
         error: error instanceof Error ? error.message : String(error),
       })
     }
+    try {
+      window.localStorage.setItem(APP_CONFIG_BACKUP_STORAGE_KEY, JSON.stringify(appConfig))
+    } catch (error) {
+      appendLog('warn', 'ui.config', 'save local config backup failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
+
+  const loadLocalAppConfigBackup = () => {
+    try {
+      const raw = window.localStorage.getItem(APP_CONFIG_BACKUP_STORAGE_KEY)
+      if (!raw) {
+        return {}
+      }
+      const parsed = JSON.parse(raw) as unknown
+      return isRecord(parsed) ? parsed : {}
+    } catch (error) {
+      appendLog('warn', 'ui.config', 'read local config backup failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return {}
+    }
+  }
+
   useEffect(() => {
     const loadConfig = async () => {
       try {
         const resp = await apiFetch('/config')
         if (!resp.ok) return
         const cfg = await resp.json() as Record<string, unknown>
-        const app = cfg.app as Record<string, unknown> | undefined
+        const rawApp = isRecord(cfg.app) ? cfg.app : undefined
+        const backupApp = loadLocalAppConfigBackup()
+        const app = rawApp
+          ? {
+              ...rawApp,
+              ...Object.fromEntries(
+                AI_PROVIDER_SETTING_KEYS
+                  .filter((key) =>
+                    !String(rawApp[key] ?? '').trim() &&
+                    typeof backupApp[key] === 'string' &&
+                    String(backupApp[key]).trim(),
+                  )
+                  .map((key) => [key, backupApp[key]]),
+              ),
+            }
+          : backupApp
         if (app) {
           const settings = normalizeAppSettings({
             healthCheckIntervalSeconds: app.healthCheckIntervalSeconds as number,
@@ -1317,11 +1414,17 @@ export function App() {
           if (Array.isArray(app.favoriteCommands)) {
             setFavoriteCommands(normalizeFavoriteCommands(app.favoriteCommands))
           }
+          const restoredAISettings = AI_PROVIDER_SETTING_KEYS.some((key) => rawApp && app[key] !== rawApp[key])
+          if (restoredAISettings) {
+            void saveAppConfig({ settings })
+          }
         }
       } catch (error) {
         appendLog('warn', 'ui.config', 'load config from API failed, falling back to localStorage', {
           error: error instanceof Error ? error.message : String(error),
         })
+      } finally {
+        configLoadedRef.current = true
       }
     }
     void loadConfig()

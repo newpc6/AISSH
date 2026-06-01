@@ -371,6 +371,55 @@ func TestCORSOriginSurvivesJSONResponse(t *testing.T) {
 	}
 }
 
+func TestConfigUpdatePreservesExistingAIProviderSettings(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
+	t.Setenv("AI_SSH_CONFIG_PATH", filepath.Join(t.TempDir(), "config.json"))
+	if err := SaveCoreConfig(CoreConfig{
+		BindHost: "0.0.0.0",
+		Port:     18555,
+		App: &CoreAppConfig{
+			AIBaseUrl:     "https://ai.example/v1",
+			AIApiKey:      "secret-key",
+			AIModel:       "model-a",
+			AIEnabled:     true,
+			LeftRailWidth: 280,
+		},
+	}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
+		"app": {
+			"leftRailWidth": 420
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected config update 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	cfg := LoadCoreConfig()
+	if cfg.App == nil {
+		t.Fatalf("expected app config")
+	}
+	if cfg.App.AIBaseUrl != "https://ai.example/v1" || cfg.App.AIApiKey != "secret-key" || cfg.App.AIModel != "model-a" {
+		t.Fatalf("expected AI provider settings to be preserved, got %#v", cfg.App)
+	}
+	if !cfg.App.AIEnabled {
+		t.Fatalf("expected AI enabled flag to be preserved")
+	}
+	if cfg.App.LeftRailWidth != 420 {
+		t.Fatalf("expected layout update to be saved, got %d", cfg.App.LeftRailWidth)
+	}
+}
+
 func TestAIPredictEndpointUsesOpenAICompatibleProvider(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {

@@ -54,8 +54,13 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		case http.MethodGet:
 			writeJSON(w, LoadCoreConfig())
 		case http.MethodPut:
-			var cfg CoreConfig
-			if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			cfg, err := MergeCoreConfigPayload(LoadCoreConfig(), body)
+			if err != nil {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
 				return
 			}
