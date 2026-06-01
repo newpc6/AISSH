@@ -423,6 +423,7 @@ export function App() {
   const aiMessagesRef = useRef<AIChatMessageDraft[]>([])
   const aiConversationsRef = useRef<AIChatConversation[]>([])
   const activeAIConversationIdRef = useRef('')
+  const aiMessageConversationIdsRef = useRef<Record<string, string>>({})
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
   const aiStreamThinkingRef = useRef('')
   const aiStreamContentRef = useRef('')
@@ -448,6 +449,7 @@ export function App() {
   const batchAbortRef = useRef(false)
   const batchSelectedHostIdsRef = useRef<string[]>([])
   const batchHostResultsRef = useRef<BatchHostResult[]>([])
+  const batchConversationIdRef = useRef('')
   const batchCardsRef = useRef<HTMLDivElement | null>(null)
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
@@ -1651,6 +1653,10 @@ export function App() {
   useEffect(() => {
     aiMessagesRef.current = aiMessages
     aiConversationsRef.current = aiConversations
+    aiMessageConversationIdsRef.current = aiMessages.reduce<Record<string, string>>((map, message) => {
+      map[message.id] = message.conversationId
+      return map
+    }, { ...aiMessageConversationIdsRef.current })
   }, [aiMessages, aiConversations])
 
   useEffect(() => {
@@ -2461,6 +2467,7 @@ export function App() {
     updateBatchHostResults([])
     setBatchSelectedHostIds([])
     batchSelectedHostIdsRef.current = []
+    batchConversationIdRef.current = ''
     agentRunningRef.current = false
     clearAgentWaiter()
     setAgentState('idle')
@@ -2468,9 +2475,9 @@ export function App() {
   }
 
   const closeBatchHostCard = (hostId: string) => {
+    const hostResult = batchHostResultsRef.current.find((r) => r.hostId === hostId)
     updateBatchHostResults((current) => current.filter((r) => r.hostId !== hostId))
     if (!batchActive) return
-    const hostResult = batchHostResultsRef.current.find((r) => r.hostId === hostId)
     if (hostResult?.sessionId) {
       closeSessionStream(hostResult.sessionId)
       void apiFetch(`/sessions/${hostResult.sessionId}/close`, { method: 'POST' })
@@ -2502,6 +2509,24 @@ export function App() {
     setBatchHostResults(next)
   }
 
+  const findBatchHostBySession = (sessionId: string) =>
+    batchHostResultsRef.current.find((result) => result.sessionId === sessionId)
+
+  const batchMessagePrefix = (hostName: string, index?: number, total?: number) =>
+    `[${typeof index === 'number' && total ? `${index + 1}/${total} ` : ''}${hostName}]`
+
+  const appendBatchMessage = async (
+    kind: AIChatMessageKind,
+    content: string,
+    extras: Partial<AIChatMessage> = {},
+  ) => {
+    const conversationId = batchConversationIdRef.current || activeAIConversationIdRef.current
+    return appendAIMessage(kind, content, extras, conversationId)
+  }
+
+  const appendBatchStatusMessage = (hostName: string, status: string, index?: number, total?: number) =>
+    appendBatchMessage('status', `${batchMessagePrefix(hostName, index, total)} ${status}`)
+
   const summarizeBatchHostSteps = (steps: AIAgentPlanStep[]) => {
     if (steps.length === 0) {
       return '未执行命令'
@@ -2513,6 +2538,19 @@ export function App() {
     const exitCode = typeof latestStepWithOutput?.exitCode === 'number' ? `退出码 ${latestStepWithOutput.exitCode}` : ''
     const outputText = output ? `输出：${output.slice(-220)}` : '无输出摘要'
     return [`执行 ${steps.length} 步`, exitCode, outputText].filter(Boolean).join('；')
+  }
+
+  const hasIncompleteAgentStep = (steps: AIAgentPlanStep[]) =>
+    steps.some((step) => step.status === 'pending' || step.status === 'approved' || step.status === 'running')
+
+  const summarizeFailedBatchHostSteps = (steps: AIAgentPlanStep[]) => {
+    if (steps.some((step) => step.status === 'failed')) {
+      return `执行 ${steps.length} 步，存在失败命令`
+    }
+    if (hasIncompleteAgentStep(steps)) {
+      return `执行 ${steps.length} 步，存在未完成命令，可能需要人工确认`
+    }
+    return summarizeBatchHostSteps(steps)
   }
 
   const summarizeBatchResults = (results: BatchHostResult[]) => {
@@ -2570,10 +2608,14 @@ export function App() {
     ].join('\n')
   }
 
-  const requestBatchFinalSummary = async (task: string, results: BatchHostResult[]) => {
-    const conversationId = await ensureAIConversation(`批量任务：${task.slice(0, 18) || '执行总结'}`)
+  const requestBatchFinalSummary = async (
+    task: string,
+    results: BatchHostResult[],
+    conversationId = batchConversationIdRef.current,
+  ) => {
+    const targetConversationId = conversationId || await ensureAIConversation(`批量任务：${task.slice(0, 18) || '执行总结'}`)
     const summaryPrompt = buildBatchFinalPrompt(task, results)
-    await appendAIMessage('user', `批量任务：${task}`, {}, conversationId)
+    await appendAIMessage('status', '批量执行已完成，正在生成最终总结...', {}, targetConversationId)
     setAiAssistantState('loading')
     setAiAssistantError('')
     resetAIStreamBuffers()
@@ -2592,12 +2634,12 @@ export function App() {
       )
       setAiAssistantResponse(response)
       setAiAssistantState('success')
-      await persistStreamingArtifacts(conversationId)
+      await persistStreamingArtifacts(targetConversationId)
       await appendAIMessage(
         'agent_result',
         response.answer || response.summary || summarizeBatchResults(results) || '批量任务已完成。',
         { response },
-        conversationId,
+        targetConversationId,
       )
       setAgentMessage('批量任务总结已生成')
     } catch (error) {
@@ -2608,7 +2650,7 @@ export function App() {
         'agent_result',
         `${summarizeBatchResults(results)}\n\nAI 最终总结生成失败：${message}`,
         {},
-        conversationId,
+        targetConversationId,
       )
       setAgentMessage('批量任务已完成，但 AI 总结生成失败')
     }
@@ -2621,6 +2663,7 @@ export function App() {
       current.map((r) => (r.hostId === hostId ? { ...r, status: 'connecting' as const } : r)),
     )
     setAgentMessage(`[${index + 1}/${total}] 正在连接 ${hostName}...`)
+    void appendBatchStatusMessage(hostName, '开始连接 SSH 会话...', index, total)
     setAgentSteps([])
     agentStepsRef.current = []
 
@@ -2644,6 +2687,7 @@ export function App() {
       updateBatchHostResults((current) =>
         current.map((r) => (r.hostId === hostId ? { ...r, sessionId } : r)),
       )
+      void appendBatchStatusMessage(hostName, 'SSH 会话已创建，等待连接成功...', index, total)
 
       await new Promise<void>((resolve, reject) => {
         const start = Date.now()
@@ -2662,6 +2706,7 @@ export function App() {
         current.map((r) => (r.hostId === hostId ? { ...r, status: 'running' as const, stepCount: 0 } : r)),
       )
       setAgentMessage(`[${index + 1}/${total}] 正在 ${hostName} 上执行：${task}`)
+      void appendBatchStatusMessage(hostName, `连接成功，开始执行任务：${task}`, index, total)
 
       agentGoalRef.current = task
       agentModeRef.current = 'auto'
@@ -2701,7 +2746,11 @@ export function App() {
           r.hostId === hostId
             ? (() => {
                 const steps = agentStepsRef.current.filter((step) => step.sessionId === sessionId)
-                const status = batchAbortRef.current || steps.length === 0 ? 'failed' as const : 'success' as const
+                const hasFailedStep = steps.some((step) => step.status === 'failed')
+                const hasIncompleteStep = hasIncompleteAgentStep(steps)
+                const status = batchAbortRef.current || steps.length === 0 || hasFailedStep || hasIncompleteStep
+                  ? 'failed' as const
+                  : 'success' as const
                 return {
                   ...r,
                   status,
@@ -2711,13 +2760,21 @@ export function App() {
                     ? '已取消'
                     : steps.length === 0
                       ? '未执行命令，AI 未给出可执行步骤'
-                      : summarizeBatchHostSteps(steps),
+                      : status === 'success'
+                        ? summarizeBatchHostSteps(steps)
+                        : summarizeFailedBatchHostSteps(steps),
                 }
               })()
             : r,
         ),
       )
+      const result = batchHostResultsRef.current.find((r) => r.hostId === hostId)
+      void appendBatchMessage(
+        result?.status === 'success' ? 'status' : 'agent_result',
+        `${batchMessagePrefix(hostName, index, total)} ${result?.status === 'success' ? '执行完成' : '执行未完成'}：${result?.summary ?? '无执行摘要'}`,
+      )
     } catch (error) {
+      const message = error instanceof Error ? error.message : '执行失败'
       updateBatchHostResults((current) =>
         current.map((r) =>
           r.hostId === hostId
@@ -2725,11 +2782,12 @@ export function App() {
                 ...r,
                 status: 'failed' as const,
                 steps: sessionId ? agentStepsRef.current.filter((step) => step.sessionId === sessionId) : r.steps,
-                summary: error instanceof Error ? error.message : '执行失败',
+                summary: message,
               }
             : r,
         ),
       )
+      void appendBatchMessage('agent_result', `${batchMessagePrefix(hostName, index, total)} 执行失败：${message}`)
     }
   }
 
@@ -2737,6 +2795,8 @@ export function App() {
     const ids = batchSelectedHostIdsRef.current
     if (ids.length === 0 || !batchTask.trim()) return
     batchAbortRef.current = false
+    batchConversationIdRef.current = ''
+    const task = batchTask.trim()
     const hosts = ids
       .map((id) => hostsRef.current.find((host) => host.id === id))
       .filter((host): host is HostRecord => Boolean(host))
@@ -2744,14 +2804,25 @@ export function App() {
     updateBatchHostResults(results)
     setBatchActive(true)
     setBatchHostIndex(0)
+    setRightTool('ai')
     agentRunningRef.current = false
     clearAgentWaiter()
     setAgentState('success')
     setAgentMessage('')
+    try {
+      const conversation = await createAIConversation(`批量任务：${task.slice(0, 18) || '执行'}`)
+      batchConversationIdRef.current = conversation.id
+      await appendAIMessage('user', `批量任务：${task}`, {}, conversation.id)
+      await appendAIMessage('status', `批量任务开始：共 ${hosts.length} 台服务器，将按勾选顺序逐台执行。`, {}, conversation.id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '创建批量任务对话失败'
+      setAiAssistantError(message)
+      setAgentMessage(message)
+    }
 
     for (let i = 0; i < hosts.length; i++) {
       setBatchHostIndex(i)
-      await executeBatchPerHost(hosts[i].id, hosts[i].name, batchTask.trim(), i, hosts.length)
+      await executeBatchPerHost(hosts[i].id, hosts[i].name, task, i, hosts.length)
       if (batchAbortRef.current) break
     }
 
@@ -2761,7 +2832,7 @@ export function App() {
     const summary = summarizeBatchResults(finalResults)
     setAgentMessage(summary ? '批量执行完成，正在生成最终总结...' : '批量任务已全部完成')
     if (summary) {
-      await requestBatchFinalSummary(batchTask.trim(), finalResults)
+      await requestBatchFinalSummary(task, finalResults, batchConversationIdRef.current)
     }
   }
 
@@ -3946,10 +4017,12 @@ export function App() {
   ) => {
     if (!conversationId) {
       const local = makeLocalAIMessage(kind, content, extras)
+      aiMessageConversationIdsRef.current[local.id] = local.conversationId
       setAiMessages((current) => [...current, local])
       return local
     }
     const local = { ...makeLocalAIMessage(kind, content, extras), conversationId, pending: true }
+    aiMessageConversationIdsRef.current[local.id] = conversationId
     setAiMessages((current) => [...current, local])
     try {
       const persisted = await persistAIMessage(conversationId, {
@@ -3958,6 +4031,8 @@ export function App() {
         response: extras.response,
         step: extras.step,
       })
+      delete aiMessageConversationIdsRef.current[local.id]
+      aiMessageConversationIdsRef.current[persisted.id] = persisted.conversationId
       setAiMessages((current) => current.map((item) => (item.id === local.id ? persisted : item)))
       void loadAIConversations()
       return persisted
@@ -3979,6 +4054,7 @@ export function App() {
 
   const startStreamingThinkingMessage = () => {
     const message = makeLocalAIMessage('thinking', '')
+    aiMessageConversationIdsRef.current[message.id] = message.conversationId
     aiStreamThinkingMessageIdRef.current = message.id
     setAiMessages((current) => [...current, message])
   }
@@ -3996,6 +4072,7 @@ export function App() {
 
   const startStreamingContentMessage = () => {
     const message = makeLocalAIMessage('content', '')
+    aiMessageConversationIdsRef.current[message.id] = message.conversationId
     aiStreamContentMessageIdRef.current = message.id
     setAiMessages((current) => [...current, message])
   }
@@ -4028,6 +4105,7 @@ export function App() {
     }
     try {
       const persisted = await persistAIMessage(conversationId, { kind: 'content', content })
+      aiMessageConversationIdsRef.current[persisted.id] = persisted.conversationId
       setAiMessages((current) => current.map((item) => (item.id === messageId ? persisted : item)))
     } catch (error) {
       appendLog('warn', 'ui.ai', 'persist streaming content message failed', { error: error instanceof Error ? error.message : String(error) })
@@ -4042,6 +4120,7 @@ export function App() {
     }
     try {
       const persisted = await persistAIMessage(conversationId, { kind: 'thinking', content })
+      aiMessageConversationIdsRef.current[persisted.id] = persisted.conversationId
       setAiMessages((current) => current.map((item) => (item.id === messageId ? persisted : item)))
     } catch (error) {
       appendLog('warn', 'ui.ai', 'persist thinking message failed', { error: error instanceof Error ? error.message : String(error) })
@@ -4429,7 +4508,11 @@ export function App() {
 
   const requestAgentNextStep = async (steps = agentStepsRef.current, sessionId = activeSessionIdRef.current) => {
     const goal = resolveAgentGoal()
-    const isBatchSession = batchActive || batchHostResultsRef.current.some((result) => result.sessionId === sessionId)
+    const batchHost = findBatchHostBySession(sessionId)
+    const isBatchSession = Boolean(batchHost)
+    const batchConversationId = isBatchSession ? batchConversationIdRef.current : ''
+    const batchHostName = batchHost?.hostName || sessionsRef.current.find((item) => item.id === sessionId)?.hostName || '服务器'
+    const batchPrefix = isBatchSession ? `【${batchHostName}】` : ''
     if (!goal) {
       setAgentMessage('请先输入任务目标，或先让 AI 生成一个命令')
       agentRunningRef.current = false
@@ -4460,7 +4543,14 @@ export function App() {
       )
       if (response.agentStatus === 'done') {
         setAgentState('success')
-        if (!isBatchSession) {
+        if (isBatchSession) {
+          await appendAIMessage(
+            'agent_result',
+            `${batchPrefix} ${response.answer || response.summary || response.agentReason || '已根据命令输出生成执行结论。'}`,
+            { response },
+            batchConversationId,
+          )
+        } else {
           await persistStreamingArtifacts(activeAIConversationIdRef.current)
           await appendAIMessage('agent_result', response.answer || response.summary || response.agentReason || '已根据命令输出生成执行结论。', { response })
         }
@@ -4470,7 +4560,14 @@ export function App() {
       }
       if (response.agentStatus === 'question' || !response.agentCommand) {
         setAgentState('idle')
-        if (!isBatchSession) {
+        if (isBatchSession) {
+          await appendAIMessage(
+            'agent_result',
+            `${batchPrefix} ${response.answer || response.agentReason || 'AI 需要更多信息。'}`,
+            { response },
+            batchConversationId,
+          )
+        } else {
           await persistStreamingArtifacts(activeAIConversationIdRef.current)
           await appendAIMessage('agent_result', response.answer || response.agentReason || 'AI 需要更多信息。', { response })
         }
@@ -4485,7 +4582,9 @@ export function App() {
         command,
         status: 'pending',
         sessionId,
-        explanation: response.agentReason || response.answer,
+        explanation: isBatchSession
+          ? `${batchPrefix} ${response.agentReason || response.answer || 'Agent 已给出下一步命令'}`
+          : response.agentReason || response.answer,
         riskLevel,
         riskReason: response.riskReason,
         createdAt: new Date().toISOString(),
@@ -4500,7 +4599,10 @@ export function App() {
         setAgentMessage(response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。')
         return
       }
-      if (!isBatchSession) {
+      if (isBatchSession) {
+        const stepMessage = await appendAIMessage('agent_step', command, { step }, batchConversationId)
+        step.id = stepMessage.id
+      } else {
         const stepMessage = await appendAIMessage('agent_step', command, { step })
         step.id = stepMessage.id
       }
@@ -4520,6 +4622,9 @@ export function App() {
       setAgentState('error')
       setAgentMessage(message)
       agentRunningRef.current = false
+      if (isBatchSession) {
+        void appendAIMessage('agent_result', `${batchPrefix} Agent 请求失败：${message}`, {}, batchConversationId)
+      }
       setErrorMessage(message, {
         title: 'Agent 请求失败',
         method: 'POST',
@@ -5182,7 +5287,7 @@ export function App() {
 
   const replaceAndPersistAIMessage = (messageId: string, patch: Partial<AIChatMessageDraft>) => {
     replaceAIMessage(messageId, patch)
-    const conversationId = activeAIConversationIdRef.current
+    const conversationId = aiMessageConversationIdsRef.current[messageId] || activeAIConversationIdRef.current
     if (!conversationId || !messageId.startsWith('msg-')) {
       return
     }
@@ -5442,6 +5547,12 @@ export function App() {
       const step = message.step ? ({ ...message.step, id: message.id } as AIAgentPlanStep) : undefined
       const liveStep = step ? agentSteps.find((item) => item.id === step.id) : undefined
       const displayedStep = step && liveStep ? { ...step, ...liveStep } : step
+      const stepSession = displayedStep?.sessionId ? sessions.find((session) => session.id === displayedStep.sessionId) : undefined
+      const stepBatchHost = displayedStep?.sessionId
+        ? batchHostResults.find((result) => result.sessionId === displayedStep.sessionId)
+        : undefined
+      const stepHostName = stepBatchHost?.hostName || stepSession?.hostName || ''
+      const stepMeta = [stepHostName, displayedStep?.status ?? 'pending'].filter(Boolean).join(' · ')
       const canExecuteStep =
         displayedStep &&
         displayedStep.status !== 'executed' &&
@@ -5454,7 +5565,7 @@ export function App() {
             message.id,
             `执行步骤 · ${riskLabel(displayedStep?.riskLevel)}`,
             message.createdAt,
-            <small>{displayedStep?.status ?? 'pending'}</small>,
+            <small>{stepMeta}</small>,
           )}
           {!collapsed ? (
             <>
