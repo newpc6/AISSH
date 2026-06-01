@@ -1,8 +1,10 @@
-﻿import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { writeFile, readTextFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
@@ -17,13 +19,12 @@ import {
   toggleComment,
   undo,
 } from '@codemirror/commands'
-import { indentOnInput, syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from '@codemirror/language'
+import { indentOnInput, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import '@xterm/xterm/css/xterm.css'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
-  type AIAgentStep,
   type AIAssistRequest,
   type AIAssistResponse,
   type AIChatConversation,
@@ -34,12 +35,11 @@ import {
   type AIChatMessageUpdateRequest,
   type AIChatMessagesResponse,
   type AIChatMessageKind,
+  type AIRiskLevel,
   type AuthSettingsResponse,
   type AuthSettingsUpdateRequest,
   type AuthSetupRequest,
   type AuthStatusResponse,
-  CORE_API_BASE,
-  CORE_DEFAULT_PORT,
   type HealthResponse,
   type HostAuthType,
   type HostGroup,
@@ -70,13 +70,10 @@ import {
   type AIPredictionSessionState,
   type AgentCommandWaiter,
   type AIAgentPlanStep,
-  type AIStreamEvent,
   type AIChatMessageDraft,
   type AppErrorNotice,
   type BatchHostResult,
   type ConfirmDialogState,
-  type FilePreviewKind,
-  type FilePreviewStatus,
   type FilePreviewTab,
   type FileSortKey,
   type FileSortState,
@@ -91,13 +88,11 @@ import {
   type MetricSample,
   type PredictionGhostPosition,
   type RightTool,
-  type SaveFilePickerHandle,
   type SessionReconnectResponse,
   type SettingsSection,
   type TerminalCache,
   type TerminalSelectionAction,
   type TopMenu,
-  type WindowWithSaveFilePicker,
 } from './types'
 
 import {
@@ -109,23 +104,16 @@ import {
   DEFAULT_PREDICTION_PANEL_HEIGHT,
   DEFAULT_RIGHT_PANEL_WIDTH,
   DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
-  ERROR_DETAIL_LIMIT,
   FILE_PREVIEW_CONFIRM_BYTES,
-  MAX_PREDICTION_PANEL_HEIGHT,
+  coreCapabilityErrorDetail,
   MAX_RIGHT_PANEL_WIDTH,
   MAX_RIGHT_SERVER_INFO_HEIGHT,
-  MIN_PREDICTION_PANEL_HEIGHT,
   MIN_RIGHT_PANEL_WIDTH,
   MIN_RIGHT_SERVER_INFO_HEIGHT,
-  REQUIRED_CORE_CAPABILITIES,
   defaultSettings,
   emptyHostForm,
   emptySetupForm,
   isTauriRuntime,
-  logLevelRank,
-  textFileExtensions,
-  imageFileExtensions,
-  videoFileExtensions,
   agentExitMarker,
   appendQueryParam,
   appendTerminalCache,
@@ -136,14 +124,11 @@ import {
   classifyCommandRisk,
   codeMirrorLanguage,
   compareFileEntries,
-  countTerminalLines,
   detectPreviewKind,
   displayApiPath,
   downloadBlobInBrowser,
   emptyTerminalCache,
-  escapeRegExp,
   extractAgentExitCode,
-  fileExtension,
   fileSortLabel,
   firstString,
   formatBytes,
@@ -151,13 +136,11 @@ import {
   formatFullDateTime,
   formatMemorySummary,
   formatMetricDateTime,
-  formatMetricTime,
   formatRate,
   inferRemotePathFromCommand,
   isLikelyStatic405,
   isVisibleLogLevel,
   localFileName,
-  looksLikeStructuredPredictionFragment,
   metricPointIndexes,
   metricXAxisLabels,
   missingCoreCapabilities,
@@ -168,7 +151,6 @@ import {
   normalizeFileSearchText,
   normalizeHostGroups,
   normalizePredictedCommands,
-  normalizeRemotePath,
   normalizeRequestPath,
   parentPath,
   previewKindLabel,
@@ -185,10 +167,7 @@ import {
   statusToLabel,
   stripAgentMarker,
   stripTerminalControlSequences,
-  stripVisibleAgentMarkers,
   terminalContextTail,
-  truncateErrorDetail,
-  unquoteShellPath,
   updateTerminalDraft,
   wrapAgentCommand,
 } from './utils'
@@ -2452,26 +2431,6 @@ export function App() {
     } catch (error) {
       setChangePasswordError(error instanceof Error ? error.message : '修改密码失败')
     }
-  }
-
-  const stopBatchExecution = () => {
-    batchAbortRef.current = true
-    setBatchActive(false)
-    setBatchHostIndex(0)
-    batchHostResultsRef.current.forEach((r) => {
-      if (r.sessionId) {
-        closeSessionStream(r.sessionId)
-        void apiFetch(`/sessions/${r.sessionId}/close`, { method: 'POST' })
-      }
-    })
-    updateBatchHostResults([])
-    setBatchSelectedHostIds([])
-    batchSelectedHostIdsRef.current = []
-    batchConversationIdRef.current = ''
-    agentRunningRef.current = false
-    clearAgentWaiter()
-    setAgentState('idle')
-    setAgentMessage('批量任务已停止')
   }
 
   const closeBatchHostCard = (hostId: string) => {

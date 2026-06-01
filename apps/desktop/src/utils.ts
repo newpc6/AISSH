@@ -11,10 +11,9 @@ import { yaml } from '@codemirror/lang-yaml'
 import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { toml } from '@codemirror/legacy-modes/mode/toml'
 import { properties } from '@codemirror/legacy-modes/mode/properties'
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import {
-  type AIAssistResponse,
   type AppSettings,
   type FileEntry,
   type HealthResponse,
@@ -23,10 +22,12 @@ import {
   type HostUpsertRequest,
   type LogLevel,
   type ServerMetrics,
+  type SessionRecord,
+  type AIRiskLevel,
   CORE_API_BASE,
   CORE_DEFAULT_PORT,
 } from '@ai-ssh/shared-contracts'
-import type { AIStreamEvent, AIRiskLevel, DesktopWindow, FilePreviewKind, FileSortKey, FileSortState, LoadState, MetricChartKey, MetricSample, TerminalCache, WindowWithSaveFilePicker } from '../types'
+import type { AIStreamEvent, DesktopWindow, FilePreviewKind, FileSortKey, FileSortState, LoadState, MetricChartKey, MetricSample, TerminalCache, WindowWithSaveFilePicker } from './types'
 
 export const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 export const AI_PREDICT_STREAM_API_PATH = '/api/ai/predict/stream'
