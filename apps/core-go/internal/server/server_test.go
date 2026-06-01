@@ -131,6 +131,30 @@ func TestWebAuthProtectsAPIAndAllowsLogin(t *testing.T) {
 	}
 }
 
+func TestWebAuthRejectsEmptyLoginFields(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "1")
+	t.Setenv("AI_SSH_WEB_USER", "admin")
+	t.Setenv("AI_SSH_WEB_PASSWORD", "secret")
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	for _, body := range []string{
+		`{"username":"","password":"secret"}`,
+		`{"username":"admin","password":""}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("expected empty login fields to return 400, got %d body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func TestWebAuthRequiresSetupWhenPasswordMissing(t *testing.T) {
 	t.Setenv("AI_SSH_WEB_AUTH", "1")
 	t.Setenv("AI_SSH_WEB_USER", "admin")

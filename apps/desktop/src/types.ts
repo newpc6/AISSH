@@ -179,6 +179,7 @@ export type BatchHostResult = {
   status: 'pending' | 'connecting' | 'running' | 'success' | 'failed'
   stepCount: number
   summary?: string
+  steps?: AIAgentPlanStep[]
 }
 
 export type BatchRunRequest = {

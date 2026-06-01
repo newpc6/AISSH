@@ -106,6 +106,10 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
+		if strings.TrimSpace(request.Username) == "" || strings.TrimSpace(request.Password) == "" {
+			http.Error(w, "用户名和密码不能为空", http.StatusBadRequest)
+			return
+		}
 		if !authenticator.login(w, request) {
 			http.Error(w, "用户名或密码错误", http.StatusUnauthorized)
 			return
