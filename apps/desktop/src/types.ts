@@ -181,6 +181,14 @@ export type BatchRunRequest = {
   task: string
 }
 
+export type TransferTask = {
+  id: string
+  name: string
+  direction: 'upload' | 'download'
+  progress: number
+  status: string
+}
+
 export type DesktopWindow = Window & {
   __TAURI__?: unknown
   __TAURI_INTERNALS__?: unknown

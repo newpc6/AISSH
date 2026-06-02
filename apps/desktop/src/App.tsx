@@ -13,6 +13,7 @@ import { AIWorkspacePanel } from './components/ai/AIWorkspacePanel'
 import { CommandHistoryPanel } from './components/commands/CommandHistoryPanel'
 import { FavoriteCommandsPanel } from './components/commands/FavoriteCommandsPanel'
 import { type CodeMirrorEditorHandle } from './components/files/CodeMirrorEditor'
+import { FileBrowserPanel } from './components/files/FileBrowserPanel'
 import { FilePreviewPanel } from './components/files/FilePreviewPanel'
 import { AIInputExpandModal } from './components/modals/AIInputExpandModal'
 import { ConfirmModal } from './components/modals/ConfirmModal'
@@ -25,6 +26,7 @@ import { SettingsDialog } from './components/modals/SettingsDialog'
 import { MetricChart } from './components/right-rail/MetricChart'
 import { ServerInfoPanel } from './components/right-rail/ServerInfoPanel'
 import { SideErrorNotice } from './components/right-rail/SideErrorNotice'
+import { SessionTabs } from './components/sessions/SessionTabs'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -96,6 +98,7 @@ import {
   type TerminalCache,
   type TerminalSelectionAction,
   type TopMenu,
+  type TransferTask,
 } from './types'
 
 import {
@@ -131,7 +134,6 @@ import {
   downloadBlobInBrowser,
   emptyTerminalCache,
   extractAgentExitCode,
-  fileSortLabel,
   firstString,
   formatBytes,
   formatEditableText,
@@ -153,7 +155,6 @@ import {
   newOllamaModelConfig,
   newOpenAICompatibleModelConfig,
   parentPath,
-  previewKindLabel,
   previewMimeType,
   readResponseErrorDetail,
   readSSEStream,
@@ -296,9 +297,7 @@ export function App() {
   const [isLeftRailCollapsed, setIsLeftRailCollapsed] = useState(false)
   const [filePathDraft, setFilePathDraft] = useState('.')
   const [trackTerminalPath, setTrackTerminalPath] = useState(true)
-  const [transferTasks, setTransferTasks] = useState<
-    { id: string; name: string; direction: 'upload' | 'download'; progress: number; status: string }[]
-  >([])
+  const [transferTasks, setTransferTasks] = useState<TransferTask[]>([])
   const [serverMetrics, setServerMetrics] = useState<ServerMetrics | null>(null)
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [metricHistory, setMetricHistory] = useState<MetricSample[]>([])
@@ -6092,200 +6091,49 @@ export function App() {
               </div>
             </div>
           ) : (
-            <div className="left-content">
-              <div className="panel-toolbar">
-                <strong>远程文件</strong>
-                <div>
-                  <button type="button" title="折叠左侧面板" onClick={() => setIsLeftRailCollapsed(true)}>◁</button>
-                  <button type="button" title="进入上级目录" onClick={() => void loadFiles(parentPath(filePath))}>上级</button>
-                  <button
-                    type="button"
-                    title={selectedFileEntries.length > 0 ? `下载选中的 ${selectedFileEntries.length} 个文件` : '先单击选择要下载的文件'}
-                    disabled={selectedFileEntries.length === 0}
-                    onClick={() => void downloadSelectedFiles()}
-                  >
-                    下载{selectedFileEntries.length > 0 ? `(${selectedFileEntries.length})` : ''}
-                  </button>
-                  <button type="button" title="上传文件到当前目录" onClick={() => void chooseUploadFiles()}>上传</button>
-                </div>
-              </div>
-              <form
-                className="file-path-form"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void loadFiles(filePathDraft.trim() || '.')
-                }}
-              >
-                <input
-                  aria-label="远程路径"
-                  value={filePathDraft}
-                  onChange={(event) => setFilePathDraft(event.target.value)}
-                />
-                <button type="submit" title="进入输入的远程路径">进入</button>
-              </form>
-              <input
-                ref={uploadFileRef}
-                hidden
-                multiple
-                type="file"
-                onChange={(event) => {
-                  if (event.target.files) {
-                    void uploadFiles(event.target.files)
-                  }
-                  event.target.value = ''
-                }}
-              />
-              <label className="toggle-row">
-                <input
-                  checked={trackTerminalPath}
-                  type="checkbox"
-                  onChange={(event) => setTrackTerminalPath(event.target.checked)}
-                />
-                <span>跟踪终端路径</span>
-              </label>
-              <div
-                ref={fileBrowserRef}
-                aria-label="远程文件目录"
-                className={`file-browser ${fileError ? 'has-status' : ''} ${isFileDropActive ? 'drop-active' : ''}`}
-                tabIndex={0}
-                onCompositionEnd={handleFileBrowserCompositionEnd}
-                onDragEnter={(event) => {
-                  event.preventDefault()
-                  if (Array.from(event.dataTransfer.types).includes('Files')) {
-                    setIsFileDropActive(true)
-                  }
-                }}
-                onDragLeave={(event) => {
-                  const nextTarget = event.relatedTarget
-                  if (!nextTarget || !event.currentTarget.contains(nextTarget as Node)) {
-                    setIsFileDropActive(false)
-                  }
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = 'copy'
-                }}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setIsFileDropActive(false)
-                  if (event.dataTransfer.files.length > 0) {
-                    void uploadFiles(event.dataTransfer.files)
-                  }
-                }}
-                onKeyDown={handleFileBrowserKeyDown}
-                onMouseDown={(event) => {
-                  if (event.target === event.currentTarget) {
-                    event.currentTarget.focus()
-                  }
-                }}
-              >
-                {isFileDropActive ? (
-                  <div className="file-drop-overlay">
-                    <strong>松开上传</strong>
-                    <span>上传到 {filePath}</span>
-                  </div>
-                ) : null}
-                <div className="file-path-row">
-                  <span className="file-path-text">{filePath}</span>
-                  <div className="file-path-actions">
-                    {isLoadingFiles ? (
-                      <span className="file-loading-spinner" role="status" aria-label="远程文件加载中" title="远程文件加载中" />
-                    ) : null}
-                    <button type="button" title="刷新当前目录" onClick={() => void loadFiles(filePath)}>
-                      刷新
-                    </button>
-                  </div>
-                </div>
-                {fileError ? (
-                  <div className="file-browser-status">
-                    <p className="error-text">{fileError}</p>
-                  </div>
-                ) : null}
-                <div className="file-table">
-                  <div className="file-table-head">
-                    {(['name', 'size', 'modifiedAt'] as FileSortKey[]).map((key) => (
-                      <button
-                        key={key}
-                        className={fileSort.key === key ? 'active' : ''}
-                        type="button"
-                        title={`按${fileSortLabel(key)}${fileSort.key === key && fileSort.direction === 'asc' ? '降序' : '升序'}排序`}
-                        onClick={() => updateFileSort(key)}
-                      >
-                        <span>{fileSortLabel(key)}</span>
-                        <small aria-hidden="true">
-                          {fileSort.key === key ? (fileSort.direction === 'asc' ? '↑' : '↓') : ''}
-                        </small>
-                      </button>
-                    ))}
-                  </div>
-                  {sortedFileEntries.map((entry, index) => (
-                    <button
-                      key={entry.path}
-                      aria-pressed={selectedFilePaths.includes(entry.path)}
-                      className={`${selectedFilePaths.includes(entry.path) ? 'selected' : ''} ${focusedFilePath === entry.path ? 'focused' : ''}`}
-                      data-file-index={index}
-                      draggable={entry.type === 'file'}
-                      type="button"
-                      title={entry.type === 'directory' ? '双击进入目录' : '单击选择，Ctrl/Shift 多选，双击预览，右键下载，拖出快速下载'}
-                      onClick={(event) => {
-                        setFocusedFilePath(entry.path)
-                        if (entry.type === 'file') {
-                          selectFileEntry(entry, event)
-                        } else {
-                          setSelectedFilePaths([])
-                          lastSelectedFilePathRef.current = ''
-                        }
-                      }}
-                      onDragStart={(event) => {
-                        setupRemoteFileDrag(entry, event)
-                      }}
-                      onDragEnd={(event) => {
-                        handleRemoteFileDragEnd(entry, event)
-                      }}
-                      onDoubleClick={() => {
-                        if (entry.type === 'directory') {
-                          void loadFiles(entry.path)
-                        } else {
-                          void openFilePreview(entry)
-                        }
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault()
-                        if (entry.type === 'file') {
-                          void downloadFile(entry)
-                        }
-                      }}
-                    >
-                      <span>{entry.type === 'directory' ? '▸ ' : ''}{entry.name}</span>
-                      <span>{entry.type === 'directory' ? '-' : formatBytes(entry.size)}</span>
-                      <span>{new Date(entry.modifiedAt).toLocaleString()}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {transferTasks.length > 0 ? (
-                <div className="transfer-dock">
-                  <strong>传输任务</strong>
-                  <div className="transfer-list">
-                    {transferTasks.slice(0, 4).map((task) => (
-                      <div key={task.id}>
-                        <button
-                          className="transfer-close"
-                          type="button"
-                          title={`移除 ${task.name} 传输记录`}
-                          onClick={() => confirmRemoveTransferTask(task)}
-                        >
-                          ×
-                        </button>
-                        <span>{task.direction === 'upload' ? '上传' : '下载'} · {task.name}</span>
-                        <progress max="100" value={task.progress} />
-                        <small>{task.status}</small>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <FileBrowserPanel
+              fileBrowserRef={fileBrowserRef}
+              fileEntries={sortedFileEntries}
+              fileError={fileError}
+              filePath={filePath}
+              filePathDraft={filePathDraft}
+              fileSort={fileSort}
+              focusedFilePath={focusedFilePath}
+              isFileDropActive={isFileDropActive}
+              isLoadingFiles={isLoadingFiles}
+              selectedFileCount={selectedFileEntries.length}
+              selectedFilePaths={selectedFilePaths}
+              trackTerminalPath={trackTerminalPath}
+              transferTasks={transferTasks}
+              uploadFileRef={uploadFileRef}
+              onChooseUploadFiles={chooseUploadFiles}
+              onCollapse={() => setIsLeftRailCollapsed(true)}
+              onConfirmRemoveTransferTask={confirmRemoveTransferTask}
+              onDownloadEntry={downloadFile}
+              onDownloadSelectedFiles={downloadSelectedFiles}
+              onFilePathDraftChange={setFilePathDraft}
+              onFileSortChange={updateFileSort}
+              onFocusFilePath={setFocusedFilePath}
+              onHandleBrowserCompositionEnd={handleFileBrowserCompositionEnd}
+              onHandleBrowserKeyDown={handleFileBrowserKeyDown}
+              onHandleRemoteFileDragEnd={handleRemoteFileDragEnd}
+              onLoadFiles={loadFiles}
+              onOpenFilePreview={(entry) => openFilePreview(entry)}
+              onResetSelection={() => {
+                setSelectedFilePaths([])
+                lastSelectedFilePathRef.current = ''
+              }}
+              onSelectEntry={selectFileEntry}
+              onSetIsFileDropActive={setIsFileDropActive}
+              onSetTrackTerminalPath={setTrackTerminalPath}
+              onSetupRemoteFileDrag={setupRemoteFileDrag}
+              onUploadInputChange={(files) => {
+                if (files) {
+                  return uploadFiles(files)
+                }
+                return undefined
+              }}
+            />
           )) : null}
         </aside>
         {!isLeftRailCollapsed ? (
@@ -6299,121 +6147,24 @@ export function App() {
         ) : null}
 
         <main className="center-workspace">
-          <div
-            ref={sessionTabsRef}
-            className="session-tabs"
-            onWheel={(event) => {
-              if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-                event.currentTarget.scrollLeft += event.deltaY
-              }
-            }}
-          >
-            {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={`session-tab ${activeViewId === `session:${session.id}` ? 'active' : ''}`}
-                  onClick={() => activateSession(session)}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    setSessionTabMenu({ sessionId: session.id, x: event.clientX, y: event.clientY })
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      activateSession(session)
-                    }
-                  }}
-                >
-                  <span className={`tab-status tab-status-${session.status}`} title={sessionStatusLabel(session.status)} />
-                  <span className="tab-title">{session.hostName}</span>
-                  <button
-                    className="tab-close"
-                    type="button"
-                    aria-label={`关闭 ${session.hostName}`}
-                    title={`关闭 ${session.hostName}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void closeSession(session)
-                    }}
-                  >
-                    x
-                  </button>
-                </div>
-              ))}
-            {filePreviewTabs.map((tab) => (
-              <div
-                key={tab.id}
-                className={`session-tab file-preview-tab ${activeViewId === `file:${tab.id}` ? 'active' : ''}`}
-                title={`${tab.hostName} · ${tab.path}`}
-                onClick={() => setActiveViewId(`file:${tab.id}`)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    setActiveViewId(`file:${tab.id}`)
-                  }
-                }}
-              >
-                <span className={`tab-status tab-status-${tab.status === 'error' ? 'error' : tab.status === 'loading' ? 'connecting' : 'connected'}`} title={previewKindLabel(tab.kind)} />
-                <span className="tab-title tab-file-title">
-                  <small>{tab.hostName}</small>
-                  <span>{tab.name}</span>
-                </span>
-                <button
-                  className="tab-close"
-                  type="button"
-                  aria-label={`关闭 ${tab.name}`}
-                  title={`关闭 ${tab.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    closeFilePreview(tab.id)
-                  }}
-                >
-                  x
-                </button>
-              </div>
-            ))}
-            <button className="session-new" type="button" title="新建 SSH 会话" onClick={() => void createSession()}>
-              +
-            </button>
-            {sessionTabMenu ? (() => {
-              const session = sessions.find((item) => item.id === sessionTabMenu.sessionId)
-              if (!session) {
-                return null
-              }
-              const sessionIndex = sessions.findIndex((item) => item.id === session.id)
-              return (
-                <div
-                  ref={sessionTabMenuRef}
-                  className="session-tab-menu"
-                  style={{ left: sessionTabMenu.x, top: sessionTabMenu.y }}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <button type="button" title="复制当前 SSH 连接信息" onClick={() => { setSessionTabMenu(null); void copySessionSSHInfo(session) }}>
-                    复制 SSH
-                  </button>
-                  <button type="button" title="关闭当前 SSH 标签" onClick={() => { setSessionTabMenu(null); void closeSession(session) }}>
-                    关闭当前
-                  </button>
-                  <button type="button" title="关闭全部 SSH 标签" onClick={() => { setSessionTabMenu(null); void closeAllSessions() }}>
-                    关闭全部
-                  </button>
-                  <button type="button" title="关闭其他 SSH 标签" onClick={() => { setSessionTabMenu(null); void closeOtherSessions(session) }}>
-                    关闭其他
-                  </button>
-                  <button
-                    disabled={sessionIndex < 0 || sessionIndex >= sessions.length - 1}
-                    type="button"
-                    title="关闭右侧 SSH 标签"
-                    onClick={() => { setSessionTabMenu(null); void closeSessionsToRight(session) }}
-                  >
-                    关闭右侧
-                  </button>
-                </div>
-              )
-            })() : null}
-          </div>
+          <SessionTabs
+            activeViewId={activeViewId}
+            filePreviewTabs={filePreviewTabs}
+            sessionTabMenu={sessionTabMenu}
+            sessionTabMenuRef={sessionTabMenuRef}
+            sessionTabsRef={sessionTabsRef}
+            sessions={sessions}
+            onActivateFilePreview={(tabId) => setActiveViewId(`file:${tabId}`)}
+            onActivateSession={activateSession}
+            onCloseAllSessions={closeAllSessions}
+            onCloseFilePreview={closeFilePreview}
+            onCloseOtherSessions={closeOtherSessions}
+            onCloseSession={closeSession}
+            onCloseSessionsToRight={closeSessionsToRight}
+            onCopySessionSSHInfo={copySessionSSHInfo}
+            onCreateSession={() => createSession()}
+            onSessionTabMenuChange={setSessionTabMenu}
+          />
 
           <section className={`terminal-stage ${isFilePreviewActive ? 'show-file-preview' : ''}`}>
             {activeFilePreview ? null : activeSession ? (
