@@ -23,12 +23,15 @@ type TerminalStageProps = {
   predictionGhostPosition: PredictionGhostPosition | null
   predictionPanelHeight: number
   primaryPrediction: string
+  recentHosts: HostRecord[]
   terminalRef: RefObject<HTMLDivElement | null>
   terminalSelectionAction: TerminalSelectionAction | null
   onAddTerminalSelectionToAI: () => void
   onApplyPrediction: () => void
   onCopyCommand: (command: string) => void | Promise<void>
+  onCreateSession: (hostId?: string) => void | Promise<void>
   onExecuteCommand: (command: string) => void
+  onOpenAddHostDialog: () => void
   onReconnectSession: (session: SessionRecord) => void | Promise<void>
   onSelectPrediction: (index: number) => void
   onSetAIPredictionEnabled: (enabled: boolean) => void
@@ -54,12 +57,15 @@ export function TerminalStage({
   predictionGhostPosition,
   predictionPanelHeight,
   primaryPrediction,
+  recentHosts,
   terminalRef,
   terminalSelectionAction,
   onAddTerminalSelectionToAI,
   onApplyPrediction,
   onCopyCommand,
+  onCreateSession,
   onExecuteCommand,
+  onOpenAddHostDialog,
   onReconnectSession,
   onSelectPrediction,
   onSetAIPredictionEnabled,
@@ -124,6 +130,29 @@ export function TerminalStage({
             加入 AI
           </button>
         ) : null}
+        {!activeSession && !isFilePreviewActive ? (
+          <div className="terminal-empty">
+            <div>
+              <p className="section-label">快速连接</p>
+              <h2>选择一个服务器开始 SSH 会话</h2>
+            </div>
+            <div className="recent-hosts">
+              {recentHosts.length > 0 ? (
+                recentHosts.map((host) => (
+                  <button key={host.id} type="button" title={`连接 ${host.name}`} onClick={() => void onCreateSession(host.id)}>
+                    <strong>{host.name}</strong>
+                    <span>{host.username}@{host.address}:{host.port}</span>
+                  </button>
+                ))
+              ) : (
+                <button type="button" title="新增 SSH 连接" onClick={onOpenAddHostDialog}>
+                  <strong>新增 SSH 连接</strong>
+                  <span>保存后双击服务器卡片即可连接</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
       {activeSession && !isFilePreviewActive ? (
         <div
@@ -182,7 +211,7 @@ export function TerminalStage({
                     onSetPredictionThinkingExpanded(event.currentTarget.open, activeSession.id)
                   }}
                 >
-                  <summary>预测思考<span className="collapse-icon">▾</span></summary>
+                  <summary>预测思考 <span className="collapse-icon">▾</span></summary>
                   <pre>{activePrediction.thinking}</pre>
                 </details>
               ) : null}

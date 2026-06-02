@@ -5735,12 +5735,15 @@ export function App() {
             predictionGhostPosition={predictionGhostPosition}
             predictionPanelHeight={predictionPanelHeight}
             primaryPrediction={primaryPrediction}
+            recentHosts={recentHosts}
             terminalRef={terminalRef}
             terminalSelectionAction={terminalSelectionAction}
             onAddTerminalSelectionToAI={addTerminalSelectionToAI}
             onApplyPrediction={applyPrediction}
             onCopyCommand={(command) => copyCommand(command)}
+            onCreateSession={(hostId) => createSession(hostId)}
             onExecuteCommand={executeCommand}
+            onOpenAddHostDialog={openAddHostDialog}
             onReconnectSession={reconnectSession}
             onSelectPrediction={handleSelectPrediction}
             onSetAIPredictionEnabled={handleAIPredictionEnabledChange}
@@ -5763,30 +5766,7 @@ export function App() {
                 onUpdateDraft={updateFilePreviewDraft}
               />
             ) : null}
-            {!activeSession && !activeFilePreview ? (
-              <div className="terminal-empty">
-                <div>
-                  <p className="section-label">快速连接</p>
-                  <h2>选择一个服务器开始 SSH 会话</h2>
-                  {/* <span>关闭所有标签后，终端会回到这里。左侧也可以继续新增、导入或管理服务器。</span> */}
-                </div>
-                <div className="recent-hosts">
-                  {recentHosts.length > 0 ? (
-                    recentHosts.map((host) => (
-                      <button key={host.id} type="button" title={`连接 ${host.name}`} onClick={() => void createSession(host.id)}>
-                        <strong>{host.name}</strong>
-                        <span>{host.username}@{host.address}:{host.port}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <button type="button" title="新增 SSH 连接" onClick={openAddHostDialog}>
-                      <strong>新增 SSH 连接</strong>
-                      <span>保存后双击服务器卡片即可连接</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : null}
+
         </main>
 
         <div
