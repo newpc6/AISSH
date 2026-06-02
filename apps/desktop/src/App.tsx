@@ -30,9 +30,12 @@ import { ServersPanel } from './components/servers/ServersPanel'
 import { TerminalStage } from './components/sessions/TerminalStage'
 import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
+import { useConfirmDialog } from './hooks/useConfirmDialog'
+import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
 import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
+import { useVisibleLogs } from './hooks/useVisibleLogs'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -85,7 +88,6 @@ import {
   type AIChatMessageDraft,
   type AppErrorNotice,
   type BatchHostResult,
-  type ConfirmDialogState,
   type FilePreviewTab,
   type HostDialogMode,
   type LeftMode,
@@ -143,7 +145,6 @@ import {
   getActiveAIModelConfig,
   inferRemotePathFromCommand,
   isLikelyStatic405,
-  isVisibleLogLevel,
   localFileName,
   missingCoreCapabilities,
   normalizeApiRequestPath,
@@ -249,9 +250,6 @@ export function App() {
   const [logHealthChecks, setLogHealthChecks] = useState(false)
   const [logSearch, setLogSearch] = useState('')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
-  const [favoriteCommands, setFavoriteCommands] = useState<string[]>([])
-  const [favoriteCommandDraft, setFavoriteCommandDraft] = useState('')
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>(null)
   const [aiPredictionBySession, setAiPredictionBySession] = useState<Record<string, AIPredictionSessionState>>({})
   const [isPredictionDockCollapsed, setIsPredictionDockCollapsed] = useState(false)
   const [predictionPanelHeight, setPredictionPanelHeight] = useState(DEFAULT_PREDICTION_PANEL_HEIGHT)
@@ -354,6 +352,31 @@ export function App() {
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
   const desktopTokenRef = useRef('')
+  const {
+    closeConfirmDialog,
+    confirmAndRun,
+    confirmDialog,
+    requestConfirm,
+    setConfirmDialog,
+  } = useConfirmDialog()
+  const {
+    addFavoriteCommand,
+    confirmDeleteFavoriteCommand,
+    favoriteCommandDraft,
+    favoriteCommands,
+    isFavoriteCommand,
+    moveFavoriteCommand,
+    persistFavoriteCommands,
+    setFavoriteCommandDraft,
+    setFavoriteCommands,
+    toggleFavoriteCommand,
+  } = useFavoriteCommands({
+    initialCommands: [],
+    onPersist: (commands) => {
+      void saveAppConfig({ favoriteCommands: commands })
+    },
+    onRequestConfirm: setConfirmDialog,
+  })
 
   const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
     const entry: LogEntry = {
@@ -960,65 +983,6 @@ export function App() {
     }
   }
 
-  const persistFavoriteCommands = (commands: string[]) => {
-    const normalized = normalizeFavoriteCommands(commands)
-    setFavoriteCommands(normalized)
-    void saveAppConfig({ favoriteCommands: normalized })
-  }
-
-  const requestConfirm = (dialog: NonNullable<ConfirmDialogState>) => {
-    setConfirmDialog(dialog)
-  }
-
-  const closeConfirmDialog = () => {
-    setConfirmDialog(null)
-  }
-
-  const confirmAndRun = () => {
-    if (!confirmDialog) {
-      return
-    }
-    const action = confirmDialog.onConfirm
-    setConfirmDialog(null)
-    void action()
-  }
-
-  const toggleFavoriteCommand = (command: string) => {
-    const normalized = stripTerminalControlSequences(command).trim()
-    if (!normalized) {
-      return
-    }
-    if (favoriteCommands.includes(normalized)) {
-      confirmDeleteFavoriteCommand(normalized)
-      return
-    }
-    persistFavoriteCommands([normalized, ...favoriteCommands.filter((item) => item !== normalized)])
-  }
-
-  const deleteFavoriteCommand = (command: string) => {
-    const normalized = stripTerminalControlSequences(command).trim()
-    if (!normalized) {
-      return
-    }
-    persistFavoriteCommands(favoriteCommands.filter((item) => item !== normalized))
-  }
-
-  const confirmDeleteFavoriteCommand = (command: string) => {
-    const normalized = stripTerminalControlSequences(command).trim()
-    if (!normalized) {
-      return
-    }
-    requestConfirm({
-      section: '收藏命令',
-      title: '删除收藏',
-      message: '确定删除这条收藏命令吗？',
-      detail: normalized,
-      confirmText: '删除',
-      danger: true,
-      onConfirm: () => deleteFavoriteCommand(normalized),
-    })
-  }
-
   const confirmRemoveTransferTask = (task: { id: string; name: string; direction: 'upload' | 'download' }) => {
     requestConfirm({
       section: '传输任务',
@@ -1075,15 +1039,6 @@ export function App() {
     setGroupDialogMessage('')
   }
 
-  const addFavoriteCommand = () => {
-    const normalized = stripTerminalControlSequences(favoriteCommandDraft).trim()
-    if (!normalized) {
-      return
-    }
-    persistFavoriteCommands([...favoriteCommands.filter((item) => item !== normalized), normalized])
-    setFavoriteCommandDraft('')
-  }
-
   const appendTextToAIInput = (text: string) => {
     const normalized = stripTerminalControlSequences(text).trim()
     if (!normalized) {
@@ -1103,19 +1058,6 @@ export function App() {
     appendTextToAIInput(terminalSelectionAction.text)
     setTerminalSelectionAction(null)
   }
-
-  const moveFavoriteCommand = (index: number, direction: -1 | 1) => {
-    const targetIndex = index + direction
-    if (targetIndex < 0 || targetIndex >= favoriteCommands.length) {
-      return
-    }
-    const next = [...favoriteCommands]
-    const [item] = next.splice(index, 1)
-    next.splice(targetIndex, 0, item)
-    persistFavoriteCommands(next)
-  }
-
-  const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
 
   const saveAppConfig = async (overrides?: Partial<{
     settings?: Partial<AppSettings>
@@ -1780,30 +1722,7 @@ export function App() {
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
   const activeAIModelConfig = getActiveAIModelConfig(settings)
   const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
-  const visibleLogs = useMemo(
-    () => {
-      const keyword = logSearch.trim().toLowerCase()
-      return logs.filter((entry) => {
-        if (!isVisibleLogLevel(entry.level, logLevel)) {
-          return false
-        }
-        if (!keyword) {
-          return true
-        }
-        const haystack = [
-          entry.level,
-          entry.source,
-          entry.message,
-          entry.timestamp,
-          entry.fields ? JSON.stringify(entry.fields) : '',
-        ]
-          .join('\n')
-          .toLowerCase()
-        return haystack.includes(keyword)
-      })
-    },
-    [logs, logLevel, logSearch],
-  )
+  const visibleLogs = useVisibleLogs(logs, logLevel, logSearch)
   useEffect(() => {
     previousMetricsRef.current = null
     setMetricHistory([])
