@@ -31,6 +31,7 @@ import { TerminalStage } from './components/sessions/TerminalStage'
 import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
+import { useDesktopOverlays } from './hooks/useDesktopOverlays'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
 import { useHostGroupDialog } from './hooks/useHostGroupDialog'
@@ -400,6 +401,17 @@ export function App() {
     setGroupDrafts,
     setIsGroupDialogOpen,
     setOriginalGroupDrafts,
+  })
+  const {
+    openFeatureGuide,
+    openGroupDialog,
+    openSettingsDialog,
+  } = useDesktopOverlays({
+    openHostGroupDialog,
+    setIsFeatureGuideOpen,
+    setIsSettingsDialogOpen,
+    setOpenTopMenu,
+    setSettingsSavedMessage,
   })
   const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
     const entry: LogEntry = {
@@ -2099,17 +2111,6 @@ export function App() {
     setSavePrivateKey(false)
     setHostDialogError('')
     setIsHostDialogOpen(true)
-  }
-
-  const openSettingsDialog = () => {
-    setOpenTopMenu('')
-    setSettingsSavedMessage('')
-    setIsSettingsDialogOpen(true)
-  }
-
-  const openGroupDialog = () => {
-    setOpenTopMenu('')
-    openHostGroupDialog()
   }
 
   const saveHostGroups = async () => {
@@ -5644,7 +5645,7 @@ export function App() {
                   {key === 'tools' ? <button type="button" title="查看运行日志" onClick={openLogDialog}>日志</button> : null}
                   {key === 'settings' ? (
                     <>
-                      <button type="button" title="打开功能说明" onClick={() => { setOpenTopMenu(''); setIsFeatureGuideOpen(true) }}>功能说明</button>
+                      <button type="button" title="打开功能说明" onClick={openFeatureGuide}>功能说明</button>
                       <button type="button" title="打开偏好设置" onClick={openSettingsDialog}>偏好设置</button>
                     </>
                   ) : null}
