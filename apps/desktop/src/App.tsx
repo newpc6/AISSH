@@ -42,6 +42,7 @@ import { useMenuDismissals } from './hooks/useMenuDismissals'
 import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import { useVisibleLogs } from './hooks/useVisibleLogs'
+import { useWorkspaceViewState } from './hooks/useWorkspaceViewState'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -1615,10 +1616,6 @@ export function App() {
     activeTab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeViewId, sessions.length, filePreviewTabs.length])
 
-  const currentHost = useMemo(
-    () => hosts.find((host) => host.id === selectedHostId) ?? null,
-    [hosts, selectedHostId],
-  )
   const {
     batchSelectedHostIds,
     batchSelectedHostIdsRef,
@@ -1641,9 +1638,19 @@ export function App() {
     sortedFileEntries,
     updateFileSort,
   } = useFileBrowserSelection({ fileBrowserRef, fileEntries })
-  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
-  const activeFilePreview = filePreviewTabs.find((tab) => `file:${tab.id}` === activeViewId) ?? null
-  const isFilePreviewActive = Boolean(activeFilePreview)
+  const {
+    activeFilePreview,
+    activeHost,
+    activeSession,
+    isFilePreviewActive,
+  } = useWorkspaceViewState({
+    activeSessionId,
+    activeViewId,
+    filePreviewTabs,
+    hosts,
+    selectedHostId,
+    sessions,
+  })
   const {
     activePrediction,
     activePredictions,
@@ -1673,10 +1680,6 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activeFilePreview?.id, activeFilePreview?.kind, activeFilePreview?.status])
 
-  const activeHost = useMemo(
-    () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
-    [hosts, activeSession, currentHost],
-  )
   const toggleBatchMode = () => {
     setBatchMode((current) => !current)
     if (batchMode) {
