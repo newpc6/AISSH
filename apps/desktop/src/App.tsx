@@ -31,6 +31,7 @@ import { TerminalStage } from './components/sessions/TerminalStage'
 import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
+import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import {
   type AIPredictionRequest,
@@ -173,6 +174,13 @@ import {
   wrapAgentCommand,
 } from './utils'
 
+const APP_CONFIG_BACKUP_STORAGE_KEY = 'ai-ssh:app-config-backup'
+const AI_PROVIDER_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel', 'aiModels', 'activeAIModelId'] as const
+const AI_PROVIDER_STRING_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel'] as const
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
 const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
   predictions: [],
   index: 0,
@@ -181,13 +189,6 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
   thinking: '',
   streamingContent: '',
 }
-
-const APP_CONFIG_BACKUP_STORAGE_KEY = 'ai-ssh:app-config-backup'
-const AI_PROVIDER_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel', 'aiModels', 'activeAIModelId'] as const
-const AI_PROVIDER_STRING_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel'] as const
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
 
 export function App() {
   const [_health, setHealth] = useState<HealthResponse | null>(null)
@@ -1694,6 +1695,18 @@ export function App() {
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
   const activeFilePreview = filePreviewTabs.find((tab) => `file:${tab.id}` === activeViewId) ?? null
   const isFilePreviewActive = Boolean(activeFilePreview)
+  const {
+    activePrediction,
+    activePredictions,
+    activePredictionIndex,
+    isPredictionThinkingExpanded,
+    primaryPrediction,
+  } = useTerminalPredictionView({
+    activeSessionId: activeSession?.id ?? '',
+    aiPredictionBySession,
+    commandBuffer: commandBufferRef.current,
+    expandedPredictionThinkingSessionId,
+  })
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1765,14 +1778,6 @@ export function App() {
   })
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
-  const activePrediction = activeSession ? (aiPredictionBySession[activeSession.id] ?? EMPTY_AI_PREDICTION_STATE) : EMPTY_AI_PREDICTION_STATE
-  const activePredictions = activePrediction.predictions
-  const activePredictionIndex = Math.min(activePrediction.index, Math.max(0, activePredictions.length - 1))
-  const primaryPrediction = commandBufferRef.current.trim()
-    ? ''
-    : (activePredictions[activePredictionIndex] ?? activePredictions[0] ?? '')
-  const isPredictionThinkingExpanded =
-    activePrediction.state === 'loading' || expandedPredictionThinkingSessionId === activeSession?.id
   const activeAIModelConfig = getActiveAIModelConfig(settings)
   const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
   const visibleLogs = useMemo(
