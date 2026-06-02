@@ -36,6 +36,10 @@ export function ServerInfoPanel({
   systemInfo,
   onToggleCollapsed,
 }: ServerInfoPanelProps) {
+  const displayHostName = activeSession?.hostName ?? activeHost?.name ?? '未连接'
+  const displayAddress = activeHost ? `${activeHost.address}:${activeHost.port}` : '-'
+  const displayUsername = activeHost?.username ?? '-'
+
   return (
     <section
       className={`info-panel ${isCollapsed ? 'collapsed' : ''}`}
@@ -44,7 +48,7 @@ export function ServerInfoPanel({
       <div className="info-panel-header">
         <div>
           <p className="section-label">当前服务器</p>
-          <h3>{activeSession?.hostName ?? '未连接'}</h3>
+          <h3>{displayHostName}</h3>
         </div>
         <button
           className="panel-icon-button"
@@ -60,11 +64,11 @@ export function ServerInfoPanel({
           <dl>
             <div>
               <dt>地址</dt>
-              <dd>{activeSession ? (activeHost ? `${activeHost.address}:${activeHost.port}` : '-') : '-'}</dd>
+              <dd>{displayAddress}</dd>
             </div>
             <div>
               <dt>用户</dt>
-              <dd>{activeSession ? (activeHost?.username ?? '-') : '-'}</dd>
+              <dd>{displayUsername}</dd>
             </div>
           </dl>
           {activeSession && systemInfo ? (
@@ -86,7 +90,7 @@ export function ServerInfoPanel({
                 <strong>{systemInfo.arch || '-'}</strong>
               </div>
               <div className="system-info-row">
-                <span>运行时间</span>
+                <span>运行时长</span>
                 <strong>{systemInfo.uptime || '-'}</strong>
               </div>
             </div>
@@ -120,7 +124,7 @@ export function ServerInfoPanel({
             </div>
             <div className="metric-card">
               <div>
-                <span>硬盘</span>
+                <span>磁盘</span>
                 <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
               </div>
               <div className="disk-list">

@@ -3,10 +3,13 @@ import type { HostGroup, HostRecord } from '@ai-ssh/shared-contracts'
 import type { HostGroupView } from '../types'
 import { normalizeHostGroups } from '../utils'
 
+const DEFAULT_GROUP_NAME = '默认'
+
 export function useVisibleHostGroups(hostGroups: HostGroup[], hosts: HostRecord[], serverSearch: string) {
   const groupedHosts = useMemo<HostGroupView[]>(() => {
     const groups = normalizeHostGroups(hostGroups, hosts)
     const keyword = serverSearch.trim().toLowerCase()
+    const resolveGroupName = (host: HostRecord) => host.group?.trim() || DEFAULT_GROUP_NAME
     const matchesSearch = (host: HostRecord) => {
       if (!keyword) {
         return true
@@ -15,16 +18,17 @@ export function useVisibleHostGroups(hostGroups: HostGroup[], hosts: HostRecord[
         host.name,
         host.address,
         host.username,
-        host.group || '默认',
+        resolveGroupName(host),
         String(host.port),
       ]
         .join('\n')
         .toLowerCase()
       return haystack.includes(keyword)
     }
+
     return groups.map((group) => ({
       ...group,
-      hosts: hosts.filter((host) => (host.group || '榛樿') === group.name).filter(matchesSearch),
+      hosts: hosts.filter((host) => resolveGroupName(host) === group.name).filter(matchesSearch),
     }))
   }, [hostGroups, hosts, serverSearch])
 

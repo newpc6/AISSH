@@ -5584,7 +5584,7 @@ export function App() {
           '--left-rail-width': `${leftRailWidth}px`,
           '--right-server-info-height': `${rightServerInfoPanelHeight}px`,
           '--right-panel-width': `${rightPanelWidth}px`,
-          gridTemplateColumns: isLeftRailCollapsed ? `40px minmax(560px, 1fr) ${rightPanelWidth}px` : `${leftRailWidth}px minmax(560px, 1fr) ${rightPanelWidth}px`,
+          gridTemplateColumns: isLeftRailCollapsed ? `40px minmax(0, 1fr) ${rightPanelWidth}px` : `${leftRailWidth}px minmax(0, 1fr) ${rightPanelWidth}px`,
         } as React.CSSProperties}
       >
         <aside className="left-rail">

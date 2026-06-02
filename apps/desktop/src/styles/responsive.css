@@ -1,14 +1,9 @@
 @media (max-width: 1280px) {
   .workbench-grid:not(.left-collapsed) {
-    grid-template-columns: minmax(220px, var(--left-rail-width, 280px)) minmax(420px, 1fr) !important;
-  }
-
-  .right-rail {
-    display: none;
-  }
-
-  .right-rail-width-resizer {
-    display: none;
+    grid-template-columns:
+      minmax(220px, var(--left-rail-width, 280px))
+      minmax(0, 1fr)
+      minmax(340px, var(--right-panel-width, 440px)) !important;
   }
 }
 
