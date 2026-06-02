@@ -1214,6 +1214,14 @@ export function App() {
 
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
 
+  const removeBatchSelectedHost = (hostId: string) => {
+    setBatchSelectedHostIds((current) => {
+      const next = current.filter((id) => id !== hostId)
+      batchSelectedHostIdsRef.current = next
+      return next
+    })
+  }
+
   const saveAppConfig = async (overrides?: Partial<{
     settings?: Partial<AppSettings>
     leftRailWidth?: number
@@ -7213,7 +7221,31 @@ export function App() {
                   {!isAIInputCollapsed ? (
                     <div className="agent-mode-row">
                       {batchMode && batchSelectedHostIds.length > 0 ? (
-                        <span className="batch-mode-hint">⚡ 批量模式 · 已选 {batchSelectedHostIds.length} 台</span>
+                        <div className="batch-mode-summary">
+                          <span className="batch-mode-hint">⚡ 批量模式 · 已选 {batchSelectedHostIds.length} 台</span>
+                          <div className="batch-selected-tags" title={batchSelectedHostIds.map((id) => hostsRef.current.find((host) => host.id === id)?.name ?? id).join('、')}>
+                            {batchSelectedHostIds.map((hostId) => {
+                              const host = hostsRef.current.find((item) => item.id === hostId)
+                              const name = host?.name || hostId
+                              return (
+                                <span className="batch-selected-tag" key={hostId} title={name}>
+                                  <span>{name}</span>
+                                  <button
+                                    type="button"
+                                    aria-label={`取消选择 ${name}`}
+                                    title={`取消选择 ${name}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      removeBatchSelectedHost(hostId)
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </div>
                       ) : (
                         <>
                           <label title="AI 给出命令后需要人工点击执行">

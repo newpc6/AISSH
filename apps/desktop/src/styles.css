@@ -695,8 +695,69 @@ button {
 }
 
 .batch-mode-hint {
+  flex: 0 0 auto;
   color: #fbbf24;
   font-size: 12px;
+}
+
+.batch-mode-summary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-selected-tags {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.batch-selected-tag {
+  min-width: 0;
+  max-width: 120px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px 0 8px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.09);
+  color: #fde68a;
+  font-size: 11px;
+  line-height: 20px;
+}
+
+.batch-selected-tag span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-selected-tag button {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #fbbf24;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.batch-selected-tag button:hover {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fff7ed;
 }
 
 .host-menu-trigger:hover {
