@@ -5,7 +5,7 @@ import { normalizeHostGroups } from '../utils'
 
 export function useVisibleHostGroups(hostGroups: HostGroup[], hosts: HostRecord[], serverSearch: string) {
   const groupedHosts = useMemo<HostGroupView[]>(() => {
-    const groups = normalizeHostGroups(hostGroups, hosts) as HostGroupView[]
+    const groups = normalizeHostGroups(hostGroups, hosts)
     const keyword = serverSearch.trim().toLowerCase()
     const matchesSearch = (host: HostRecord) => {
       if (!keyword) {
@@ -24,7 +24,7 @@ export function useVisibleHostGroups(hostGroups: HostGroup[], hosts: HostRecord[
     }
     return groups.map((group) => ({
       ...group,
-      hosts: group.hosts.filter(matchesSearch),
+      hosts: hosts.filter((host) => (host.group || '榛樿') === group.name).filter(matchesSearch),
     }))
   }, [hostGroups, hosts, serverSearch])
 
