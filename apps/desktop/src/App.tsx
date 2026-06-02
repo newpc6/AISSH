@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Terminal } from '@xterm/xterm'
@@ -6,26 +6,14 @@ import { FitAddon } from '@xterm/addon-fit'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readTextFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
-import { EditorState } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers } from '@codemirror/view'
-import {
-  defaultKeymap,
-  history as editorHistory,
-  historyKeymap,
-  indentLess,
-  indentMore,
-  redo,
-  selectAll,
-  toggleComment,
-  undo,
-} from '@codemirror/commands'
-import { indentOnInput, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
-import { openSearchPanel, search, searchKeymap } from '@codemirror/search'
+import { openSearchPanel } from '@codemirror/search'
 import '@xterm/xterm/css/xterm.css'
 import { FeatureGuide } from './FeatureGuide'
 import { AIWorkspacePanel } from './components/ai/AIWorkspacePanel'
 import { CommandHistoryPanel } from './components/commands/CommandHistoryPanel'
 import { FavoriteCommandsPanel } from './components/commands/FavoriteCommandsPanel'
+import { type CodeMirrorEditorHandle } from './components/files/CodeMirrorEditor'
+import { FilePreviewPanel } from './components/files/FilePreviewPanel'
 import { AIInputExpandModal } from './components/modals/AIInputExpandModal'
 import { ConfirmModal } from './components/modals/ConfirmModal'
 import { GroupModal } from './components/modals/GroupModal'
@@ -34,6 +22,9 @@ import { LogModal } from './components/modals/LogModal'
 import { MetricExpandModal } from './components/modals/MetricExpandModal'
 import { PendingAgentStepModal } from './components/modals/PendingAgentStepModal'
 import { SettingsDialog } from './components/modals/SettingsDialog'
+import { MetricChart } from './components/right-rail/MetricChart'
+import { ServerInfoPanel } from './components/right-rail/ServerInfoPanel'
+import { SideErrorNotice } from './components/right-rail/SideErrorNotice'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -97,7 +88,6 @@ import {
   type LocalDownloadFile,
   type LocalUploadFile,
   type MetricChartKey,
-  type MetricHover,
   type MetricSample,
   type PredictionGhostPosition,
   type RightTool,
@@ -131,12 +121,10 @@ import {
   agentExitMarker,
   appendQueryParam,
   appendTerminalCache,
-  buildMetricPath,
   clampPredictionPanelHeight,
   clampRightPanelWidth,
   clampRightServerInfoPanelHeight,
   classifyCommandRisk,
-  codeMirrorLanguage,
   compareFileEntries,
   detectPreviewKind,
   displayApiPath,
@@ -148,16 +136,11 @@ import {
   formatBytes,
   formatEditableText,
   formatFullDateTime,
-  formatMemorySummary,
-  formatMetricDateTime,
-  formatRate,
   getActiveAIModelConfig,
   inferRemotePathFromCommand,
   isLikelyStatic405,
   isVisibleLogLevel,
   localFileName,
-  metricPointIndexes,
-  metricXAxisLabels,
   missingCoreCapabilities,
   normalizeApiRequestPath,
   normalizeAppSettings,
@@ -205,89 +188,6 @@ const AI_PROVIDER_STRING_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel'] as 
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-
-type CodeMirrorEditorProps = {
-  value: string
-  fileName: string
-  readOnly: boolean
-  onChange: (value: string) => void
-}
-
-type CodeMirrorEditorHandle = {
-  runCommand: (command: (view: EditorView) => boolean) => boolean
-  focus: () => void
-}
-
-const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEditorProps>(
-  function CodeMirrorEditor({ value, fileName, readOnly, onChange }, ref) {
-    const containerRef = useRef<HTMLDivElement | null>(null)
-    const viewRef = useRef<EditorView | null>(null)
-    const onChangeRef = useRef(onChange)
-    const language = useMemo(() => codeMirrorLanguage(fileName), [fileName])
-
-    useImperativeHandle(ref, () => ({
-      runCommand(command) {
-        const view = viewRef.current
-        if (!view) return false
-        const handled = command(view)
-        view.focus()
-        return handled
-      },
-      focus() {
-        viewRef.current?.focus()
-      },
-    }))
-
-    useEffect(() => {
-      onChangeRef.current = onChange
-    }, [onChange])
-
-    useEffect(() => {
-      const container = containerRef.current
-      if (!container) return undefined
-      const view = new EditorView({
-        parent: container,
-        state: EditorState.create({
-          doc: value,
-          extensions: [
-            lineNumbers(),
-            editorHistory(),
-            indentOnInput(),
-            search({ top: true }),
-            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-            keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
-            language,
-            EditorView.lineWrapping,
-            EditorView.editable.of(!readOnly),
-            EditorState.readOnly.of(readOnly),
-            EditorView.updateListener.of((update) => {
-              if (update.docChanged) {
-                onChangeRef.current(update.state.doc.toString())
-              }
-            }),
-          ],
-        }),
-      })
-      viewRef.current = view
-      return () => {
-        view.destroy()
-        viewRef.current = null
-      }
-    }, [fileName, language, readOnly])
-
-    useEffect(() => {
-      const view = viewRef.current
-      if (!view) return
-      const current = view.state.doc.toString()
-      if (current === value) return
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: value },
-      })
-    }, [value])
-
-    return <div className="codemirror-host" ref={containerRef} />
-  },
-)
 
 export function App() {
   const [_health, setHealth] = useState<HealthResponse | null>(null)
@@ -383,7 +283,6 @@ export function App() {
   const [filePreviewTabs, setFilePreviewTabs] = useState<FilePreviewTab[]>([])
   const [activeViewId, setActiveViewId] = useState('')
   const [expandedMetric, setExpandedMetric] = useState<MetricChartKey | ''>('')
-  const [metricHover, setMetricHover] = useState<MetricHover>(null)
   const [settingsSavedMessage, setSettingsSavedMessage] = useState('')
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
@@ -5739,127 +5638,6 @@ export function App() {
     return <div key={message.id}>{renderAIResponseMessage(message, 'AI')}</div>
   }
 
-  const renderFilePreview = (tab: FilePreviewTab) => {
-    const meta = `${tab.hostName} · ${tab.path} · ${formatBytes(tab.size)}`
-    if (tab.status === 'loading') {
-      return (
-        <div className="file-preview-empty">
-          <span className="file-loading-spinner" />
-          <strong>正在加载 {tab.name}</strong>
-          <small>{meta}</small>
-        </div>
-      )
-    }
-    if (tab.status === 'error') {
-      return (
-        <div className="file-preview-empty">
-          <strong>预览失败</strong>
-          <small>{tab.error ?? '无法读取远程文件'}</small>
-          <button
-            type="button"
-            title={`以文本方式打开 ${tab.name}`}
-            onClick={() => void openFilePreviewAsText(tab)}
-          >
-            以文本方式打开
-          </button>
-          <button type="button" title={`下载 ${tab.name}`} onClick={() => void downloadFile({
-            name: tab.name,
-            path: tab.path,
-            type: 'file',
-            size: tab.size,
-            modifiedAt: tab.modifiedAt,
-          })}>
-            下载文件
-          </button>
-        </div>
-      )
-    }
-    if (tab.kind === 'text') {
-      const draft = tab.draftContent ?? tab.content ?? ''
-      return (
-        <div className={`file-text-preview ${tab.isEditing ? 'editing' : ''}`}>
-          {tab.isEditing ? (
-            <div className="codemirror-toolbar">
-              <span>编辑模式</span>
-              <div className="codemirror-toolbar-actions">
-                <button type="button" title={`撤销 ${tab.name} 的上一步编辑`} onClick={() => codeMirrorRef.current?.runCommand(undo)}>
-                  撤销
-                </button>
-                <button type="button" title={`重做 ${tab.name} 的编辑`} onClick={() => codeMirrorRef.current?.runCommand(redo)}>
-                  重做
-                </button>
-                <button type="button" title={`全选 ${tab.name} 内容`} onClick={() => codeMirrorRef.current?.runCommand(selectAll)}>
-                  全选
-                </button>
-                <button type="button" title={`增加 ${tab.name} 选中行缩进`} onClick={() => codeMirrorRef.current?.runCommand(indentMore)}>
-                  缩进
-                </button>
-                <button type="button" title={`减少 ${tab.name} 选中行缩进`} onClick={() => codeMirrorRef.current?.runCommand(indentLess)}>
-                  反缩进
-                </button>
-                <button type="button" title={`切换 ${tab.name} 选中内容注释`} onClick={() => codeMirrorRef.current?.runCommand(toggleComment)}>
-                  注释
-                </button>
-                <button type="button" title={`格式化 ${tab.name}`} onClick={() => formatFilePreviewDraft(tab)}>
-                  格式化
-                </button>
-                <button type="button" title={`还原 ${tab.name} 到已保存内容`} onClick={() => resetFilePreviewDraft(tab)}>
-                  还原
-                </button>
-                <button type="button" title={`复制 ${tab.name} 当前内容`} onClick={() => void copyFilePreviewDraft(tab)}>
-                  复制
-                </button>
-              </div>
-            </div>
-            ) : null}
-          <CodeMirrorEditor
-            fileName={tab.name}
-            ref={codeMirrorRef}
-            readOnly={!tab.isEditing}
-            value={draft}
-            onChange={(value) => updateFilePreviewDraft(tab.id, value)}
-          />
-        </div>
-      )
-    }
-    if (tab.kind === 'image' && tab.objectUrl) {
-      return (
-        <div className="file-media-preview">
-          <img alt={tab.name} src={tab.objectUrl} />
-        </div>
-      )
-    }
-    if (tab.kind === 'video' && tab.objectUrl) {
-      return (
-        <div className="file-media-preview">
-          <video controls src={tab.objectUrl} />
-        </div>
-      )
-    }
-    return (
-      <div className="file-preview-empty">
-        <strong>暂不支持直接预览这种文件</strong>
-        <small>{meta}</small>
-        <button
-          type="button"
-          title={`以文本方式打开 ${tab.name}`}
-          onClick={() => void openFilePreviewAsText(tab)}
-        >
-          以文本方式打开
-        </button>
-        <button type="button" title={`下载 ${tab.name}`} onClick={() => void downloadFile({
-          name: tab.name,
-          path: tab.path,
-          type: 'file',
-          size: tab.size,
-          modifiedAt: tab.modifiedAt,
-        })}>
-          下载文件
-        </button>
-      </div>
-    )
-  }
-
   const startLeftRailResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const startX = event.clientX
@@ -5950,139 +5728,6 @@ export function App() {
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
-  }
-
-  const renderMetricChart = (key: MetricChartKey, label: string, compact = true) => {
-    const width = compact ? Math.max(260, rightPanelWidth - 82) : 760
-    const height = compact ? 88 : 320
-    const chartWidth = width - 48
-    const chartHeight = height - 28
-    const path = buildMetricPath(metricHistory, key, chartWidth, chartHeight)
-    const [startLabel, endLabel] = metricXAxisLabels(metricHistory)
-    const latestValue = metricHistory[metricHistory.length - 1]?.[key] ?? serverMetrics?.[key] ?? 0
-    const visiblePointIndexes = metricPointIndexes(
-      metricHistory.length,
-      compact ? settings.metricsCompactPointLimit : settings.metricsExpandedPointLimit,
-    )
-    const hoveredSample =
-      metricHover?.key === key && metricHistory[metricHover.index] ? metricHistory[metricHover.index] : null
-    const chartTitle = key === 'memoryPercent' ? formatMemorySummary(serverMetrics) : serverMetrics ? `${latestValue}%` : '-'
-    const updateMetricHover = (event: React.MouseEvent<SVGRectElement>) => {
-      if (metricHistory.length === 0) {
-        return
-      }
-      const bounds = event.currentTarget.getBoundingClientRect()
-      const relativeX = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left))
-      const index =
-        metricHistory.length === 1 ? 0 : Math.round((relativeX / Math.max(1, bounds.width)) * (metricHistory.length - 1))
-      const sample = metricHistory[index]
-      const x = metricHistory.length === 1 ? chartWidth : (index / (metricHistory.length - 1)) * chartWidth
-      const y = chartHeight - (Math.max(0, Math.min(100, sample[key])) / 100) * chartHeight
-      setMetricHover({ key, index, x, y })
-    }
-
-    return (
-      <div className={`metric-chart ${compact ? 'compact' : 'expanded'}`} onMouseLeave={() => setMetricHover(null)}>
-        <div className="metric-chart-top">
-          <span>{label}</span>
-          <strong>{chartTitle}</strong>
-        </div>
-        <div className="metric-plot">
-          {compact ? (
-            <button
-              aria-label={`放大${label}趋势图`}
-              className="metric-zoom"
-              title={`放大${label}趋势图`}
-              type="button"
-              onClick={() => setExpandedMetric(key)}
-            >
-              <span />
-            </button>
-          ) : null}
-          <svg style={{ aspectRatio: `${width} / ${height}` }} viewBox={`0 0 ${width} ${height}`}>
-            <g transform="translate(36 8)">
-              <line className="axis-line" x1="0" x2="0" y1="0" y2={chartHeight} />
-              <line className="axis-line" x1="0" x2={chartWidth} y1={chartHeight} y2={chartHeight} />
-              {[0, 50, 100].map((value) => {
-                const y = chartHeight - (value / 100) * chartHeight
-                return (
-                  <g key={value}>
-                    <line className="grid-line" x1="0" x2={chartWidth} y1={y} y2={y} />
-                    <text x="-8" y={y + 3} textAnchor="end">
-                      {value}%
-                    </text>
-                  </g>
-                )
-              })}
-              <rect
-                className="metric-hover-zone"
-                height={chartHeight}
-                width={chartWidth}
-                x="0"
-                y="0"
-                onMouseMove={updateMetricHover}
-                onMouseEnter={updateMetricHover}
-              />
-              {path ? <path className="metric-line" d={path} /> : null}
-              {metricHistory.map((sample, index) => {
-                const x = metricHistory.length === 1 ? chartWidth : (index / (metricHistory.length - 1)) * chartWidth
-                const y = chartHeight - (Math.max(0, Math.min(100, sample[key])) / 100) * chartHeight
-                const isHovered = metricHover?.key === key && metricHover.index === index
-                if (!visiblePointIndexes.has(index) && !isHovered) {
-                  return null
-                }
-                return (
-                  <circle
-                    aria-label={`${label} ${formatMetricDateTime(sample.collectedAt)} ${sample[key]}%`}
-                    className={`metric-point ${isHovered ? 'active' : ''}`}
-                    cx={x}
-                    cy={y}
-                    key={`${sample.collectedAt}-${index}`}
-                    r={isHovered ? 4.5 : 3}
-                  >
-                    <title>
-                      {`${formatMetricDateTime(sample.collectedAt)} · ${label} ${sample[key]}%${
-                        key === 'memoryPercent' && sample.memoryTotalBytes > 0
-                          ? ` · ${formatBytes(sample.memoryUsedBytes)} / ${formatBytes(sample.memoryTotalBytes)}`
-                          : ''
-                      }`}
-                    </title>
-                  </circle>
-                )
-              })}
-              {metricHistory.length === 0 ? (
-                <text className="empty-chart-text" x={chartWidth / 2} y={chartHeight / 2} textAnchor="middle">
-                  等待采样
-                </text>
-              ) : null}
-            </g>
-            <text x="36" y={height - 4}>
-              {startLabel}
-            </text>
-            <text x={width - 2} y={height - 4} textAnchor="end">
-              {endLabel}
-            </text>
-          </svg>
-          {hoveredSample ? (
-            <div
-              className="metric-tooltip"
-              style={{
-                left: `${36 + metricHover!.x}px`,
-                top: `${8 + metricHover!.y}px`,
-              }}
-            >
-              <strong>{`${label} ${hoveredSample[key]}%`}</strong>
-              <span>{formatMetricDateTime(hoveredSample.collectedAt)}</span>
-              {key === 'memoryPercent' && hoveredSample.memoryTotalBytes > 0 ? (
-                <small>
-                  {formatBytes(hoveredSample.memoryUsedBytes)} / {formatBytes(hoveredSample.memoryTotalBytes)}
-                </small>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    )
   }
 
   const expandedMetricLabel = expandedMetric === 'cpuPercent' ? 'CPU 使用率' : '内存使用率'
@@ -6771,70 +6416,7 @@ export function App() {
           </div>
 
           <section className={`terminal-stage ${isFilePreviewActive ? 'show-file-preview' : ''}`}>
-            {activeFilePreview ? (
-              <div className="file-preview-header">
-                <div className="file-preview-title">
-                  <strong>{activeFilePreview.name}</strong>
-                  <span>{activeFilePreview.hostName} · {activeFilePreview.path}</span>
-                </div>
-                <small className="file-preview-meta">{previewKindLabel(activeFilePreview.kind)} · {formatBytes(activeFilePreview.size)} · {new Date(activeFilePreview.modifiedAt).toLocaleString()}</small>
-                <div className="file-preview-actions">
-                  {activeFilePreview.kind === 'text' && activeFilePreview.status === 'ready' ? (
-                    <>
-                      <button
-                        className={!activeFilePreview.isEditing ? 'active' : ''}
-                        type="button"
-                        title={`以预览模式查看 ${activeFilePreview.name}`}
-                        onClick={() => setFilePreviewEditMode(activeFilePreview.id, false)}
-                      >
-                        预览
-                      </button>
-                      <button
-                        type="button"
-                        title={`搜索 ${activeFilePreview.name} 内容`}
-                        onClick={() => codeMirrorRef.current?.runCommand(openSearchPanel)}
-                      >
-                        搜索
-                      </button>
-                      <button
-                        className={activeFilePreview.isEditing ? 'active' : ''}
-                        type="button"
-                        title={`编辑 ${activeFilePreview.name}`}
-                        onClick={() => setFilePreviewEditMode(activeFilePreview.id, true)}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        disabled={!activeFilePreview.isEditing || activeFilePreview.saveState === 'loading'}
-                        type="button"
-                        title={`保存 ${activeFilePreview.name}`}
-                        onClick={() => void saveFilePreview(activeFilePreview)}
-                      >
-                        {activeFilePreview.saveState === 'loading' ? '保存中' : '保存'}
-                      </button>
-                      {activeFilePreview.saveMessage ? (
-                        <span className={`file-save-message file-save-${activeFilePreview.saveState ?? 'idle'}`}>
-                          {activeFilePreview.saveMessage}
-                        </span>
-                      ) : null}
-                    </>
-                  ) : null}
-                  <button
-                    type="button"
-                    title={`下载 ${activeFilePreview.name}`}
-                    onClick={() => void downloadFile({
-                      name: activeFilePreview.name,
-                      path: activeFilePreview.path,
-                      type: 'file',
-                      size: activeFilePreview.size,
-                      modifiedAt: activeFilePreview.modifiedAt,
-                    })}
-                  >
-                    下载
-                  </button>
-                </div>
-              </div>
-            ) : activeSession ? (
+            {activeFilePreview ? null : activeSession ? (
               <div className="terminal-header">
                 <div>
                   <strong>{activeSession.hostName}</strong>
@@ -7017,9 +6599,18 @@ export function App() {
               </div>
             ) : null}
             {activeFilePreview ? (
-              <div className="file-preview-surface">
-                {renderFilePreview(activeFilePreview)}
-              </div>
+              <FilePreviewPanel
+                codeMirrorRef={codeMirrorRef}
+                tab={activeFilePreview}
+                onCopyDraft={(tab) => copyFilePreviewDraft(tab)}
+                onDownloadFile={(file) => downloadFile(file)}
+                onFormatDraft={formatFilePreviewDraft}
+                onOpenAsText={(tab) => openFilePreviewAsText(tab)}
+                onResetDraft={resetFilePreviewDraft}
+                onSaveFile={(tab) => saveFilePreview(tab)}
+                onSetEditMode={setFilePreviewEditMode}
+                onUpdateDraft={updateFilePreviewDraft}
+              />
             ) : null}
             {!activeSession && !activeFilePreview ? (
               <div className="terminal-empty">
@@ -7058,97 +6649,22 @@ export function App() {
         />
 
         <aside className="right-rail">
-          <section
-            className={`info-panel ${isServerInfoCollapsed ? 'collapsed' : ''}`}
-            style={!isServerInfoCollapsed ? { height: rightServerInfoPanelHeight } : undefined}
-          >
-            <div className="info-panel-header">
-              <div>
-                <p className="section-label">当前服务器</p>
-                <h3>{activeSession?.hostName ?? '未连接'}</h3>
-              </div>
-              <button
-                className="panel-icon-button"
-                type="button"
-                title={isServerInfoCollapsed ? '展开当前服务器信息' : '折叠当前服务器信息'}
-                onClick={() => setIsServerInfoCollapsed((current) => !current)}
-              >
-                {isServerInfoCollapsed ? '▾' : '▴'}
-              </button>
-            </div>
-            {!isServerInfoCollapsed ? (
-              <>
-                <dl>
-                  <div>
-                    <dt>地址</dt>
-                    <dd>{activeSession ? (activeHost ? `${activeHost.address}:${activeHost.port}` : "-") : "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>用户</dt>
-                    <dd>{activeSession ? (activeHost?.username ?? "-") : "-"}</dd>
-                  </div>
-                </dl>
-                {activeSession && systemInfo ? (
-                  <div className="system-info-card">
-                    <div className="system-info-row">
-                      <span>系统</span>
-                      <strong>{systemInfo.os || "-"}</strong>
-                    </div>
-                    <div className="system-info-row">
-                      <span>内核</span>
-                      <strong>{systemInfo.kernel || "-"}</strong>
-                    </div>
-                    <div className="system-info-row">
-                      <span>主机名</span>
-                      <strong>{systemInfo.hostname || "-"}</strong>
-                    </div>
-                    <div className="system-info-row">
-                      <span>架构</span>
-                      <strong>{systemInfo.arch || "-"}</strong>
-                    </div>
-                    <div className="system-info-row">
-                      <span>运行时间</span>
-                      <strong>{systemInfo.uptime || "-"}</strong>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="metric-stack">
-                  <div className="metric-card">{renderMetricChart('cpuPercent', 'CPU')}</div>
-                  <div className="metric-card">{renderMetricChart('memoryPercent', '内存')}</div>
-                  <div className="metric-card">
-                    <div>
-                      <span>硬盘</span>
-                      <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
-                    </div>
-                    <div className="disk-list">
-                      {(serverMetrics?.disks?.length ? serverMetrics.disks : []).slice(0, 4).map((disk) => (
-                        <div key={`${disk.filesystem}-${disk.mount}`}>
-                          <span>{disk.mount}</span>
-                          <progress max="100" value={disk.usedPercent} />
-                          <strong>{disk.usedPercent}%</strong>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <div>
-                      <span>网络</span>
-                      <strong>
-                        {latestMetricSample
-                          ? `↓ ${formatRate(latestMetricSample.networkRxRateBytes)} / ↑ ${formatRate(latestMetricSample.networkTxRateBytes)}`
-                          : '-'}
-                      </strong>
-                    </div>
-                    <small>
-                      {serverMetrics
-                        ? `累计 ↓ ${formatBytes(serverMetrics.networkRxBytes)} / ↑ ${formatBytes(serverMetrics.networkTxBytes)}`
-                        : '等待采样'}
-                    </small>
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </section>
+          <ServerInfoPanel
+            activeHost={activeHost}
+            activeSession={activeSession}
+            compactMetricWidth={Math.max(260, rightPanelWidth - 82)}
+            expandedMetricPointLimit={settings.metricsExpandedPointLimit}
+            height={rightServerInfoPanelHeight}
+            isCollapsed={isServerInfoCollapsed}
+            latestMetricSample={latestMetricSample}
+            metricCompactPointLimit={settings.metricsCompactPointLimit}
+            metricHistory={metricHistory}
+            onExpandMetric={setExpandedMetric}
+            primaryDisk={primaryDisk}
+            serverMetrics={serverMetrics}
+            systemInfo={systemInfo}
+            onToggleCollapsed={() => setIsServerInfoCollapsed((current) => !current)}
+          />
 
           <div
             aria-label="拖动调整右侧命令区域高度"
@@ -7260,41 +6776,7 @@ export function App() {
             )}
           </section>
 
-          {errorNotice ? (
-            <article className="side-error">
-              <header>
-                <div>
-                  <strong>{errorNotice.title}</strong>
-                  <span>{new Date(errorNotice.occurredAt).toLocaleTimeString()}</span>
-                </div>
-                <button type="button" title="关闭错误提示" onClick={() => setErrorNotice(null)}>
-                  ×
-                </button>
-              </header>
-              <p className="error-text">{errorNotice.message}</p>
-              <dl>
-                {errorNotice.source ? (
-                  <>
-                    <dt>来源</dt>
-                    <dd>{errorNotice.source}</dd>
-                  </>
-                ) : null}
-                {errorNotice.path ? (
-                  <>
-                    <dt>接口</dt>
-                    <dd>{`${errorNotice.method ?? 'GET'} ${errorNotice.path}`}</dd>
-                  </>
-                ) : null}
-                {errorNotice.status ? (
-                  <>
-                    <dt>状态</dt>
-                    <dd>{errorNotice.status}</dd>
-                  </>
-                ) : null}
-              </dl>
-              {errorNotice.detail ? <small>{errorNotice.detail}</small> : null}
-            </article>
-          ) : null}
+          <SideErrorNotice errorNotice={errorNotice} onClose={() => setErrorNotice(null)} />
 
         </aside>
       </div>
@@ -7420,7 +6902,18 @@ export function App() {
         open={Boolean(expandedMetric)}
         onClose={() => setExpandedMetric('')}
       >
-        {expandedMetric ? renderMetricChart(expandedMetric, expandedMetricLabel, false) : null}
+        {expandedMetric ? (
+          <MetricChart
+            compact={false}
+            compactPointLimit={settings.metricsCompactPointLimit}
+            compactWidth={Math.max(260, rightPanelWidth - 82)}
+            expandedPointLimit={settings.metricsExpandedPointLimit}
+            keyName={expandedMetric}
+            label={expandedMetricLabel}
+            metricHistory={metricHistory}
+            serverMetrics={serverMetrics}
+          />
+        ) : null}
       </MetricExpandModal>
 
       <AIInputExpandModal
