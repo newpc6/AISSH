@@ -1,0 +1,388 @@
+.info-panel,
+.tool-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 14px;
+}
+
+.info-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.right-panel-resizer {
+  position: relative;
+  min-height: 10px;
+  cursor: row-resize;
+  outline: none;
+}
+
+.right-panel-resizer::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.right-panel-resizer:hover::before,
+.right-panel-resizer:focus::before {
+  background: rgba(96, 165, 250, 0.74);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+}
+
+.info-panel h3,
+.host-modal h3 {
+  margin: 6px 0 12px;
+  font-size: 18px;
+}
+
+.info-panel-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: start;
+  gap: 8px;
+}
+
+.info-panel-header h3 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8ca0b8;
+  cursor: pointer;
+}
+
+.panel-icon-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8edf4;
+}
+
+.info-panel.collapsed {
+  height: auto !important;
+  overflow: hidden;
+  padding-bottom: 4px;
+  padding-top: 6px;
+}
+
+.info-panel.collapsed .section-label,
+.info-panel.collapsed .info-panel-header h3 {
+  display: none;
+}
+
+.info-panel.collapsed .info-panel-header {
+  align-items: center;
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+.info-panel.collapsed .panel-icon-button {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.info-panel.collapsed + .right-panel-resizer {
+  display: none;
+}
+
+.right-rail:has(.info-panel.collapsed) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.right-rail:has(.info-panel.collapsed) .tool-panel {
+  grid-row: 2;
+}
+
+.info-panel dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.info-panel dl > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-panel dt {
+  color: #7f91a7;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.system-info-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.system-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.system-info-row span {
+  color: #7f91a7;
+  font-size: 11px;
+}
+
+.system-info-row strong {
+  color: #dbe5ef;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-stack {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.metric-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.metric-chart-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-card > div:first-child:not(.metric-chart) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-card span,
+.metric-card small {
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.metric-card strong {
+  font-size: 14px;
+}
+
+.metric-chart-top strong {
+  min-width: 0;
+  flex: 1;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-chart {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-zoom {
+  position: absolute;
+  z-index: 3;
+  top: 2px;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #67e8f9;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.metric-zoom:hover {
+  background: rgba(103, 232, 249, 0.12);
+  color: #e0f2fe;
+}
+
+.metric-zoom span {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  display: block;
+}
+
+.metric-zoom span::before,
+.metric-zoom span::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-color: currentColor;
+}
+
+.metric-zoom span::before {
+  top: 0;
+  right: 0;
+  border-top: 2px solid;
+  border-right: 2px solid;
+}
+
+.metric-zoom span::after {
+  left: 0;
+  bottom: 0;
+  border-left: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.metric-plot {
+  position: relative;
+}
+
+.metric-chart svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.metric-chart.expanded svg {
+  width: min(100%, 760px);
+  max-height: min(52vh, 360px);
+}
+
+.metric-line {
+  fill: none;
+  stroke: #22d3ee;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.52));
+  pointer-events: none;
+}
+
+.metric-hover-zone {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.metric-point {
+  fill: #0f1720;
+  stroke: #67e8f9;
+  stroke-width: 2;
+  cursor: crosshair;
+  pointer-events: none;
+}
+
+.metric-point.active {
+  fill: #67e8f9;
+  stroke: #e0f2fe;
+}
+
+.metric-tooltip {
+  position: absolute;
+  z-index: 4;
+  min-width: 142px;
+  padding: 8px 10px;
+  border: 1px solid rgba(103, 232, 249, 0.34);
+  border-radius: 7px;
+  background: rgba(8, 13, 20, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
+  display: grid;
+  gap: 3px;
+  pointer-events: none;
+  transform: translate(10px, calc(-100% - 8px));
+}
+
+.metric-tooltip strong,
+.metric-tooltip span,
+.metric-tooltip small {
+  font-size: 12px;
+}
+
+.metric-tooltip span,
+.metric-tooltip small {
+  color: #8ca0b8;
+}
+
+.axis-line {
+  stroke: rgba(203, 213, 225, 0.44);
+  stroke-width: 1;
+}
+
+.grid-line {
+  stroke: rgba(148, 163, 184, 0.14);
+  stroke-width: 1;
+}
+
+.metric-chart text {
+  fill: #8ca0b8;
+  font-size: 10px;
+}
+
+.empty-chart-text {
+  fill: #64748b;
+}
+
+.disk-list {
+  display: grid;
+  gap: 6px;
+}
+
+.disk-list div {
+  display: grid;
+  grid-template-columns: minmax(0, 64px) minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
+}
+
+.disk-list progress {
+  width: 100%;
+  height: 8px;
+}
+
+.disk-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-modal span {
+  color: #7f91a7;
+  font-size: 12px;
+}
+
+.settings-modal span {
+  color: #7f91a7;
+  font-size: 12px;
+}
+
