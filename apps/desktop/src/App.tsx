@@ -33,6 +33,7 @@ import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
+import { useHostGroupDialog } from './hooks/useHostGroupDialog'
 import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import { useVisibleLogs } from './hooks/useVisibleLogs'
@@ -376,6 +377,29 @@ export function App() {
       void saveAppConfig({ favoriteCommands: commands })
     },
     onRequestConfirm: setConfirmDialog,
+  })
+  const {
+    addGroupDraft: addHostGroupDraft,
+    clearGroupDialogMessage: clearHostGroupDialogMessage,
+    closeGroupDialog: closeHostGroupDialog,
+    confirmDeleteGroupDraft: hostGroupDialogConfirmDeleteGroupDraft,
+    groupDraftUsedCounts: hostGroupDraftUsedCounts,
+    moveGroupDraft: hostGroupDialogMoveGroupDraft,
+    openGroupDialog: openHostGroupDialog,
+    syncSavedGroups,
+  } = useHostGroupDialog({
+    deletedGroupDrafts,
+    groupDrafts,
+    hostGroups,
+    hosts,
+    onRequestConfirm: requestConfirm,
+    originalGroupDrafts,
+    setDeletedGroupDrafts,
+    setGroupDialogError,
+    setGroupDialogMessage,
+    setGroupDrafts,
+    setIsGroupDialogOpen,
+    setOriginalGroupDrafts,
   })
 
   const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
@@ -995,48 +1019,11 @@ export function App() {
   }
 
   const confirmDeleteGroupDraft = (index: number, group: string) => {
-    const name = group.trim() || '未命名分组'
-    const originalName = originalGroupDrafts[index]?.trim()
-    const usedCount = hosts.filter((host) => (host.group || '默认') === (originalName || name)).length
-    requestConfirm({
-      section: 'SSH 分组',
-      title: '删除分组',
-      message: `确定删除分组「${name}」吗？`,
-      detail: usedCount > 0
-        ? `保存后该分组下的 ${usedCount} 台服务器会移动到默认分组。`
-        : '保存后会从分组配置中移除。',
-      confirmText: '删除',
-      danger: true,
-      onConfirm: () => {
-        if (originalName) {
-          setDeletedGroupDrafts((current) => [...new Set([...current, originalName])])
-        }
-        setGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
-        setOriginalGroupDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
-        setGroupDialogMessage('')
-      },
-    })
+    hostGroupDialogConfirmDeleteGroupDraft(index, group)
   }
 
   const moveGroupDraft = (index: number, direction: -1 | 1) => {
-    const targetIndex = index + direction
-    setGroupDrafts((current) => {
-      if (targetIndex < 0 || targetIndex >= current.length) {
-        return current
-      }
-      const next = [...current]
-      ;[next[index], next[targetIndex]] = [next[targetIndex], next[index]]
-      return next
-    })
-    setOriginalGroupDrafts((current) => {
-      if (targetIndex < 0 || targetIndex >= current.length) {
-        return current
-      }
-      const next = [...current]
-      ;[next[index], next[targetIndex]] = [next[targetIndex], next[index]]
-      return next
-    })
-    setGroupDialogMessage('')
+    hostGroupDialogMoveGroupDraft(index, direction)
   }
 
   const appendTextToAIInput = (text: string) => {
@@ -1713,11 +1700,6 @@ export function App() {
     return runUnifiedAI()
   }
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
-  const groupDraftUsedCounts = groupDrafts.map((group, index) => {
-    const groupName = group.trim()
-    const originalName = originalGroupDrafts[index]?.trim()
-    return hosts.filter((host) => (host.group || '默认') === (originalName || groupName)).length
-  })
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
   const activeAIModelConfig = getActiveAIModelConfig(settings)
@@ -2135,14 +2117,7 @@ export function App() {
 
   const openGroupDialog = () => {
     setOpenTopMenu('')
-    const groups = normalizeHostGroups(hostGroups, hosts)
-    const names = groups.map((group) => group.name)
-    setGroupDrafts(names)
-    setOriginalGroupDrafts(names)
-    setDeletedGroupDrafts([])
-    setGroupDialogMessage('')
-    setGroupDialogError('')
-    setIsGroupDialogOpen(true)
+    openHostGroupDialog()
   }
 
   const saveHostGroups = async () => {
@@ -2187,13 +2162,8 @@ export function App() {
     const data = (await response.json()) as HostGroupsResponse
     const nextHosts = await loadHosts()
     const nextGroups = normalizeHostGroups(data.groups, nextHosts)
-    const nextGroupNames = nextGroups.map((group) => group.name)
     setHostGroups(nextGroups)
-    setOriginalGroupDrafts(nextGroupNames)
-    setGroupDrafts(nextGroupNames)
-    setDeletedGroupDrafts([])
-    setGroupDialogError('')
-    setGroupDialogMessage('分组已保存')
+    syncSavedGroups(nextGroups)
   }
 
   const saveSettings = () => {
@@ -6090,14 +6060,10 @@ export function App() {
         groupDrafts={groupDrafts}
         open={isGroupDialogOpen}
         originalGroupDrafts={originalGroupDrafts}
-        usedCounts={groupDraftUsedCounts}
-        onAddGroup={() => {
-          setGroupDrafts((current) => [...current, '???'])
-          setOriginalGroupDrafts((current) => [...current, ''])
-          setGroupDialogMessage('')
-        }}
-        onClearGroupDialogMessage={() => setGroupDialogMessage('')}
-        onClose={() => setIsGroupDialogOpen(false)}
+        usedCounts={hostGroupDraftUsedCounts}
+        onAddGroup={addHostGroupDraft}
+        onClearGroupDialogMessage={clearHostGroupDialogMessage}
+        onClose={closeHostGroupDialog}
         onConfirmDeleteGroupDraft={confirmDeleteGroupDraft}
         onGroupDraftsChange={setGroupDrafts}
         onMoveGroupDraft={moveGroupDraft}
