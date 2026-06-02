@@ -286,6 +286,22 @@ button {
   overflow: hidden;
 }
 
+@media (min-width: 981px) {
+  .workbench-grid:not(.left-collapsed) {
+    grid-template-columns:
+      minmax(220px, var(--left-rail-width, 280px))
+      minmax(0, 1fr)
+      minmax(300px, var(--right-panel-width, 440px)) !important;
+  }
+
+  .workbench-grid.left-collapsed {
+    grid-template-columns:
+      40px
+      minmax(0, 1fr)
+      minmax(300px, var(--right-panel-width, 440px)) !important;
+  }
+}
+
 .left-rail,
 .right-rail {
   min-height: 0;
