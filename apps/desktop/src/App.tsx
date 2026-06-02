@@ -359,6 +359,7 @@ export function App() {
   const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
   const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
   const [isAIInputCollapsed, setIsAIInputCollapsed] = useState(false)
+  const [isAIInputExpanded, setIsAIInputExpanded] = useState(false)
   const [terminalSelectionAction, setTerminalSelectionAction] = useState<TerminalSelectionAction | null>(null)
   const [agentMode, setAgentMode] = useState<AIAgentMode>('review')
   const [agentState, setAgentState] = useState<LoadState>('idle')
@@ -1807,6 +1808,24 @@ export function App() {
     () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
     [hosts, activeSession, currentHost],
   )
+  const isBatchTaskInput = batchMode && batchSelectedHostIds.length > 0 && !batchActive
+  const aiUnifiedInputPlaceholder = isBatchTaskInput
+    ? '批量任务：输入自然语言任务描述（如"更新 apt、检查磁盘空间"），点击右侧 ▶ 按钮启动'
+    : '直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作'
+  const aiUnifiedInputValue = isBatchTaskInput ? batchTask : aiUnifiedPrompt
+  const updateAiUnifiedInputValue = (value: string) => {
+    if (isBatchTaskInput) {
+      setBatchTask(value)
+      return
+    }
+    setAiUnifiedPrompt(value)
+  }
+  const submitAiUnifiedInput = () => {
+    if (isBatchTaskInput) {
+      return startBatchExecution()
+    }
+    return runUnifiedAI()
+  }
   const sortedFileEntries = useMemo(
     () => [...fileEntries].sort((a, b) => compareFileEntries(a, b, fileSort)),
     [fileEntries, fileSort],
@@ -7204,23 +7223,13 @@ export function App() {
                       placeholder={batchMode && batchSelectedHostIds.length > 0 && !batchActive
                         ? '批量任务：输入自然语言任务描述（如"更新 apt、检查磁盘空间"），点击右侧 ⚡ 按钮启动'
                         : '直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作'}
-                      value={batchMode && batchSelectedHostIds.length > 0 && !batchActive ? batchTask : aiUnifiedPrompt}
-                      onChange={(event) => {
-                        if (batchMode && batchSelectedHostIds.length > 0 && !batchActive) {
-                          setBatchTask(event.target.value)
-                        } else {
-                          setAiUnifiedPrompt(event.target.value)
-                        }
-                      }}
+                      value={aiUnifiedInputValue}
+                      onChange={(event) => updateAiUnifiedInputValue(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.nativeEvent.isComposing) return
                         if (event.key === 'Enter' && event.ctrlKey) {
                           event.preventDefault()
-                          if (batchMode && batchSelectedHostIds.length > 0 && !batchActive) {
-                            void startBatchExecution()
-                          } else {
-                            void runUnifiedAI()
-                          }
+                          void submitAiUnifiedInput()
                         }
                       }}
                     />
@@ -7281,12 +7290,15 @@ export function App() {
                       <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={() => void createAIConversation('新对话')}>
                         ＋
                       </button>
+                      <button className="ai-icon-button" type="button" title="放大 AI 输入框" onClick={() => setIsAIInputExpanded(true)}>
+                        ⛶
+                      </button>
                       <button
                         className="ai-icon-button ai-send-button"
                         disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
                         type="button"
                         title="发送给统一 AI 助手"
-                        onClick={() => void runUnifiedAI()}
+                        onClick={() => void submitAiUnifiedInput()}
                       >
                         {aiAssistantState === 'loading' ? '…' : '➤'}
                       </button>
@@ -7294,7 +7306,7 @@ export function App() {
                         className="ai-icon-button"
                         type="button"
                         title="清空当前 AI 输入框"
-                        onClick={() => { setAiUnifiedPrompt(''); setAiAssistantError(''); setBatchTask('') }}
+                        onClick={() => { updateAiUnifiedInputValue(''); setAiAssistantError('') }}
                       >
                         ⌫
                       </button>
@@ -8446,6 +8458,52 @@ export function App() {
               <button type="button" title="关闭放大图表" onClick={() => setExpandedMetric('')}>×</button>
             </div>
             {renderMetricChart(expandedMetric, expandedMetricLabel, false)}
+          </section>
+        </div>
+      ) : null}
+
+      {isAIInputExpanded ? (
+        <div className="modal-backdrop" onClick={() => setIsAIInputExpanded(false)}>
+          <section className="ai-input-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="section-label">AI 输入框</p>
+                <h3>放大查看与编辑</h3>
+              </div>
+              <button type="button" title="关闭放大输入框" onClick={() => setIsAIInputExpanded(false)}>×</button>
+            </div>
+            <div className="ai-input-modal-body">
+              <textarea
+                autoFocus
+                placeholder={aiUnifiedInputPlaceholder}
+                value={aiUnifiedInputValue}
+                onChange={(event) => updateAiUnifiedInputValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    setIsAIInputExpanded(false)
+                    return
+                  }
+                  if (event.key === 'Enter' && event.ctrlKey) {
+                    event.preventDefault()
+                    void submitAiUnifiedInput()
+                  }
+                }}
+              />
+            </div>
+            <div className="modal-actions">
+              <button type="button" title="关闭放大输入框" onClick={() => setIsAIInputExpanded(false)}>关闭</button>
+              <button
+                className="primary-button"
+                disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
+                type="button"
+                title="发送给统一 AI 助手"
+                onClick={() => void submitAiUnifiedInput()}
+              >
+                发送
+              </button>
+            </div>
           </section>
         </div>
       ) : null}

@@ -3306,7 +3306,8 @@ code {
 .settings-modal,
 .feature-guide-modal,
 .confirm-modal,
-.metric-modal {
+.metric-modal,
+.ai-input-modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
@@ -3323,6 +3324,34 @@ code {
 
 .feature-guide-modal {
   width: min(920px, 100%);
+}
+
+.ai-input-modal {
+  width: min(960px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.ai-input-modal-body {
+  min-height: 0;
+}
+
+.ai-input-modal textarea {
+  width: 100%;
+  min-height: min(60vh, 520px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(8, 12, 18, 0.88);
+  color: #edf2f7;
+  outline: none;
+  padding: 12px 14px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.ai-input-modal textarea:focus {
+  border-color: rgba(79, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }
 
 .feature-guide-content {
