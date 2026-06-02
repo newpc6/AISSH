@@ -867,9 +867,11 @@ export function App() {
     setOpenTopMenu,
   })
   useMenuDismissals({
+    openHostMenuId,
     openTopMenu,
     sessionTabMenu,
     sessionTabMenuRef,
+    setOpenHostMenuId,
     setOpenTopMenu,
     setSessionTabMenu,
   })
@@ -1430,16 +1432,6 @@ export function App() {
 
     void boot()
   }, [])
-
-  useEffect(() => {
-    if (!openHostMenuId) {
-      return
-    }
-
-    const closeMenu = () => setOpenHostMenuId('')
-    window.addEventListener('click', closeMenu)
-    return () => window.removeEventListener('click', closeMenu)
-  }, [openHostMenuId])
 
   useEffect(() => {
     const checkCoreHealth = async () => {
