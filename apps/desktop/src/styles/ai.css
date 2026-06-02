@@ -648,8 +648,8 @@
   inset: 12px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 16px;
-  padding: 24px;
+  gap: 20px;
+  padding: 28px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background:
@@ -657,13 +657,40 @@
     #0d1520;
 }
 
+.terminal-empty-intro {
+  max-width: 720px;
+}
+
 .terminal-empty h2 {
   margin: 4px 0 8px;
   font-size: 22px;
 }
 
-.terminal-empty span {
+.terminal-empty span,
+.terminal-empty p {
   color: #8ca0b8;
+}
+
+.terminal-empty-subtitle {
+  max-width: 560px;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.recent-hosts-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.recent-hosts-header {
+  display: grid;
+  gap: 4px;
+}
+
+.recent-hosts-header strong {
+  font-size: 14px;
+  color: #e8edf4;
 }
 
 .recent-hosts {
@@ -678,18 +705,27 @@
   min-height: 76px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
   color: #e8edf4;
   display: grid;
   gap: 6px;
-  padding: 12px;
+  padding: 14px;
   text-align: left;
   cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    transform 0.16s ease;
 }
 
 .recent-hosts button:hover {
   border-color: rgba(79, 140, 255, 0.42);
   background: rgba(79, 140, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.session-tabs.empty-state {
+  justify-content: flex-end;
 }
 
 .session-pill {

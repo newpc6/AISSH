@@ -11,6 +11,12 @@
   overflow: auto;
 }
 
+.info-panel-idle {
+  background:
+    linear-gradient(180deg, rgba(59, 130, 246, 0.08), transparent 46%),
+    rgba(255, 255, 255, 0.04);
+}
+
 .right-panel-resizer {
   position: relative;
   min-height: 10px;
@@ -137,6 +143,27 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+.info-panel-idle-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.info-panel-idle-note strong {
+  font-size: 13px;
+  color: #dbe5ef;
+}
+
+.info-panel-idle-note span {
+  color: #8ca0b8;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .system-info-row {

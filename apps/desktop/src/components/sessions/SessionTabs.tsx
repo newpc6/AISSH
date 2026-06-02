@@ -46,6 +46,8 @@ export function SessionTabs({
   onCreateSession,
   onSessionTabMenuChange,
 }: SessionTabsProps) {
+  const hasAnyTabs = sessions.length > 0 || filePreviewTabs.length > 0
+
   const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>, onEnter: () => void) => {
     if (event.key === 'Enter') {
       onEnter()
@@ -64,7 +66,7 @@ export function SessionTabs({
   const menuSessionIndex = menuSession ? sessions.findIndex((session) => session.id === menuSession.id) : -1
 
   return (
-    <div ref={sessionTabsRef} className="session-tabs" onWheel={handleWheel}>
+    <div ref={sessionTabsRef} className={`session-tabs ${hasAnyTabs ? '' : 'empty-state'}`} onWheel={handleWheel}>
       {sessions.map((session) => (
         <div
           key={session.id}
@@ -98,7 +100,7 @@ export function SessionTabs({
         <div
           key={tab.id}
           className={`session-tab file-preview-tab ${activeViewId === `file:${tab.id}` ? 'active' : ''}`}
-          title={`${tab.hostName} · ${tab.path}`}
+          title={`${tab.hostName} 路径 ${tab.path}`}
           onClick={() => onActivateFilePreview(tab.id)}
           role="button"
           tabIndex={0}
@@ -126,9 +128,11 @@ export function SessionTabs({
           </button>
         </div>
       ))}
-      <button className="session-new" type="button" title="新建 SSH 会话" onClick={() => void onCreateSession()}>
-        +
-      </button>
+      {hasAnyTabs ? (
+        <button className="session-new" type="button" title="新建 SSH 会话" onClick={() => void onCreateSession()}>
+          +
+        </button>
+      ) : null}
       {sessionTabMenu && menuSession ? (
         <div
           ref={sessionTabMenuRef}

@@ -134,24 +134,31 @@ export function TerminalStage({
         ) : null}
         {!activeSession && !isFilePreviewActive ? (
           <div className="terminal-empty">
-            <div>
+            <div className="terminal-empty-intro">
               <p className="section-label">快速连接</p>
               <h2>选择一个服务器开始 SSH 会话</h2>
+              <p className="terminal-empty-subtitle">双击左侧服务器卡片可以直接连接，或者从最近连接的服务器开始。</p>
             </div>
-            <div className="recent-hosts">
-              {recentHosts.length > 0 ? (
-                recentHosts.map((host) => (
-                  <button key={host.id} type="button" title={`连接 ${host.name}`} onClick={() => void onCreateSession(host.id)}>
-                    <strong>{host.name}</strong>
-                    <span>{host.username}@{host.address}:{host.port}</span>
+            <div className="recent-hosts-panel">
+              <div className="recent-hosts-header">
+                <strong>最近连接</strong>
+                <span>{recentHosts.length > 0 ? '从这里恢复常用服务器连接' : '先添加一个服务器开始使用'}</span>
+              </div>
+              <div className="recent-hosts">
+                {recentHosts.length > 0 ? (
+                  recentHosts.map((host) => (
+                    <button key={host.id} type="button" title={`连接 ${host.name}`} onClick={() => void onCreateSession(host.id)}>
+                      <strong>{host.name}</strong>
+                      <span>{host.username}@{host.address}:{host.port}</span>
+                    </button>
+                  ))
+                ) : (
+                  <button type="button" title="新增 SSH 连接" onClick={onOpenAddHostDialog}>
+                    <strong>新增 SSH 连接</strong>
+                    <span>保存后双击服务器卡片即可连接</span>
                   </button>
-                ))
-              ) : (
-                <button type="button" title="新增 SSH 连接" onClick={onOpenAddHostDialog}>
-                  <strong>新增 SSH 连接</strong>
-                  <span>保存后双击服务器卡片即可连接</span>
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
         ) : null}

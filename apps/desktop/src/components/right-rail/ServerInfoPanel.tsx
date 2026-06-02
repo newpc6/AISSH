@@ -36,18 +36,20 @@ export function ServerInfoPanel({
   systemInfo,
   onToggleCollapsed,
 }: ServerInfoPanelProps) {
+  const isConnected = Boolean(activeSession)
   const displayHostName = activeSession?.hostName ?? activeHost?.name ?? '未连接'
   const displayAddress = activeHost ? `${activeHost.address}:${activeHost.port}` : '-'
   const displayUsername = activeHost?.username ?? '-'
+  const sectionLabel = isConnected ? '当前会话' : '已选服务器'
 
   return (
     <section
-      className={`info-panel ${isCollapsed ? 'collapsed' : ''}`}
+      className={`info-panel ${isCollapsed ? 'collapsed' : ''} ${isConnected ? '' : 'info-panel-idle'}`}
       style={!isCollapsed && height ? { height } : undefined}
     >
       <div className="info-panel-header">
         <div>
-          <p className="section-label">当前服务器</p>
+          <p className="section-label">{sectionLabel}</p>
           <h3>{displayHostName}</h3>
         </div>
         <button
@@ -94,65 +96,72 @@ export function ServerInfoPanel({
                 <strong>{systemInfo.uptime || '-'}</strong>
               </div>
             </div>
+          ) : (
+            <div className="info-panel-idle-note">
+              <strong>已选择服务器</strong>
+              <span>当前还没有活动 SSH 会话，双击左侧服务器卡片即可连接。</span>
+            </div>
+          )}
+          {activeSession ? (
+            <div className="metric-stack">
+              <div className="metric-card">
+                <MetricChart
+                  compact
+                  compactPointLimit={metricCompactPointLimit}
+                  compactWidth={compactMetricWidth}
+                  expandedPointLimit={expandedMetricPointLimit}
+                  keyName="cpuPercent"
+                  label="CPU"
+                  metricHistory={metricHistory}
+                  serverMetrics={serverMetrics}
+                  onExpand={onExpandMetric}
+                />
+              </div>
+              <div className="metric-card">
+                <MetricChart
+                  compact
+                  compactPointLimit={metricCompactPointLimit}
+                  compactWidth={compactMetricWidth}
+                  expandedPointLimit={expandedMetricPointLimit}
+                  keyName="memoryPercent"
+                  label="内存"
+                  metricHistory={metricHistory}
+                  serverMetrics={serverMetrics}
+                  onExpand={onExpandMetric}
+                />
+              </div>
+              <div className="metric-card">
+                <div>
+                  <span>磁盘</span>
+                  <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
+                </div>
+                <div className="disk-list">
+                  {(serverMetrics?.disks?.length ? serverMetrics.disks : []).slice(0, 4).map((disk) => (
+                    <div key={`${disk.filesystem}-${disk.mount}`}>
+                      <span>{disk.mount}</span>
+                      <progress max="100" value={disk.usedPercent} />
+                      <strong>{disk.usedPercent}%</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="metric-card">
+                <div>
+                  <span>网络</span>
+                  <strong>
+                    {latestMetricSample
+                      ? `入 ${formatRate(latestMetricSample.networkRxRateBytes)} / 出 ${formatRate(latestMetricSample.networkTxRateBytes)}`
+                      : '-'}
+                  </strong>
+                </div>
+                <small>
+                  {serverMetrics
+                    ? `累计 入 ${formatBytes(serverMetrics.networkRxBytes)} / 出 ${formatBytes(serverMetrics.networkTxBytes)}`
+                    : '等待采样'}
+                </small>
+              </div>
+            </div>
           ) : null}
-          <div className="metric-stack">
-            <div className="metric-card">
-              <MetricChart
-                compact
-                compactPointLimit={metricCompactPointLimit}
-                compactWidth={compactMetricWidth}
-                expandedPointLimit={expandedMetricPointLimit}
-                keyName="cpuPercent"
-                label="CPU"
-                metricHistory={metricHistory}
-                serverMetrics={serverMetrics}
-                onExpand={onExpandMetric}
-              />
-            </div>
-            <div className="metric-card">
-              <MetricChart
-                compact
-                compactPointLimit={metricCompactPointLimit}
-                compactWidth={compactMetricWidth}
-                expandedPointLimit={expandedMetricPointLimit}
-                keyName="memoryPercent"
-                label="内存"
-                metricHistory={metricHistory}
-                serverMetrics={serverMetrics}
-                onExpand={onExpandMetric}
-              />
-            </div>
-            <div className="metric-card">
-              <div>
-                <span>磁盘</span>
-                <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
-              </div>
-              <div className="disk-list">
-                {(serverMetrics?.disks?.length ? serverMetrics.disks : []).slice(0, 4).map((disk) => (
-                  <div key={`${disk.filesystem}-${disk.mount}`}>
-                    <span>{disk.mount}</span>
-                    <progress max="100" value={disk.usedPercent} />
-                    <strong>{disk.usedPercent}%</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="metric-card">
-              <div>
-                <span>网络</span>
-                <strong>
-                  {latestMetricSample
-                    ? `↓ ${formatRate(latestMetricSample.networkRxRateBytes)} / ↑ ${formatRate(latestMetricSample.networkTxRateBytes)}`
-                    : '-'}
-                </strong>
-              </div>
-              <small>
-                {serverMetrics
-                  ? `累计 ↓ ${formatBytes(serverMetrics.networkRxBytes)} / ↑ ${formatBytes(serverMetrics.networkTxBytes)}`
-                  : '等待采样'}
-              </small>
-            </div>
-          </div>
         </>
       ) : null}
     </section>

@@ -293,7 +293,7 @@ export function App() {
   const [fileError, setFileError] = useState('')
   const [isFileDropActive, setIsFileDropActive] = useState(false)
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
-  const [leftRailWidth, setLeftRailWidth] = useState(280)
+  const [leftRailWidth, setLeftRailWidth] = useState(320)
   const [isLeftRailCollapsed, setIsLeftRailCollapsed] = useState(false)
   const [filePathDraft, setFilePathDraft] = useState('.')
   const [trackTerminalPath, setTrackTerminalPath] = useState(true)
@@ -1645,6 +1645,7 @@ export function App() {
     selectedHostId,
     sessions,
   })
+  const effectiveLeftRailWidth = !activeSession && !isFilePreviewActive ? Math.min(leftRailWidth, 360) : leftRailWidth
   const {
     activePrediction,
     activePredictions,
@@ -5581,10 +5582,10 @@ export function App() {
       <div
         className={`workbench-grid${isLeftRailCollapsed ? ' left-collapsed' : ''}`}
         style={{
-          '--left-rail-width': `${leftRailWidth}px`,
+          '--left-rail-width': `${effectiveLeftRailWidth}px`,
           '--right-server-info-height': `${rightServerInfoPanelHeight}px`,
           '--right-panel-width': `${rightPanelWidth}px`,
-          gridTemplateColumns: isLeftRailCollapsed ? `40px minmax(0, 1fr) ${rightPanelWidth}px` : `${leftRailWidth}px minmax(0, 1fr) ${rightPanelWidth}px`,
+          gridTemplateColumns: isLeftRailCollapsed ? `40px minmax(0, 1fr) ${rightPanelWidth}px` : `${effectiveLeftRailWidth}px minmax(0, 1fr) ${rightPanelWidth}px`,
         } as React.CSSProperties}
       >
         <aside className="left-rail">
