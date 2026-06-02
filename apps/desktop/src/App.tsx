@@ -34,6 +34,7 @@ import { useConfirmDialog } from './hooks/useConfirmDialog'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
 import { useHostGroupDialog } from './hooks/useHostGroupDialog'
+import { useLogDialog } from './hooks/useLogDialog'
 import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import { useVisibleLogs } from './hooks/useVisibleLogs'
@@ -69,7 +70,6 @@ import {
   type HostsImportRequest,
   type LogEntry,
   type LogLevel,
-  type LogsResponse,
   type LogSettings,
   type ServerMetrics,
   type SystemInfo,
@@ -401,7 +401,6 @@ export function App() {
     setIsGroupDialogOpen,
     setOriginalGroupDrafts,
   })
-
   const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
     const entry: LogEntry = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -820,6 +819,22 @@ export function App() {
       throw error
     }
   }
+
+  const {
+    loadLogs,
+    openLogDialog,
+    updateLogSettings: updateLogDialogSettings,
+  } = useLogDialog({
+    apiFetch,
+    logHealthChecks,
+    logLevel,
+    setErrorMessage,
+    setIsLogDialogOpen,
+    setLogHealthChecks,
+    setLogLevel,
+    setLogs,
+    setOpenTopMenu,
+  })
 
   const checkAuthStatus = async () => {
     setAuthState('loading')
@@ -2086,29 +2101,6 @@ export function App() {
     setIsHostDialogOpen(true)
   }
 
-  const loadLogs = async () => {
-    const [logsResponse, settingsResponse] = await Promise.all([
-      apiFetch('/logs?limit=200'),
-      apiFetch('/logs/settings'),
-    ])
-
-    if (logsResponse.ok) {
-      const data = (await logsResponse.json()) as LogsResponse
-      setLogs((current) => [...current, ...data.logs].slice(-300))
-    }
-    if (settingsResponse.ok) {
-      const settings = (await settingsResponse.json()) as LogSettings
-      setLogLevel(settings.level)
-      setLogHealthChecks(Boolean(settings.logHealthChecks))
-    }
-  }
-
-  const openLogDialog = () => {
-    setOpenTopMenu('')
-    setIsLogDialogOpen(true)
-    void loadLogs()
-  }
-
   const openSettingsDialog = () => {
     setOpenTopMenu('')
     setSettingsSavedMessage('')
@@ -2694,23 +2686,7 @@ export function App() {
   }
 
   const updateLogSettings = async (nextSettings: Partial<LogSettings>) => {
-    const payload: LogSettings = {
-      level: nextSettings.level ?? logLevel,
-      logHealthChecks: nextSettings.logHealthChecks ?? logHealthChecks,
-    }
-    setLogLevel(payload.level)
-    setLogHealthChecks(payload.logHealthChecks)
-    const response = await apiFetch('/logs/settings', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
-    if (!response.ok) {
-      setErrorMessage(`设置日志参数失败：${response.status}`)
-    }
-    await loadLogs()
+    return updateLogDialogSettings(nextSettings)
   }
 
   const loadFiles = async (path = filePath, hostId = activeSession?.hostId ?? selectedHostId) => {
