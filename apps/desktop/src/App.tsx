@@ -6,7 +6,6 @@ import { FitAddon } from '@xterm/addon-fit'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile, readTextFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
-import { openSearchPanel } from '@codemirror/search'
 import '@xterm/xterm/css/xterm.css'
 import { FeatureGuide } from './FeatureGuide'
 import { AIWorkspacePanel } from './components/ai/AIWorkspacePanel'
@@ -42,6 +41,7 @@ import { useMenuDismissals } from './hooks/useMenuDismissals'
 import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import { useVisibleLogs } from './hooks/useVisibleLogs'
+import { useWorkspaceInteractions } from './hooks/useWorkspaceInteractions'
 import { useWorkspaceViewState } from './hooks/useWorkspaceViewState'
 import {
   type AIPredictionRequest,
@@ -1610,12 +1610,6 @@ export function App() {
     trackTerminalPathRef.current = trackTerminalPath
   }, [trackTerminalPath])
 
-  useEffect(() => {
-    const container = sessionTabsRef.current
-    const activeTab = container?.querySelector<HTMLElement>('.session-tab.active')
-    activeTab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeViewId, sessions.length, filePreviewTabs.length])
-
   const {
     batchSelectedHostIds,
     batchSelectedHostIdsRef,
@@ -1663,22 +1657,14 @@ export function App() {
     commandBuffer: commandBufferRef.current,
     expandedPredictionThinkingSessionId,
   })
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') {
-        return
-      }
-      if (activeFilePreview?.kind !== 'text' || activeFilePreview.status !== 'ready') {
-        return
-      }
-      event.preventDefault()
-      codeMirrorRef.current?.runCommand(openSearchPanel)
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeFilePreview?.id, activeFilePreview?.kind, activeFilePreview?.status])
+  useWorkspaceInteractions({
+    activeFilePreview,
+    activeViewId,
+    codeMirrorRef,
+    filePreviewTabCount: filePreviewTabs.length,
+    sessionCount: sessions.length,
+    sessionTabsRef,
+  })
 
   const toggleBatchMode = () => {
     setBatchMode((current) => !current)
