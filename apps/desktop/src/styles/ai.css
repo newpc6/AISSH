@@ -118,6 +118,25 @@
   resize: vertical;
 }
 
+.agent-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.agent-actions-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-actions-group-primary {
+  justify-content: flex-end;
+}
+
 .ai-unified-input textarea:focus {
   border-color: rgba(79, 140, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
@@ -681,6 +700,7 @@
   display: grid;
   gap: 14px;
   align-content: start;
+  min-height: 0;
 }
 
 .recent-hosts-header {
@@ -698,7 +718,10 @@
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 10px;
   align-content: start;
+  min-height: 176px;
+  max-height: min(360px, 48vh);
   overflow: auto;
+  padding-right: 4px;
 }
 
 .recent-hosts button {

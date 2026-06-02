@@ -232,47 +232,51 @@ export function AIWorkspacePanel({
           </div>
         ) : (
           <div className="agent-actions">
-            <button className="ai-icon-button" type="button" title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'} onClick={onToggleAIHistory}>
-              {isAIHistoryOpen ? '◀' : '☰'}
-            </button>
-            <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={onCreateConversation}>
-              +
-            </button>
-            <button className="ai-icon-button" type="button" title="放大 AI 输入框" onClick={() => onSetIsAIInputExpanded(true)}>
-              ⛶
-            </button>
-            <button
-              className="ai-icon-button ai-send-button"
-              disabled={aiAssistantState === 'loading' || !settingsAiEnabled}
-              type="button"
-              title="发送给统一 AI 助手"
-              onClick={onSubmitAiUnifiedInput}
-            >
-              {aiAssistantState === 'loading' ? '…' : '▶'}
-            </button>
-            <button className="ai-icon-button" type="button" title="清空当前 AI 输入框" onClick={onClearAiInput}>
-              ×
-            </button>
-            <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={onContinueAgentTask}>
-              ↻
-            </button>
-            <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={onStopAgentTask}>
-              ■
-            </button>
-            {batchMode && batchSelectedHosts.length > 0 && !batchActive ? (
-              <button
-                className="ai-icon-button batch-run-button"
-                type="button"
-                title={`批量执行 · 已选 ${batchSelectedHosts.length} 台`}
-                disabled={!batchTask.trim()}
-                onClick={onStartBatchExecution}
-              >
-                ▶
+            <div className="agent-actions-group">
+              <button className="ai-icon-button" type="button" title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'} onClick={onToggleAIHistory}>
+                {isAIHistoryOpen ? '◀' : '☰'}
               </button>
-            ) : null}
-            <button className="ai-icon-button" type="button" title="收起 AI 输入区域" onClick={() => onSetIsAIInputCollapsed(true)}>
-              ▾
-            </button>
+              <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={onCreateConversation}>
+                +
+              </button>
+              <button className="ai-icon-button" type="button" title="放大 AI 输入框" onClick={() => onSetIsAIInputExpanded(true)}>
+                ⛶
+              </button>
+              <button className="ai-icon-button" type="button" title="清空当前 AI 输入框" onClick={onClearAiInput}>
+                ×
+              </button>
+            </div>
+            <div className="agent-actions-group agent-actions-group-primary">
+              <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={onContinueAgentTask}>
+                ↻
+              </button>
+              <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={onStopAgentTask}>
+                ■
+              </button>
+              {batchMode && batchSelectedHosts.length > 0 && !batchActive ? (
+                <button
+                  className="ai-icon-button batch-run-button"
+                  type="button"
+                  title={`批量执行 · 已选 ${batchSelectedHosts.length} 台`}
+                  disabled={!batchTask.trim()}
+                  onClick={onStartBatchExecution}
+                >
+                  ▶
+                </button>
+              ) : null}
+              <button
+                className="ai-icon-button ai-send-button primary-button"
+                disabled={aiAssistantState === 'loading' || !settingsAiEnabled}
+                type="button"
+                title="发送给统一 AI 助手"
+                onClick={onSubmitAiUnifiedInput}
+              >
+                {aiAssistantState === 'loading' ? '…' : '▶'}
+              </button>
+              <button className="ai-icon-button" type="button" title="收起 AI 输入区域" onClick={() => onSetIsAIInputCollapsed(true)}>
+                ▾
+              </button>
+            </div>
           </div>
         )}
       </div>
