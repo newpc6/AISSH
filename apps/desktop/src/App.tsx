@@ -22,6 +22,7 @@ import {
 import { indentOnInput, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import '@xterm/xterm/css/xterm.css'
+import { FeatureGuide } from './FeatureGuide'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -322,6 +323,7 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [isServerInfoCollapsed, setIsServerInfoCollapsed] = useState(false)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const [isFeatureGuideOpen, setIsFeatureGuideOpen] = useState(false)
   const [isHostDialogOpen, setIsHostDialogOpen] = useState(false)
   const [hostDialogMode, setHostDialogMode] = useState<HostDialogMode>('create')
   const [editingHostId, setEditingHostId] = useState('')
@@ -6217,7 +6219,12 @@ export function App() {
                     </>
                   ) : null}
                   {key === 'tools' ? <button type="button" title="查看运行日志" onClick={openLogDialog}>日志</button> : null}
-                  {key === 'settings' ? <button type="button" title="打开偏好设置" onClick={openSettingsDialog}>偏好设置</button> : null}
+                  {key === 'settings' ? (
+                    <>
+                      <button type="button" title="打开功能说明" onClick={() => { setOpenTopMenu(''); setIsFeatureGuideOpen(true) }}>功能说明</button>
+                      <button type="button" title="打开偏好设置" onClick={openSettingsDialog}>偏好设置</button>
+                    </>
+                  ) : null}
                   {key === 'edit' ? <button type="button" title="复制选中内容" disabled>复制</button> : null}
                 </div>
               ) : null}
@@ -7844,6 +7851,8 @@ export function App() {
           </section>
         </div>
       ) : null}
+
+      {isFeatureGuideOpen ? <FeatureGuide onClose={() => setIsFeatureGuideOpen(false)} /> : null}
 
       {isSettingsDialogOpen ? (
         <div className="modal-backdrop">

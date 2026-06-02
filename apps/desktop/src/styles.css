@@ -2844,6 +2844,7 @@ button {
 .group-modal,
 .log-modal,
 .settings-modal,
+.feature-guide-modal,
 .confirm-modal,
 .metric-modal {
   display: grid;
@@ -3303,6 +3304,7 @@ code {
 .group-modal,
 .log-modal,
 .settings-modal,
+.feature-guide-modal,
 .confirm-modal,
 .metric-modal {
   width: min(560px, 100%);
@@ -3317,6 +3319,72 @@ code {
 
 .settings-modal {
   width: min(760px, 100%);
+}
+
+.feature-guide-modal {
+  width: min(920px, 100%);
+}
+
+.feature-guide-content {
+  min-height: 0;
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.feature-guide-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.feature-guide-section h4 {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 15px;
+}
+
+.feature-guide-section p {
+  margin: 4px 0 0;
+  color: #8ca0b8;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.feature-guide-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.feature-guide-item {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.feature-guide-item strong {
+  color: #bfdbfe;
+  font-size: 13px;
+}
+
+.feature-guide-item p,
+.feature-guide-item small {
+  margin: 0;
+  color: #a8b6ca;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.feature-guide-item small {
+  color: #7f93ad;
 }
 
 .settings-layout {
