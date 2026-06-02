@@ -753,6 +753,14 @@
     transform 0.16s ease;
 }
 
+.recent-hosts button strong,
+.recent-hosts button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .recent-hosts button:hover {
   border-color: rgba(79, 140, 255, 0.42);
   background: rgba(79, 140, 255, 0.12);

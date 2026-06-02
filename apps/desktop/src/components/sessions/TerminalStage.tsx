@@ -148,7 +148,7 @@ export function TerminalStage({
                 {recentHosts.length > 0 ? (
                   recentHosts.map((host) => (
                     <button key={host.id} type="button" title={`连接 ${host.name}`} onClick={() => void onCreateSession(host.id)}>
-                      <strong>{host.name}</strong>
+                      <strong title={host.name}>{host.name}</strong>
                       <span>{host.username}@{host.address}:{host.port}</span>
                     </button>
                   ))
