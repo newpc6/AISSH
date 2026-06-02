@@ -5523,12 +5523,19 @@ export function App() {
     const response = message.response
     const commands = normalizeAssistCommands(response?.commands)
     const collapsed = isAIMessageCollapsed(message.id)
+    const shouldShowRawContent =
+      !response ||
+      (response.agentStatus !== 'command' &&
+        !response.summary &&
+        !response.answer &&
+        !response.warnings?.length &&
+        commands.length === 0)
     return (
       <article className={`ai-response-card ai-message-card ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
         {renderAIMessageHeader(message.id, label, message.createdAt)}
         {!collapsed ? (
           <>
-            {message.content ? renderMarkdown(message.content) : null}
+            {shouldShowRawContent && message.content ? renderMarkdown(message.content) : null}
             {response?.agentStatus === 'command' && response.riskLevel ? (
               <span className={`risk-badge risk-${response.riskLevel}`}>{riskLabel(response.riskLevel)}</span>
             ) : null}
