@@ -37,6 +37,7 @@ import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
 import { useHostGroupDialog } from './hooks/useHostGroupDialog'
 import { useHostDialogState } from './hooks/useHostDialogState'
 import { useLogDialog } from './hooks/useLogDialog'
+import { useMenuDismissals } from './hooks/useMenuDismissals'
 import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import { useVisibleLogs } from './hooks/useVisibleLogs'
@@ -864,6 +865,13 @@ export function App() {
     setLogs,
     setOpenTopMenu,
   })
+  useMenuDismissals({
+    openTopMenu,
+    sessionTabMenu,
+    sessionTabMenuRef,
+    setOpenTopMenu,
+    setSessionTabMenu,
+  })
 
   const checkAuthStatus = async () => {
     setAuthState('loading')
@@ -1433,21 +1441,6 @@ export function App() {
   }, [openHostMenuId])
 
   useEffect(() => {
-    if (!sessionTabMenu) {
-      return
-    }
-
-    const closeMenu = (event: MouseEvent) => {
-      if (sessionTabMenuRef.current?.contains(event.target as Node)) {
-        return
-      }
-      setSessionTabMenu(null)
-    }
-    window.addEventListener('click', closeMenu)
-    return () => window.removeEventListener('click', closeMenu)
-  }, [sessionTabMenu])
-
-  useEffect(() => {
     const checkCoreHealth = async () => {
       let failedStatus: number | undefined
       try {
@@ -1491,16 +1484,6 @@ export function App() {
     }, normalizeAppSettings(settings).healthCheckIntervalSeconds * 1000)
     return () => window.clearInterval(interval)
   }, [settings.healthCheckIntervalSeconds])
-
-  useEffect(() => {
-    if (!openTopMenu) {
-      return
-    }
-
-    const closeMenu = () => setOpenTopMenu('')
-    window.addEventListener('click', closeMenu)
-    return () => window.removeEventListener('click', closeMenu)
-  }, [openTopMenu])
 
   useEffect(() => {
     filePathRef.current = filePath
