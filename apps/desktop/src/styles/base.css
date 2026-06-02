@@ -411,6 +411,28 @@ button {
 
 .tool-tabs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 10px 10px 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+}
+
+.tool-tabs button {
+  position: relative;
+}
+
+.tool-tabs .active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.tool-tabs .active::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -9px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.9);
 }
 
 .left-content {
@@ -436,6 +458,25 @@ button {
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolbar-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.toolbar-action-group {
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .server-search {

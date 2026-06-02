@@ -113,6 +113,11 @@
   grid-row: 2;
 }
 
+.tool-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
 .info-panel dl {
   margin: 0;
   display: grid;

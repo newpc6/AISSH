@@ -57,27 +57,31 @@ export function ServersPanel({
     <div className="left-content">
       <div className="panel-toolbar">
         <strong>服务器</strong>
-        <div>
+        <div className="toolbar-actions">
           <button type="button" title="折叠左侧面板" onClick={onCollapse}>
             ◁
           </button>
-          <button
-            type="button"
-            className={batchMode ? 'batch-mode-active' : ''}
-            title="批量任务模式"
-            onClick={onToggleBatchMode}
-          >
-            批量
-          </button>
-          <button type="button" title="新增 SSH 连接" onClick={onOpenAddHostDialog}>
-            +
-          </button>
-          <button type="button" title="管理 SSH 分组" onClick={onOpenGroupDialog}>
-            分组
-          </button>
-          <button type="button" title="导出服务器列表" onClick={() => void onExportHosts(false)}>
-            ⇅
-          </button>
+          <div className="toolbar-segment toolbar-mode-group">
+            <button
+              type="button"
+              className={batchMode ? 'batch-mode-active' : ''}
+              title="批量任务模式"
+              onClick={onToggleBatchMode}
+            >
+              批量
+            </button>
+          </div>
+          <div className="toolbar-segment toolbar-action-group">
+            <button type="button" title="新增 SSH 连接" onClick={onOpenAddHostDialog}>
+              +
+            </button>
+            <button type="button" title="管理 SSH 分组" onClick={onOpenGroupDialog}>
+              分组
+            </button>
+            <button type="button" title="导出服务器列表" onClick={() => void onExportHosts(false)}>
+              ⇅
+            </button>
+          </div>
         </div>
       </div>
       <label className="server-search">
