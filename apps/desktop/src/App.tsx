@@ -30,6 +30,7 @@ import { ServersPanel } from './components/servers/ServersPanel'
 import { TerminalStage } from './components/sessions/TerminalStage'
 import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
+import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import {
   type AIPredictionRequest,
@@ -85,8 +86,6 @@ import {
   type BatchHostResult,
   type ConfirmDialogState,
   type FilePreviewTab,
-  type FileSortKey,
-  type FileSortState,
   type HostDialogMode,
   type LeftMode,
   type LoadState,
@@ -131,7 +130,6 @@ import {
   clampRightPanelWidth,
   clampRightServerInfoPanelHeight,
   classifyCommandRisk,
-  compareFileEntries,
   detectPreviewKind,
   displayApiPath,
   downloadBlobInBrowser,
@@ -151,7 +149,6 @@ import {
   normalizeAppSettings,
   normalizeAssistCommands,
   normalizeFavoriteCommands,
-  normalizeFileSearchText,
   normalizePredictedCommands,
   normalizeHostGroups,
   normalizeRequestPath,
@@ -288,9 +285,6 @@ export function App() {
   const [settingsSavedMessage, setSettingsSavedMessage] = useState('')
   const [filePath, setFilePath] = useState('.')
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([])
-  const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([])
-  const [focusedFilePath, setFocusedFilePath] = useState('')
-  const [fileSort, setFileSort] = useState<FileSortState>({ key: 'name', direction: 'asc' })
   const [fileError, setFileError] = useState('')
   const [isFileDropActive, setIsFileDropActive] = useState(false)
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
@@ -354,9 +348,6 @@ export function App() {
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
-  const lastSelectedFilePathRef = useRef('')
-  const fileTypeaheadRef = useRef('')
-  const fileTypeaheadTimerRef = useRef<number | undefined>(undefined)
   const sessionTabsRef = useRef<HTMLDivElement | null>(null)
   const sessionTabMenuRef = useRef<HTMLDivElement | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
@@ -1349,12 +1340,6 @@ export function App() {
       .catch(() => undefined)
   }, [])
 
-  useEffect(() => () => {
-    if (fileTypeaheadTimerRef.current) {
-      window.clearTimeout(fileTypeaheadTimerRef.current)
-    }
-  }, [])
-
   useEffect(() => {
     if (authRequired || !terminalRef.current || xtermRef.current) {
       return undefined
@@ -1693,6 +1678,19 @@ export function App() {
     toggleBatchHostSelection,
   } = useBatchSelection(hosts)
   const { visibleHostCount, visibleHostGroups } = useVisibleHostGroups(hostGroups, hosts, serverSearch)
+  const {
+    clearFileSelection,
+    fileSort,
+    focusedFilePath,
+    handleFileBrowserCompositionEnd,
+    handleFileBrowserKeyDown,
+    selectFileEntry,
+    selectedFileEntries,
+    selectedFilePaths,
+    setFocusedFilePath,
+    sortedFileEntries,
+    updateFileSort,
+  } = useFileBrowserSelection({ fileBrowserRef, fileEntries })
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
   const activeFilePreview = filePreviewTabs.find((tab) => `file:${tab.id}` === activeViewId) ?? null
   const isFilePreviewActive = Boolean(activeFilePreview)
@@ -1759,14 +1757,6 @@ export function App() {
     }
     return runUnifiedAI()
   }
-  const sortedFileEntries = useMemo(
-    () => [...fileEntries].sort((a, b) => compareFileEntries(a, b, fileSort)),
-    [fileEntries, fileSort],
-  )
-  const selectedFileEntries = useMemo(() => {
-    const selected = new Set(selectedFilePaths)
-    return sortedFileEntries.filter((entry) => entry.type === 'file' && selected.has(entry.path))
-  }, [selectedFilePaths, sortedFileEntries])
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const groupDraftUsedCounts = groupDrafts.map((group, index) => {
     const groupName = group.trim()
@@ -2832,9 +2822,8 @@ export function App() {
   const loadFiles = async (path = filePath, hostId = activeSession?.hostId ?? selectedHostId) => {
     if (!hostId || hostId === 'local-demo') {
       setFileEntries([])
-      setSelectedFilePaths([])
+      clearFileSelection()
       setFocusedFilePath('')
-      lastSelectedFilePathRef.current = ''
       setFileError('请选择一个真实 SSH 会话后查看文件')
       return
     }
@@ -2850,9 +2839,8 @@ export function App() {
       const data = (await response.json()) as FileListResponse
       setTrackedFilePath(data.path)
       setFileEntries(data.entries)
-      setSelectedFilePaths([])
+      clearFileSelection()
       setFocusedFilePath('')
-      lastSelectedFilePathRef.current = ''
     } catch (error) {
       const message = error instanceof Error ? error.message : '文件列表加载失败'
       setFileError(message)
@@ -2993,132 +2981,6 @@ export function App() {
     for (const entry of selectedFileEntries) {
       await downloadFile(entry)
     }
-  }
-
-  const updateFileSort = (key: FileSortKey) => {
-    setFileSort((current) => (
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: 'asc' }
-    ))
-  }
-
-  const focusFileEntryRow = (index: number) => {
-    window.requestAnimationFrame(() => {
-      const row = fileBrowserRef.current?.querySelector<HTMLButtonElement>(`[data-file-index="${index}"]`)
-      row?.scrollIntoView({ block: 'nearest' })
-      row?.focus({ preventScroll: true })
-    })
-  }
-
-  const locateFileEntryByText = (text: string) => {
-    const keyword = normalizeFileSearchText(text)
-    if (!keyword || sortedFileEntries.length === 0) {
-      return
-    }
-    const currentIndex = sortedFileEntries.findIndex((entry) => entry.path === focusedFilePath)
-    const startIndex = currentIndex >= 0 ? currentIndex + 1 : 0
-    const orderedEntries = [
-      ...sortedFileEntries.slice(startIndex),
-      ...sortedFileEntries.slice(0, startIndex),
-    ]
-    const match = (
-      orderedEntries.find((entry) => normalizeFileSearchText(entry.name).startsWith(keyword))
-      ?? orderedEntries.find((entry) => normalizeFileSearchText(entry.name).includes(keyword))
-    )
-    if (!match) {
-      return
-    }
-
-    const matchIndex = sortedFileEntries.findIndex((entry) => entry.path === match.path)
-    setFocusedFilePath(match.path)
-    if (match.type === 'file') {
-      setSelectedFilePaths([match.path])
-      lastSelectedFilePathRef.current = match.path
-    } else {
-      setSelectedFilePaths([])
-      lastSelectedFilePathRef.current = ''
-    }
-    if (matchIndex >= 0) {
-      focusFileEntryRow(matchIndex)
-    }
-  }
-
-  const queueFileTypeaheadReset = () => {
-    if (fileTypeaheadTimerRef.current) {
-      window.clearTimeout(fileTypeaheadTimerRef.current)
-    }
-    fileTypeaheadTimerRef.current = window.setTimeout(() => {
-      fileTypeaheadRef.current = ''
-    }, 900)
-  }
-
-  const applyFileTypeahead = (text: string) => {
-    fileTypeaheadRef.current = `${fileTypeaheadRef.current}${text}`
-    locateFileEntryByText(fileTypeaheadRef.current)
-    queueFileTypeaheadReset()
-  }
-
-  const handleFileBrowserKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement | null
-    const isEditableTarget = Boolean(
-      target?.closest('input, textarea, select') || target?.isContentEditable,
-    )
-    if (
-      isEditableTarget
-      || event.defaultPrevented
-      || event.ctrlKey
-      || event.metaKey
-      || event.altKey
-      || event.nativeEvent.isComposing
-      || event.key.length !== 1
-    ) {
-      return
-    }
-    event.preventDefault()
-    applyFileTypeahead(event.key)
-  }
-
-  const handleFileBrowserCompositionEnd = (event: React.CompositionEvent<HTMLDivElement>) => {
-    if (event.data) {
-      applyFileTypeahead(event.data)
-    }
-  }
-
-  const selectFileEntry = (entry: FileEntry, event: React.MouseEvent<HTMLButtonElement>) => {
-    if (entry.type !== 'file') {
-      return
-    }
-    setFocusedFilePath(entry.path)
-    const filePaths = sortedFileEntries.filter((item) => item.type === 'file').map((item) => item.path)
-    const currentIndex = filePaths.indexOf(entry.path)
-    if (currentIndex < 0) {
-      return
-    }
-
-    if (event.shiftKey && lastSelectedFilePathRef.current) {
-      const anchorIndex = filePaths.indexOf(lastSelectedFilePathRef.current)
-      if (anchorIndex >= 0) {
-        const start = Math.min(anchorIndex, currentIndex)
-        const end = Math.max(anchorIndex, currentIndex)
-        const range = filePaths.slice(start, end + 1)
-        setSelectedFilePaths((current) => (
-          event.ctrlKey || event.metaKey ? Array.from(new Set([...current, ...range])) : range
-        ))
-        return
-      }
-    }
-
-    lastSelectedFilePathRef.current = entry.path
-    if (event.ctrlKey || event.metaKey) {
-      setSelectedFilePaths((current) => (
-        current.includes(entry.path)
-          ? current.filter((path) => path !== entry.path)
-          : [...current, entry.path]
-      ))
-      return
-    }
-    setSelectedFilePaths([entry.path])
   }
 
   const openFilePreview = async (entry: FileEntry, confirmed = false) => {
@@ -6024,10 +5886,7 @@ export function App() {
               onHandleRemoteFileDragEnd={handleRemoteFileDragEnd}
               onLoadFiles={loadFiles}
               onOpenFilePreview={(entry) => openFilePreview(entry)}
-              onResetSelection={() => {
-                setSelectedFilePaths([])
-                lastSelectedFilePathRef.current = ''
-              }}
+              onResetSelection={clearFileSelection}
               onSelectEntry={selectFileEntry}
               onSetIsFileDropActive={setIsFileDropActive}
               onSetTrackTerminalPath={setTrackTerminalPath}
