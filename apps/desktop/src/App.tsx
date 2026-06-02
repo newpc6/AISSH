@@ -31,6 +31,7 @@ import { TerminalStage } from './components/sessions/TerminalStage'
 import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
+import { useAIUnifiedInput } from './hooks/useAIUnifiedInput'
 import { useDesktopOverlays } from './hooks/useDesktopOverlays'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
@@ -1707,24 +1708,6 @@ export function App() {
     aiPredictionCursorRef.current[activeSession.id] = index
     aiPredictionCycleStartedRef.current[activeSession.id] = true
     setActivePredictionIndex(index)
-  }
-  const isBatchTaskInput = batchMode && batchSelectedHostIds.length > 0 && !batchActive
-  const aiUnifiedInputPlaceholder = isBatchTaskInput
-    ? '批量任务：输入自然语言任务描述（如"更新 apt、检查磁盘空间"），点击右侧 ▶ 按钮启动'
-    : '直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作'
-  const aiUnifiedInputValue = isBatchTaskInput ? batchTask : aiUnifiedPrompt
-  const updateAiUnifiedInputValue = (value: string) => {
-    if (isBatchTaskInput) {
-      setBatchTask(value)
-      return
-    }
-    setAiUnifiedPrompt(value)
-  }
-  const submitAiUnifiedInput = () => {
-    if (isBatchTaskInput) {
-      return startBatchExecution()
-    }
-    return runUnifiedAI()
   }
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
@@ -4154,6 +4137,22 @@ export function App() {
       })
     }
   }
+  const {
+    aiUnifiedInputPlaceholder,
+    aiUnifiedInputValue,
+    submitAiUnifiedInput,
+    updateAiUnifiedInputValue,
+  } = useAIUnifiedInput({
+    aiUnifiedPrompt,
+    batchActive,
+    batchMode,
+    batchSelectedHostCount: batchSelectedHostIds.length,
+    batchTask,
+    onRunUnifiedAI: runUnifiedAI,
+    onSetAiUnifiedPrompt: setAiUnifiedPrompt,
+    onSetBatchTask: setBatchTask,
+    onStartBatchExecution: startBatchExecution,
+  })
 
   const requestAgentNextStep = async (steps = agentStepsRef.current, sessionId = activeSessionIdRef.current) => {
     const goal = resolveAgentGoal()
