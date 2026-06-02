@@ -1329,6 +1329,11 @@ button {
   background: #0d1520;
 }
 
+.terminal-surface-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .terminal-wrap {
   position: relative;
   min-height: 0;

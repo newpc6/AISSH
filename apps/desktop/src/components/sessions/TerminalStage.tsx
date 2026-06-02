@@ -74,6 +74,8 @@ export function TerminalStage({
   onStartPredictionPanelResize,
   onToggleFavoriteCommand,
 }: TerminalStageProps) {
+  const showTerminalSurface = Boolean(activeSession) && !isFilePreviewActive
+
   return (
     <section className={`terminal-stage ${isFilePreviewActive ? 'show-file-preview' : ''}`}>
       {!isFilePreviewActive && activeSession ? (
@@ -102,7 +104,7 @@ export function TerminalStage({
         </div>
       ) : null}
       <div className={`terminal-wrap ${isFilePreviewActive ? 'terminal-hidden' : ''}`}>
-        <div ref={terminalRef} className="terminal-surface" />
+        <div ref={terminalRef} className={`terminal-surface ${showTerminalSurface ? '' : 'terminal-surface-hidden'}`} />
         {activeSession && primaryPrediction && predictionGhostPosition ? (
           <button
             className="terminal-ghost-prediction"
