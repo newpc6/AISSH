@@ -174,6 +174,7 @@ import {
   stripAgentMarker,
   stripTerminalControlSequences,
   terminalContextTail,
+  truncateErrorDetail,
   updateTerminalDraft,
   wrapAgentCommand,
 } from './utils'
@@ -3759,6 +3760,17 @@ export function App() {
     }, delayMs)
   }
 
+  const formatAIPredictionRawPreview = (content: string, thinking: string) => {
+    const parts: string[] = []
+    if (content.trim()) {
+      parts.push(`content:\n${content.trim()}`)
+    }
+    if (thinking.trim()) {
+      parts.push(`thinking:\n${thinking.trim()}`)
+    }
+    return truncateErrorDetail(parts.join('\n\n'))
+  }
+
   useEffect(
     () => () => {
       Object.values(pendingAIPredictionTimerRef.current).forEach((timer) => window.clearTimeout(timer))
@@ -3835,6 +3847,8 @@ export function App() {
 
     let failedStatus: number | undefined
     let failedDetail = '这是调用 Go core 的 /api/ai/predict 接口失败。通常表示 Go core 调用大模型 provider 失败、provider 返回内容无法解析，或模型没有返回有效 commands。可在“工具 -> 日志”里查看 source=ai 的详细响应片段。'
+    let rawPredictionContent = ''
+    let rawPredictionThinking = ''
     try {
       const response = await apiFetch(AI_PREDICT_STREAM_API_PATH, {
         method: 'POST',
@@ -3855,12 +3869,14 @@ export function App() {
           return
         }
         if (event.type === 'thinking' && event.text && normalized.aiPredictionThinkingEnabled) {
+          rawPredictionThinking += event.text
           updateAIPredictionForSession(sessionId, (current) => ({
             ...current,
             thinking: `${current.thinking}${event.text}`,
           }))
         }
         if (event.type === 'content' && event.text) {
+          rawPredictionContent += event.text
           updateAIPredictionForSession(sessionId, (current) => ({
             ...current,
             streamingContent: `${current.streamingContent}${event.text}`,
@@ -3877,7 +3893,10 @@ export function App() {
         return
       }
       if (commands.length === 0) {
-        failedDetail = failedDetail || 'Go core 流式预测结束后没有返回可执行命令。'
+        const rawPreview = formatAIPredictionRawPreview(rawPredictionContent, rawPredictionThinking)
+        failedDetail = rawPreview
+          ? `${failedDetail}\n\n模型返回片段：\n${rawPreview}`
+          : (failedDetail || 'Go core 流式预测结束后没有返回可执行命令。')
         throw new Error('AI 返回的预测命令无效，已过滤结构化残片')
       }
       if (hasNewerPredictionCommand()) {
@@ -3911,7 +3930,8 @@ export function App() {
         index: 0,
         state: 'error',
         error: error instanceof Error ? error.message : 'AI 预测失败',
-        streamingContent: '',
+        streamingContent: rawPredictionContent,
+        thinking: rawPredictionThinking || getAIPredictionForSession(sessionId).thinking,
       })
       delete pendingAIPredictionCommandRef.current[sessionId]
       appendLog('warn', 'ui.ai', 'prediction failed', {
@@ -3921,6 +3941,8 @@ export function App() {
         predictionCount: normalized.aiPredictionCount,
         terminalContextChars: payload.terminalContext.length,
         commandHistoryCount: payload.commandHistory.length,
+        contentSnippet: rawPredictionContent.slice(0, 1200),
+        thinkingSnippet: rawPredictionThinking.slice(0, 1200),
       })
       if (pendingAIPredictionCommandRef.current[sessionId] === requestCommand) {
         delete pendingAIPredictionCommandRef.current[sessionId]
