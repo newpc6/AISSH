@@ -29,6 +29,8 @@ import { SideErrorNotice } from './components/right-rail/SideErrorNotice'
 import { ServersPanel } from './components/servers/ServersPanel'
 import { TerminalStage } from './components/sessions/TerminalStage'
 import { SessionTabs } from './components/sessions/SessionTabs'
+import { useBatchSelection } from './hooks/useBatchSelection'
+import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -86,7 +88,6 @@ import {
   type FileSortKey,
   type FileSortState,
   type HostDialogMode,
-  type HostGroupView,
   type LeftMode,
   type LoadState,
   type LocalDownloadFile,
@@ -151,8 +152,8 @@ import {
   normalizeAssistCommands,
   normalizeFavoriteCommands,
   normalizeFileSearchText,
-  normalizeHostGroups,
   normalizePredictedCommands,
+  normalizeHostGroups,
   normalizeRequestPath,
   newOllamaModelConfig,
   newOpenAICompatibleModelConfig,
@@ -219,7 +220,6 @@ export function App() {
   const [groupDialogError, setGroupDialogError] = useState('')
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [selectedHostId, setSelectedHostId] = useState<string>('')
-  const [batchSelectedHostIds, setBatchSelectedHostIds] = useState<string[]>([])
   const [batchMode, setBatchMode] = useState(false)
   const [batchActive, setBatchActive] = useState(false)
   const [batchTask, setBatchTask] = useState('')
@@ -346,7 +346,6 @@ export function App() {
   const agentWaiterRef = useRef<AgentCommandWaiter | null>(null)
   const terminalLineBufferRef = useRef<Record<string, string>>({})
   const batchAbortRef = useRef(false)
-  const batchSelectedHostIdsRef = useRef<string[]>([])
   const batchHostResultsRef = useRef<BatchHostResult[]>([])
   const batchConversationIdRef = useRef('')
   const batchCardsRef = useRef<HTMLDivElement | null>(null)
@@ -1126,14 +1125,6 @@ export function App() {
 
   const isFavoriteCommand = (command: string) => favoriteCommands.includes(stripTerminalControlSequences(command).trim())
 
-  const removeBatchSelectedHost = (hostId: string) => {
-    setBatchSelectedHostIds((current) => {
-      const next = current.filter((id) => id !== hostId)
-      batchSelectedHostIdsRef.current = next
-      return next
-    })
-  }
-
   const saveAppConfig = async (overrides?: Partial<{
     settings?: Partial<AppSettings>
     leftRailWidth?: number
@@ -1693,6 +1684,15 @@ export function App() {
     () => hosts.find((host) => host.id === selectedHostId) ?? null,
     [hosts, selectedHostId],
   )
+  const {
+    batchSelectedHostIds,
+    batchSelectedHostIdsRef,
+    batchSelectedHosts,
+    clearBatchSelection,
+    removeBatchSelectedHost,
+    toggleBatchHostSelection,
+  } = useBatchSelection(hosts)
+  const { visibleHostCount, visibleHostGroups } = useVisibleHostGroups(hostGroups, hosts, serverSearch)
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null
   const activeFilePreview = filePreviewTabs.find((tab) => `file:${tab.id}` === activeViewId) ?? null
   const isFilePreviewActive = Boolean(activeFilePreview)
@@ -1717,26 +1717,12 @@ export function App() {
     () => hosts.find((host) => host.id === activeSession?.hostId) ?? currentHost,
     [hosts, activeSession, currentHost],
   )
-  const batchSelectedHosts = batchSelectedHostIds.map((hostId) => {
-    const host = hostsRef.current.find((item) => item.id === hostId)
-    return { id: hostId, name: host?.name || hostId }
-  })
   const toggleBatchMode = () => {
     setBatchMode((current) => !current)
     if (batchMode) {
-      setBatchSelectedHostIds([])
-      batchSelectedHostIdsRef.current = []
+      clearBatchSelection()
       setBatchTask('')
     }
-  }
-  const toggleBatchHostSelection = (hostId: string) => {
-    setBatchSelectedHostIds((current) => {
-      const next = current.includes(hostId)
-        ? current.filter((id) => id !== hostId)
-        : [...current, hostId]
-      batchSelectedHostIdsRef.current = next
-      return next
-    })
   }
   const handlePredictionThinkingExpandedChange = (open: boolean, sessionId: string) => {
     setExpandedPredictionThinkingSessionId(open ? sessionId : '')
@@ -1823,34 +1809,6 @@ export function App() {
     },
     [logs, logLevel, logSearch],
   )
-  const groupedHosts = useMemo<HostGroupView[]>(() => {
-    const groups = normalizeHostGroups(hostGroups, hosts)
-    const keyword = serverSearch.trim().toLowerCase()
-    const matchesSearch = (host: HostRecord) => {
-      if (!keyword) {
-        return true
-      }
-      const haystack = [
-        host.name,
-        host.address,
-        String(host.port),
-        `:${host.port}`,
-        `${host.address}:${host.port}`,
-        `${host.username}@${host.address}:${host.port}`,
-        host.username,
-      ].join('\n').toLowerCase()
-      return haystack.includes(keyword)
-    }
-    return groups.map((group) => ({
-      ...group,
-      hosts: hosts.filter((host) => (host.group || '默认') === group.name && matchesSearch(host)),
-    }))
-  }, [hostGroups, hosts, serverSearch])
-  const visibleHostCount = groupedHosts.reduce((count, group) => count + group.hosts.length, 0)
-  const visibleHostGroups = serverSearch.trim()
-    ? groupedHosts.filter((group) => group.hosts.length > 0)
-    : groupedHosts
-
   useEffect(() => {
     previousMetricsRef.current = null
     setMetricHistory([])
