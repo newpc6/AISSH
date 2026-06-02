@@ -24,6 +24,13 @@ import { openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import '@xterm/xterm/css/xterm.css'
 import { FeatureGuide } from './FeatureGuide'
 import { AIWorkspacePanel } from './components/ai/AIWorkspacePanel'
+import { CommandHistoryPanel } from './components/commands/CommandHistoryPanel'
+import { FavoriteCommandsPanel } from './components/commands/FavoriteCommandsPanel'
+import { AIInputExpandModal } from './components/modals/AIInputExpandModal'
+import { ConfirmModal } from './components/modals/ConfirmModal'
+import { GroupModal } from './components/modals/GroupModal'
+import { HostDialog } from './components/modals/HostDialog'
+import { LogModal } from './components/modals/LogModal'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -45,7 +52,6 @@ import {
   type AuthSetupRequest,
   type AuthStatusResponse,
   type HealthResponse,
-  type HostAuthType,
   type HostGroup,
   type HostGroupsResponse,
   type HostGroupsUpdateRequest,
@@ -1840,6 +1846,11 @@ export function App() {
     return sortedFileEntries.filter((entry) => entry.type === 'file' && selected.has(entry.path))
   }, [selectedFilePaths, sortedFileEntries])
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
+  const groupDraftUsedCounts = groupDrafts.map((group, index) => {
+    const groupName = group.trim()
+    const originalName = originalGroupDrafts[index]?.trim()
+    return hosts.filter((host) => (host.group || '默认') === (originalName || groupName)).length
+  })
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
   const activePrediction = activeSession ? (aiPredictionBySession[activeSession.id] ?? EMPTY_AI_PREDICTION_STATE) : EMPTY_AI_PREDICTION_STATE
@@ -7221,131 +7232,28 @@ export function App() {
                 onUpdateAiUnifiedInputValue={updateAiUnifiedInputValue}
               />
             ) : rightTool === 'history' ? (
-              <div className="history-list">
-                {commandHistory.length === 0 ? (
-                  <p className="hint-text">暂无历史命令</p>
-                ) : (
-                  commandHistory.map((command, index) => {
-                    const favorited = isFavoriteCommand(command)
-                    return (
-                      <div className="command-row compact" key={`${index}-${command}`}>
-                        <button
-                          className="command-main"
-                          type="button"
-                          title={`输入历史命令：${command}`}
-                          onClick={() => writeCommand(command)}
-                        >
-                          {command}
-                        </button>
-                        <button
-                          className={`favorite-command-button ${favorited ? 'active' : ''}`}
-                          type="button"
-                          title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
-                          onClick={() => toggleFavoriteCommand(command)}
-                        >
-                          {favorited ? '★' : '☆'}
-                        </button>
-                        <button
-                          className="copy-command-button"
-                          type="button"
-                          title={`复制命令：${command}`}
-                          onClick={() => void copyCommand(command)}
-                        >
-                          ⧉
-                        </button>
-                        <button
-                          className="execute-command-button"
-                          disabled={!activeSession || activeSession.status !== 'connected'}
-                          type="button"
-                          title={`执行历史命令：${command}`}
-                          onClick={() => executeCommand(command)}
-                        >
-                          ↵
-                        </button>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
+              <CommandHistoryPanel
+                activeSessionConnected={Boolean(activeSession && activeSession.status === 'connected')}
+                commandHistory={commandHistory}
+                isFavoriteCommand={isFavoriteCommand}
+                onCopyCommand={(command) => { void copyCommand(command) }}
+                onExecuteCommand={executeCommand}
+                onToggleFavoriteCommand={toggleFavoriteCommand}
+                onWriteCommand={writeCommand}
+              />
             ) : (
-              <div className="favorite-list">
-                <form
-                  className="favorite-add-form"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    addFavoriteCommand()
-                  }}
-                >
-                  <input
-                    placeholder="手动添加收藏命令"
-                    value={favoriteCommandDraft}
-                    onChange={(event) => setFavoriteCommandDraft(event.target.value)}
-                  />
-                  <button type="submit" title="添加收藏命令">添加</button>
-                </form>
-                {favoriteCommands.length === 0 ? (
-                  <p className="hint-text">暂无收藏命令</p>
-                ) : (
-                  favoriteCommands.map((command, index) => (
-                    <div className="command-row compact" key={command}>
-                      <span className="favorite-command-index">{index + 1}</span>
-                      <button
-                        className="command-main"
-                        type="button"
-                        title={`输入收藏命令：${command}`}
-                        onClick={() => writeCommand(command)}
-                      >
-                        {command}
-                      </button>
-                      <button
-                        className="execute-command-button"
-                        disabled={!activeSession || activeSession.status !== 'connected'}
-                        type="button"
-                        title={`执行收藏命令：${command}`}
-                        onClick={() => executeCommand(command)}
-                      >
-                        ↵
-                      </button>
-                      <button
-                        className="copy-command-button"
-                        type="button"
-                        title={`复制命令：${command}`}
-                        onClick={() => void copyCommand(command)}
-                      >
-                        ⧉
-                      </button>
-                      <div className="favorite-order-buttons">
-                        <button
-                          className="favorite-command-button"
-                          disabled={index === 0}
-                          type="button"
-                          title={`上移收藏命令：${command}`}
-                          onClick={() => moveFavoriteCommand(index, -1)}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          className="favorite-command-button"
-                          disabled={index === favoriteCommands.length - 1}
-                          type="button"
-                          title={`下移收藏命令：${command}`}
-                          onClick={() => moveFavoriteCommand(index, 1)}
-                        >
-                          ↓
-                        </button>
-                      </div>
-                      <button
-                        className="favorite-command-button danger"
-                        type="button"
-                        title={`删除收藏命令：${command}`}
-                        onClick={() => confirmDeleteFavoriteCommand(command)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
+              <FavoriteCommandsPanel
+                activeSessionConnected={Boolean(activeSession && activeSession.status === 'connected')}
+                favoriteCommandDraft={favoriteCommandDraft}
+                favoriteCommands={favoriteCommands}
+                onAddFavoriteCommand={addFavoriteCommand}
+                onConfirmDeleteFavoriteCommand={confirmDeleteFavoriteCommand}
+                onCopyCommand={(command) => { void copyCommand(command) }}
+                onExecuteCommand={executeCommand}
+                onFavoriteCommandDraftChange={setFavoriteCommandDraft}
+                onMoveFavoriteCommand={moveFavoriteCommand}
+                onWriteCommand={writeCommand}
+              />
             )}
           </section>
 
@@ -7388,328 +7296,56 @@ export function App() {
         </aside>
       </div>
 
-      {isHostDialogOpen ? (
-        <div className="modal-backdrop">
-          <form
-            className="host-modal"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void saveHost()
-            }}
-          >
-            <div className="modal-header">
-              <div>
-                <p className="section-label">SSH 连接</p>
-                <h3>{hostDialogMode === 'edit' ? '编辑服务器' : '新增服务器'}</h3>
-              </div>
-              <button type="button" title="关闭服务器编辑窗口" onClick={closeAddHostDialog}>×</button>
-            </div>
+      <HostDialog
+        hostDialogError={hostDialogError}
+        hostDialogMode={hostDialogMode}
+        hostForm={hostForm}
+        hostGroups={hostGroups}
+        isSavingHost={isSavingHost}
+        open={isHostDialogOpen}
+        privateKeyFileRef={privateKeyFileRef}
+        savePassword={savePassword}
+        savePrivateKey={savePrivateKey}
+        onClose={closeAddHostDialog}
+        onHostFormChange={(updater) => setHostForm((current) => updater(current))}
+        onSavePasswordChange={setSavePassword}
+        onSavePrivateKeyChange={setSavePrivateKey}
+        onSelectPrivateKeyFile={(file) => { void selectPrivateKeyFile(file) }}
+        onSubmit={() => { void saveHost() }}
+      />
 
-            {hostDialogError ? <p className="error-text modal-error">{hostDialogError}</p> : null}
+      <GroupModal
+        groupDialogError={groupDialogError}
+        groupDialogMessage={groupDialogMessage}
+        groupDrafts={groupDrafts}
+        open={isGroupDialogOpen}
+        originalGroupDrafts={originalGroupDrafts}
+        usedCounts={groupDraftUsedCounts}
+        onAddGroup={() => {
+          setGroupDrafts((current) => [...current, '???'])
+          setOriginalGroupDrafts((current) => [...current, ''])
+          setGroupDialogMessage('')
+        }}
+        onClearGroupDialogMessage={() => setGroupDialogMessage('')}
+        onClose={() => setIsGroupDialogOpen(false)}
+        onConfirmDeleteGroupDraft={confirmDeleteGroupDraft}
+        onGroupDraftsChange={setGroupDrafts}
+        onMoveGroupDraft={moveGroupDraft}
+        onSave={() => { void saveHostGroups() }}
+      />
 
-            <label>
-              <span>名称</span>
-              <input
-                value={hostForm.name}
-                onChange={(event) => setHostForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder="服务器名称"
-              />
-            </label>
-            <div className="form-row">
-              <label>
-                <span>分组</span>
-                <input
-                  list="host-group-options"
-                  value={hostForm.group ?? ''}
-                  onChange={(event) => setHostForm((current) => ({ ...current, group: event.target.value }))}
-                  placeholder="默认"
-                />
-                <datalist id="host-group-options">
-                  {hostGroups.map((group) => (
-                    <option key={group.name} value={group.name} />
-                  ))}
-                </datalist>
-              </label>
-              <label>
-                <span>认证</span>
-                <select
-                  value={hostForm.authType}
-                  onChange={(event) => {
-                    const authType = event.target.value as HostAuthType
-                    setHostForm((current) => ({ ...current, authType, password: '', privateKey: '' }))
-                    setSavePassword(false)
-                    setSavePrivateKey(false)
-                  }}
-                >
-                  <option value="password">密码</option>
-                  <option value="privateKey">SSH Key</option>
-                  <option value="agent">Agent</option>
-                </select>
-              </label>
-            </div>
-            <label>
-              <span>地址</span>
-              <input
-                value={hostForm.address}
-                onChange={(event) => setHostForm((current) => ({ ...current, address: event.target.value }))}
-                placeholder="192.168.1.10"
-              />
-            </label>
-            <div className="form-row">
-              <label>
-                <span>端口</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="65535"
-                  value={hostForm.port}
-                  onChange={(event) =>
-                    setHostForm((current) => ({ ...current, port: Number(event.target.value) || 22 }))
-                  }
-                />
-              </label>
-              <label>
-                <span>用户</span>
-                <input
-                  value={hostForm.username}
-                  onChange={(event) => setHostForm((current) => ({ ...current, username: event.target.value }))}
-                  placeholder="root"
-                />
-              </label>
-            </div>
-
-            {hostForm.authType === 'password' ? (
-              <div className="secret-area">
-                <label className="checkbox-row">
-                  <input
-                    checked={savePassword}
-                    onChange={(event) => setSavePassword(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>{hostDialogMode === 'edit' && savePassword ? '保留或更新密码' : '保存密码'}</span>
-                </label>
-                <label>
-                  <span>密码</span>
-                  <input
-                    disabled={!savePassword}
-                    type="password"
-                    value={hostForm.password ?? ''}
-                    onChange={(event) => setHostForm((current) => ({ ...current, password: event.target.value }))}
-                    placeholder="保存后连接时自动使用"
-                  />
-                </label>
-              </div>
-            ) : null}
-
-            {hostForm.authType === 'privateKey' ? (
-              <div className="secret-area">
-                <label className="checkbox-row">
-                  <input
-                    checked={savePrivateKey}
-                    onChange={(event) => setSavePrivateKey(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>{hostDialogMode === 'edit' && savePrivateKey ? '保留或更新 SSH Key' : '保存 SSH Key'}</span>
-                </label>
-                <label>
-                  <span>SSH Key</span>
-                  <div className="file-picker-row">
-                    <button
-                      disabled={!savePrivateKey}
-                      title="选择本地 SSH 私钥文件"
-                      type="button"
-                      onClick={() => privateKeyFileRef.current?.click()}
-                    >
-                      选择文件
-                    </button>
-                    <small>{hostForm.privateKey ? '已读取私钥内容' : '支持选择本地私钥文件'}</small>
-                  </div>
-                  <input
-                    accept=".pem,.key,.pub,.txt"
-                    ref={privateKeyFileRef}
-                    type="file"
-                    hidden
-                    onChange={(event) => {
-                      void selectPrivateKeyFile(event.target.files?.[0] ?? null)
-                      event.target.value = ''
-                    }}
-                  />
-                  <textarea
-                    disabled={!savePrivateKey}
-                    value={hostForm.privateKey ?? ''}
-                    onChange={(event) => setHostForm((current) => ({ ...current, privateKey: event.target.value }))}
-                    placeholder="保存后连接时自动使用"
-                  />
-                </label>
-              </div>
-            ) : null}
-
-            <div className="modal-actions">
-              <button disabled={isSavingHost} title="取消保存服务器" type="button" onClick={closeAddHostDialog}>取消</button>
-              <button className="primary-button" disabled={isSavingHost} title="保存服务器配置" type="submit">
-                {isSavingHost ? '保存中' : hostDialogMode === 'edit' ? '保存修改' : '保存'}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-
-      {isGroupDialogOpen ? (
-        <div className="modal-backdrop">
-          <section className="group-modal">
-            <div className="modal-header">
-              <div>
-                <p className="section-label">SSH 连接</p>
-                <h3>分组管理</h3>
-              </div>
-              <button type="button" title="关闭分组管理窗口" onClick={() => setIsGroupDialogOpen(false)}>×</button>
-            </div>
-
-            {groupDialogError ? <p className="error-text modal-error">{groupDialogError}</p> : null}
-            {groupDialogMessage ? <p className="success-text">{groupDialogMessage}</p> : null}
-
-            <div className="group-list-editor">
-              {groupDrafts.map((group, index) => {
-                const groupName = group.trim()
-                const originalName = originalGroupDrafts[index]?.trim()
-                const usedCount = hosts.filter((host) => (host.group || '默认') === (originalName || groupName)).length
-                const isDefaultGroupInUse = (originalName || groupName) === '默认' && usedCount > 0
-                return (
-                  <div className="group-edit-row" key={`${group}-${index}`}>
-                    <input
-                      value={group}
-                      onChange={(event) => {
-                        const next = [...groupDrafts]
-                        next[index] = event.target.value
-                        setGroupDrafts(next)
-                        setGroupDialogMessage('')
-                      }}
-                      placeholder="分组名称"
-                    />
-                    <span>{usedCount} 台</span>
-                    <div className="group-row-actions">
-                      <button
-                        disabled={index === 0}
-                        title="上移分组"
-                        type="button"
-                        onClick={() => moveGroupDraft(index, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        disabled={index === groupDrafts.length - 1}
-                        title="下移分组"
-                        type="button"
-                        onClick={() => moveGroupDraft(index, 1)}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        disabled={groupDrafts.length <= 1 || isDefaultGroupInUse}
-                        title={
-                          isDefaultGroupInUse
-                            ? '默认分组正在被服务器使用，不能删除'
-                            : usedCount > 0
-                              ? '删除后该分组下服务器会移动到默认分组'
-                              : '删除空分组'
-                        }
-                        type="button"
-                        onClick={() => confirmDeleteGroupDraft(index, group)}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="modal-actions">
-              <button
-                title="新增一个 SSH 分组"
-                type="button"
-                onClick={() => {
-                  setGroupDrafts((current) => [...current, '新分组'])
-                  setOriginalGroupDrafts((current) => [...current, ''])
-                  setGroupDialogMessage('')
-                }}
-              >
-                新增分组
-              </button>
-              <button className="primary-button" type="button" title="保存 SSH 分组" onClick={() => void saveHostGroups()}>
-                保存
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {isLogDialogOpen ? (
-        <div className="modal-backdrop">
-          <section className="log-modal">
-            <div className="modal-header">
-              <div>
-                <p className="section-label">工具</p>
-                <h3>运行日志</h3>
-              </div>
-              <button type="button" title="关闭日志窗口" onClick={() => setIsLogDialogOpen(false)}>×</button>
-            </div>
-
-            <div className="log-toolbar">
-              <label>
-                <span>展示级别</span>
-                <select
-                  value={logLevel}
-                  onChange={(event) => void updateLogSettings({ level: event.target.value as LogLevel })}
-                >
-                  <option value="debug">debug</option>
-                  <option value="info">info</option>
-                  <option value="warn">warn</option>
-                  <option value="error">error</option>
-                </select>
-              </label>
-              <label className="checkbox-row compact-checkbox">
-                <input
-                  checked={logHealthChecks}
-                  type="checkbox"
-                  onChange={(event) => void updateLogSettings({ logHealthChecks: event.target.checked })}
-                />
-                <span>记录健康检查</span>
-              </label>
-              <label>
-                <span>搜索</span>
-                <input
-                  placeholder="搜索 predict、/ai/predict、source=ai..."
-                  value={logSearch}
-                  onChange={(event) => setLogSearch(event.target.value)}
-                />
-              </label>
-              <button type="button" title="刷新运行日志" onClick={() => void loadLogs()}>刷新</button>
-            </div>
-
-            <div className="log-list">
-              {visibleLogs.length === 0 ? (
-                <p className="hint-text">暂无日志</p>
-              ) : (
-                visibleLogs
-                  .slice()
-                  .reverse()
-                  .map((entry) => (
-                    <article className={`log-row log-${entry.level}`} key={entry.id}>
-                      <header>
-                        <strong>{entry.level}</strong>
-                        <span>{entry.source}</span>
-                        <time>{new Date(entry.timestamp).toLocaleString()}</time>
-                      </header>
-                      <p>{entry.message}</p>
-                      {entry.fields ? <code>{JSON.stringify(entry.fields)}</code> : null}
-                    </article>
-                  ))
-              )}
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <LogModal
+        logHealthChecks={logHealthChecks}
+        logLevel={logLevel}
+        logSearch={logSearch}
+        open={isLogDialogOpen}
+        visibleLogs={visibleLogs}
+        onClose={() => setIsLogDialogOpen(false)}
+        onLogSearchChange={setLogSearch}
+        onRefresh={() => { void loadLogs() }}
+        onUpdateLogHealthChecks={(enabled) => { void updateLogSettings({ logHealthChecks: enabled }) }}
+        onUpdateLogLevel={(level) => { void updateLogSettings({ level }) }}
+      />
 
       {isFeatureGuideOpen ? <FeatureGuide onClose={() => setIsFeatureGuideOpen(false)} /> : null}
 
@@ -8226,32 +7862,11 @@ export function App() {
         </div>
       ) : null}
 
-      {confirmDialog ? (
-        <div className="modal-backdrop">
-          <section className="confirm-modal">
-            <div className="modal-header">
-              <div>
-                {confirmDialog.section ? <p className="section-label">{confirmDialog.section}</p> : null}
-                <h3>{confirmDialog.title}</h3>
-              </div>
-              <button type="button" title="关闭确认" onClick={closeConfirmDialog}>×</button>
-            </div>
-            <p className="confirm-copy">{confirmDialog.message}</p>
-            {confirmDialog.detail ? <code className="confirm-command">{confirmDialog.detail}</code> : null}
-            <div className="modal-actions">
-              <button type="button" title="取消操作" onClick={closeConfirmDialog}>{confirmDialog.cancelText ?? '取消'}</button>
-              <button
-                className={confirmDialog.danger ? 'danger-button' : 'primary-button'}
-                type="button"
-                title="确认操作"
-                onClick={confirmAndRun}
-              >
-                {confirmDialog.confirmText ?? '确认'}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <ConfirmModal
+        dialog={confirmDialog}
+        onClose={closeConfirmDialog}
+        onConfirm={confirmAndRun}
+      />
 
       {pendingAgentStepId ? (
         <div className="modal-backdrop">
@@ -8309,51 +7924,15 @@ export function App() {
         </div>
       ) : null}
 
-      {isAIInputExpanded ? (
-        <div className="modal-backdrop" onClick={() => setIsAIInputExpanded(false)}>
-          <section className="ai-input-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <div>
-                <p className="section-label">AI 输入框</p>
-                <h3>放大查看与编辑</h3>
-              </div>
-              <button type="button" title="关闭放大输入框" onClick={() => setIsAIInputExpanded(false)}>×</button>
-            </div>
-            <div className="ai-input-modal-body">
-              <textarea
-                autoFocus
-                placeholder={aiUnifiedInputPlaceholder}
-                value={aiUnifiedInputValue}
-                onChange={(event) => updateAiUnifiedInputValue(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing) return
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    setIsAIInputExpanded(false)
-                    return
-                  }
-                  if (event.key === 'Enter' && event.ctrlKey) {
-                    event.preventDefault()
-                    void submitAiUnifiedInput()
-                  }
-                }}
-              />
-            </div>
-            <div className="modal-actions">
-              <button type="button" title="关闭放大输入框" onClick={() => setIsAIInputExpanded(false)}>关闭</button>
-              <button
-                className="primary-button"
-                disabled={aiAssistantState === 'loading' || !settings.aiEnabled}
-                type="button"
-                title="发送给统一 AI 助手"
-                onClick={() => void submitAiUnifiedInput()}
-              >
-                发送
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <AIInputExpandModal
+        open={isAIInputExpanded}
+        canSubmit={!(aiAssistantState === 'loading' || !settings.aiEnabled)}
+        placeholder={aiUnifiedInputPlaceholder}
+        value={aiUnifiedInputValue}
+        onChange={updateAiUnifiedInputValue}
+        onClose={() => setIsAIInputExpanded(false)}
+        onSubmit={() => { void submitAiUnifiedInput() }}
+      />
     </div>
   )
 }
