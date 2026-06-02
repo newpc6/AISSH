@@ -26,6 +26,8 @@ import { SettingsDialog } from './components/modals/SettingsDialog'
 import { MetricChart } from './components/right-rail/MetricChart'
 import { ServerInfoPanel } from './components/right-rail/ServerInfoPanel'
 import { SideErrorNotice } from './components/right-rail/SideErrorNotice'
+import { ServersPanel } from './components/servers/ServersPanel'
+import { TerminalStage } from './components/sessions/TerminalStage'
 import { SessionTabs } from './components/sessions/SessionTabs'
 import {
   type AIPredictionRequest,
@@ -163,7 +165,6 @@ import {
   resolveApiUrl,
   riskLabel,
   saveBlobWithFilePicker,
-  sessionStatusLabel,
   shouldRecordCommand,
   statusToLabel,
   stripAgentMarker,
@@ -1720,6 +1721,40 @@ export function App() {
     const host = hostsRef.current.find((item) => item.id === hostId)
     return { id: hostId, name: host?.name || hostId }
   })
+  const toggleBatchMode = () => {
+    setBatchMode((current) => !current)
+    if (batchMode) {
+      setBatchSelectedHostIds([])
+      batchSelectedHostIdsRef.current = []
+      setBatchTask('')
+    }
+  }
+  const toggleBatchHostSelection = (hostId: string) => {
+    setBatchSelectedHostIds((current) => {
+      const next = current.includes(hostId)
+        ? current.filter((id) => id !== hostId)
+        : [...current, hostId]
+      batchSelectedHostIdsRef.current = next
+      return next
+    })
+  }
+  const handlePredictionThinkingExpandedChange = (open: boolean, sessionId: string) => {
+    setExpandedPredictionThinkingSessionId(open ? sessionId : '')
+  }
+  const handleAIPredictionEnabledChange = (enabled: boolean) => {
+    setSettings((current) => ({ ...current, aiPredictionEnabled: enabled }))
+    if (!enabled) {
+      clearAIPrediction()
+    }
+  }
+  const handleSelectPrediction = (index: number) => {
+    if (!activeSession) {
+      return
+    }
+    aiPredictionCursorRef.current[activeSession.id] = index
+    aiPredictionCycleStartedRef.current[activeSession.id] = true
+    setActivePredictionIndex(index)
+  }
   const isBatchTaskInput = batchMode && batchSelectedHostIds.length > 0 && !batchActive
   const aiUnifiedInputPlaceholder = isBatchTaskInput
     ? '批量任务：输入自然语言任务描述（如"更新 apt、检查磁盘空间"），点击右侧 ▶ 按钮启动'
@@ -5977,119 +6012,31 @@ export function App() {
           )}
 
           {!isLeftRailCollapsed ? (leftMode === 'servers' ? (
-            <div className="left-content">
-              <div className="panel-toolbar">
-                <strong>服务器</strong>
-                <div>
-                  <button type="button" title="折叠左侧面板" onClick={() => setIsLeftRailCollapsed(true)}>◁</button>
-                  <button
-                    type="button"
-                    className={batchMode ? 'batch-mode-active' : ''}
-                    title="批量任务模式"
-                    onClick={() => {
-                      setBatchMode((current) => !current)
-                      if (batchMode) {
-                        setBatchSelectedHostIds([])
-                        batchSelectedHostIdsRef.current = []
-                        setBatchTask('')
-                      }
-                    }}
-                  >
-                    批量
-                  </button>
-                  <button type="button" title="新增 SSH 连接" onClick={openAddHostDialog}>+</button>
-                  <button type="button" title="管理 SSH 分组" onClick={openGroupDialog}>分组</button>
-                  <button type="button" title="导出服务器列表" onClick={() => void exportHosts(false)}>⇅</button>
-                </div>
-              </div>
-              <label className="server-search">
-                <span>搜索服务器</span>
-                <input
-                  type="search"
-                  value={serverSearch}
-                  placeholder="名称、IP、端口"
-                  onChange={(event) => setServerSearch(event.target.value)}
-                />
-              </label>
-
-              <div className="server-groups">
-                {visibleHostCount === 0 ? (
-                  <p className="server-search-empty">
-                    {serverSearch.trim() ? '没有匹配的服务器' : '暂无服务器'}
-                  </p>
-                ) : null}
-                {visibleHostGroups.map((group) => (
-                  <section className="server-group" key={group.name}>
-                    <p>{group.name}<span>{group.hosts.length}</span></p>
-                    {group.hosts.length === 0 ? <small className="empty-group-text">空分组</small> : null}
-                    {group.hosts.map((host) => (
-                      <div
-                        key={host.id}
-                        className={`server-row ${batchMode ? 'batch-mode-row' : ''} ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''}`}
-                        onClick={() => {
-                          setSelectedHostId(host.id)
-                          setOpenHostMenuId('')
-                        }}
-                        onDoubleClick={() => void createSession(host.id)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            void createSession(host.id)
-                          }
-                        }}
-                      >
-                        {batchMode ? (
-                          <label className="batch-checkbox" onClick={(event) => event.stopPropagation()} title="勾选批量执行">
-                            <input
-                              type="checkbox"
-                              checked={batchSelectedHostIds.includes(host.id)}
-                              onChange={() => {
-                                setBatchSelectedHostIds((current) => {
-                                  const next = current.includes(host.id)
-                                    ? current.filter((id) => id !== host.id)
-                                    : [...current, host.id]
-                                  batchSelectedHostIdsRef.current = next
-                                  return next
-                                })
-                              }}
-                            />
-                          </label>
-                        ) : null}
-                        <div className="server-row-main">
-                          <span>{host.name}</span>
-                          <small>
-                            {host.username}@{host.address}:{host.port}
-                          </small>
-                        </div>
-                        <button
-                          aria-label={`${host.name} 菜单`}
-                          className="host-menu-trigger"
-                          title={`${host.name} 更多操作`}
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setOpenHostMenuId((current) => (current === host.id ? '' : host.id))
-                          }}
-                        >
-                          ⋯
-                        </button>
-                        {openHostMenuId === host.id ? (
-                          <div className="host-menu" onClick={(event) => event.stopPropagation()}>
-                            <button type="button" title="编辑服务器配置" onClick={() => openEditHostDialog(host)}>编辑</button>
-                            <button type="button" title="连接此服务器" onClick={() => void createSession(host.id)}>连接</button>
-                            <button type="button" title="复制一份服务器配置" onClick={() => void duplicateHost(host)}>复制配置</button>
-                            <button className="danger-item" type="button" title="删除此服务器" onClick={() => confirmDeleteHost(host)}>
-                              删除
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </section>
-                ))}
-              </div>
-            </div>
+            <ServersPanel
+              batchMode={batchMode}
+              batchSelectedHostIds={batchSelectedHostIds}
+              openHostMenuId={openHostMenuId}
+              selectedHostId={selectedHostId}
+              serverSearch={serverSearch}
+              visibleHostCount={visibleHostCount}
+              visibleHostGroups={visibleHostGroups}
+              onCollapse={() => setIsLeftRailCollapsed(true)}
+              onConfirmDeleteHost={confirmDeleteHost}
+              onCreateSession={(hostId) => createSession(hostId)}
+              onDuplicateHost={duplicateHost}
+              onExportHosts={(includeSecrets) => exportHosts(includeSecrets)}
+              onOpenAddHostDialog={openAddHostDialog}
+              onOpenEditHostDialog={openEditHostDialog}
+              onOpenGroupDialog={openGroupDialog}
+              onOpenHostMenuChange={setOpenHostMenuId}
+              onSelectHost={(hostId) => {
+                setSelectedHostId(hostId)
+                setOpenHostMenuId('')
+              }}
+              onServerSearchChange={setServerSearch}
+              onToggleBatchHost={toggleBatchHostSelection}
+              onToggleBatchMode={toggleBatchMode}
+            />
           ) : (
             <FileBrowserPanel
               fileBrowserRef={fileBrowserRef}
@@ -6166,189 +6113,36 @@ export function App() {
             onSessionTabMenuChange={setSessionTabMenu}
           />
 
-          <section className={`terminal-stage ${isFilePreviewActive ? 'show-file-preview' : ''}`}>
-            {activeFilePreview ? null : activeSession ? (
-              <div className="terminal-header">
-                <div>
-                  <strong>{activeSession.hostName}</strong>
-                  <span>
-                    {activeHost
-                      ? `${activeHost.username}@${activeHost.address}:${activeHost.port}`
-                      : activeSession.hostId}
-                  </span>
-                </div>
-                <span className={`session-pill session-${activeSession.status}`}>
-                  {sessionStatusLabel(activeSession.status)}
-                </span>
-                {activeSession.status === 'error' || activeSession.status === 'closed' ? (
-                  <button className="terminal-reconnect" type="button" title="重连当前 SSH 会话" onClick={() => void reconnectSession(activeSession)}>
-                    重连
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            <div className={`terminal-wrap ${isFilePreviewActive ? 'terminal-hidden' : ''}`}>
-              <div ref={terminalRef} className="terminal-surface" />
-              {activeSession && primaryPrediction && predictionGhostPosition ? (
-                <button
-                  className="terminal-ghost-prediction"
-                  style={{
-                    left: predictionGhostPosition.left,
-                    top: predictionGhostPosition.top,
-                    maxWidth: predictionGhostPosition.maxWidth,
-                    height: predictionGhostPosition.height,
-                  }}
-                  type="button"
-                  title="应用 AI 预测命令"
-                  onClick={applyPrediction}
-                >
-                  {primaryPrediction}
-                </button>
-              ) : null}
-              {terminalSelectionAction ? (
-                <button
-                  className="terminal-selection-ai-button"
-                  style={{ left: terminalSelectionAction.left, top: terminalSelectionAction.top }}
-                  type="button"
-                  title="把当前选中的终端文本加入 AI 输入框"
-                  onClick={addTerminalSelectionToAI}
-                >
-                  加入 AI
-                </button>
-              ) : null}
-            </div>
-            {activeSession && !isFilePreviewActive ? (
-              <div
-                className={`terminal-prediction-dock ${isPredictionDockCollapsed ? 'collapsed' : ''}`}
-                style={{ '--prediction-panel-height': `${predictionPanelHeight}px` } as React.CSSProperties}
-              >
-                {!isPredictionDockCollapsed ? (
-                  <div
-                    aria-label="拖动调整 AI 预测区域高度"
-                    className="prediction-panel-resizer"
-                    role="separator"
-                    tabIndex={0}
-                    title="拖动调整 AI 预测区域高度"
-                    onPointerDown={startPredictionPanelResize}
-                  />
-                ) : null}
-                <div className="terminal-prediction-header">
-                  <div>
-                    <strong>AI 预测</strong>
-                    <span>{activeSession.hostName}</span>
-                  </div>
-                  <label className="prediction-toggle" title="开启后只针对手动输入的命令预测下一步">
-                    <input
-                      checked={settings.aiPredictionEnabled}
-                      disabled={!settings.aiEnabled}
-                      onChange={(event) => {
-                        setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
-                        if (!event.target.checked) {
-                          clearAIPrediction()
-                        }
-                      }}
-                      type="checkbox"
-                    />
-                    <span>自动预测</span>
-                  </label>
-                  <button
-                    className="prediction-collapse-button"
-                    type="button"
-                    title={isPredictionDockCollapsed ? '展开 AI 预测区域' : '收起 AI 预测区域'}
-                    onClick={() => setIsPredictionDockCollapsed((current) => !current)}
-                  >
-                    <span aria-hidden="true">{isPredictionDockCollapsed ? '▴' : '▾'}</span>
-                  </button>
-                </div>
-                {!isPredictionDockCollapsed ? (
-                  <div className="terminal-prediction-body">
-                    {activePrediction.state === 'loading' ? (
-                      <div className="prediction-loading">
-                        <span aria-hidden="true" className="file-loading-spinner" />
-                        <span>正在流式预测下一步命令...</span>
-                      </div>
-                    ) : null}
-                    {activePrediction.thinking ? (
-                      <details
-                        className="ai-stream-card compact-stream"
-                        open={isPredictionThinkingExpanded}
-                        onToggle={(event) => {
-                          if (activePrediction.state === 'loading') {
-                            return
-                          }
-                          setExpandedPredictionThinkingSessionId(event.currentTarget.open ? activeSession.id : '')
-                        }}
-                      >
-                        <summary>预测思考 <span className="collapse-icon">▼</span></summary>
-                        <pre>{activePrediction.thinking}</pre>
-                      </details>
-                    ) : null}
-                    {activePrediction.streamingContent && activePredictions.length === 0 ? (
-                      <article className="ai-stream-card compact-stream">
-                        <strong>预测内容</strong>
-                        <pre>{activePrediction.streamingContent}</pre>
-                      </article>
-                    ) : null}
-                    {activePrediction.error ? <p className="error-text">{activePrediction.error}</p> : null}
-                    {activePredictions.length > 0 ? (
-                      <div className="terminal-prediction-list">
-                        {activePredictions.map((command, index) => {
-                          const favorited = isFavoriteCommand(command)
-                          return (
-                            <div
-                              className={`command-row prediction-row ${index === activePredictionIndex ? 'primary' : ''}`}
-                              key={`${index}-${command}`}
-                            >
-                              <button
-                                className="command-main"
-                                type="button"
-                                title={`切换到第 ${index + 1} 条 AI 预测命令`}
-                                onClick={() => {
-                                  aiPredictionCursorRef.current[activeSession.id] = index
-                                  aiPredictionCycleStartedRef.current[activeSession.id] = true
-                                  setActivePredictionIndex(index)
-                                }}
-                              >
-                                <strong>{index === activePredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
-                                <code>{command}</code>
-                              </button>
-                              <button
-                                className={`favorite-command-button ${favorited ? 'active' : ''}`}
-                                type="button"
-                                title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
-                                onClick={() => toggleFavoriteCommand(command)}
-                              >
-                                {favorited ? '★' : '☆'}
-                              </button>
-                              <button
-                                className="copy-command-button"
-                                type="button"
-                                title={`复制命令：${command}`}
-                                onClick={() => void copyCommand(command)}
-                              >
-                                ⧉
-                              </button>
-                              <button
-                                className="execute-command-button"
-                                disabled={!activeSession || activeSession.status !== 'connected'}
-                                type="button"
-                                title={`执行 AI 预测命令：${command}`}
-                                onClick={() => executeCommand(command)}
-                              >
-                                ↵
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : null}
-                    {activePredictions.length > 0 ? (
-                      <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+          <TerminalStage
+            activeHost={activeHost}
+            activePrediction={activePrediction}
+            activePredictions={activePredictions}
+            activePredictionIndex={activePredictionIndex}
+            activeSession={activeSession}
+            activeSessionConnected={Boolean(activeSession && activeSession.status === 'connected')}
+            aiEnabled={settings.aiEnabled}
+            aiPredictionEnabled={settings.aiPredictionEnabled}
+            isFavoriteCommand={isFavoriteCommand}
+            isFilePreviewActive={isFilePreviewActive}
+            isPredictionDockCollapsed={isPredictionDockCollapsed}
+            isPredictionThinkingExpanded={isPredictionThinkingExpanded}
+            predictionGhostPosition={predictionGhostPosition}
+            predictionPanelHeight={predictionPanelHeight}
+            primaryPrediction={primaryPrediction}
+            terminalRef={terminalRef}
+            terminalSelectionAction={terminalSelectionAction}
+            onAddTerminalSelectionToAI={addTerminalSelectionToAI}
+            onApplyPrediction={applyPrediction}
+            onCopyCommand={(command) => copyCommand(command)}
+            onExecuteCommand={executeCommand}
+            onReconnectSession={reconnectSession}
+            onSelectPrediction={handleSelectPrediction}
+            onSetAIPredictionEnabled={handleAIPredictionEnabledChange}
+            onSetIsPredictionDockCollapsed={setIsPredictionDockCollapsed}
+            onSetPredictionThinkingExpanded={handlePredictionThinkingExpandedChange}
+            onStartPredictionPanelResize={startPredictionPanelResize}
+            onToggleFavoriteCommand={toggleFavoriteCommand}
+          />
             {activeFilePreview ? (
               <FilePreviewPanel
                 codeMirrorRef={codeMirrorRef}
@@ -6387,7 +6181,6 @@ export function App() {
                 </div>
               </div>
             ) : null}
-          </section>
         </main>
 
         <div
