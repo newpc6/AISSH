@@ -35,6 +35,7 @@ import { useDesktopOverlays } from './hooks/useDesktopOverlays'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
 import { useHostGroupDialog } from './hooks/useHostGroupDialog'
+import { useHostDialogState } from './hooks/useHostDialogState'
 import { useLogDialog } from './hooks/useLogDialog'
 import { useTerminalPredictionView } from './hooks/useTerminalPredictionView'
 import { useVisibleHostGroups } from './hooks/useVisibleHostGroups'
@@ -412,6 +413,22 @@ export function App() {
     setIsSettingsDialogOpen,
     setOpenTopMenu,
     setSettingsSavedMessage,
+  })
+  const {
+    closeHostDialog,
+    duplicateHost,
+    openAddHostDialog,
+    openEditHostDialog,
+  } = useHostDialogState({
+    defaultGroupName: hostGroups[0]?.name ?? '榛樿',
+    setEditingHostId,
+    setHostDialogError,
+    setHostDialogMode,
+    setHostForm,
+    setIsHostDialogOpen,
+    setOpenHostMenuId,
+    setSavePassword,
+    setSavePrivateKey,
   })
   const appendLog = (level: LogLevel, source: string, message: string, fields?: Record<string, unknown>) => {
     const entry: LogEntry = {
@@ -1764,47 +1781,6 @@ export function App() {
     return groups
   }
 
-  const resetHostForm = () => {
-    setHostForm(emptyHostForm)
-    setSavePassword(false)
-    setSavePrivateKey(false)
-    setHostDialogError('')
-    setHostDialogMode('create')
-    setEditingHostId('')
-  }
-
-  const openAddHostDialog = () => {
-    resetHostForm()
-    setHostForm((current) => ({ ...current, group: hostGroups[0]?.name ?? '默认' }))
-    setIsHostDialogOpen(true)
-  }
-
-  const openEditHostDialog = (host: HostRecord) => {
-    setHostDialogMode('edit')
-    setEditingHostId(host.id)
-    setHostForm({
-      name: host.name,
-      address: host.address,
-      port: host.port,
-      username: host.username,
-      authType: host.authType,
-      group: host.group ?? '默认',
-      description: host.description ?? '',
-      password: '',
-      privateKey: '',
-    })
-    setSavePassword(Boolean(host.hasPassword))
-    setSavePrivateKey(Boolean(host.hasPrivateKey))
-    setHostDialogError('')
-    setOpenHostMenuId('')
-    setIsHostDialogOpen(true)
-  }
-
-  const closeAddHostDialog = () => {
-    setIsHostDialogOpen(false)
-    resetHostForm()
-  }
-
   const selectPrivateKeyFile = async (file: File | null) => {
     if (!file) {
       return
@@ -1866,7 +1842,7 @@ export function App() {
       const saved = (await response.json()) as HostRecord
       await loadHosts(saved.id)
       setErrorMessage('')
-      closeAddHostDialog()
+      closeHostDialog()
     } catch (error) {
       const message = error instanceof Error ? error.message : `${hostDialogMode === 'edit' ? '编辑' : '保存'}主机失败`
       setHostDialogError(message)
@@ -2090,27 +2066,6 @@ export function App() {
       danger: true,
       onConfirm: () => removeHost(host),
     })
-  }
-
-  const duplicateHost = async (host: HostRecord) => {
-    setOpenHostMenuId('')
-    setHostDialogMode('create')
-    setEditingHostId('')
-    setHostForm({
-      name: `${host.name} 副本`,
-      address: host.address,
-      port: host.port,
-      username: host.username,
-      authType: host.authType,
-      group: host.group ?? '默认',
-      description: host.description ?? '',
-      password: '',
-      privateKey: '',
-    })
-    setSavePassword(false)
-    setSavePrivateKey(false)
-    setHostDialogError('')
-    setIsHostDialogOpen(true)
   }
 
   const saveHostGroups = async () => {
@@ -6023,7 +5978,7 @@ export function App() {
         privateKeyFileRef={privateKeyFileRef}
         savePassword={savePassword}
         savePrivateKey={savePrivateKey}
-        onClose={closeAddHostDialog}
+        onClose={closeHostDialog}
         onHostFormChange={(updater) => setHostForm((current) => updater(current))}
         onSavePasswordChange={setSavePassword}
         onSavePrivateKeyChange={setSavePrivateKey}
