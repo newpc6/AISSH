@@ -5518,24 +5518,33 @@ export function App() {
   }
 
   const isAIMessageCollapsed = (messageId: string) => Boolean(collapsedAIMessageIds[messageId])
+  const normalizedAgentMessage = agentMessage.trim()
+  const isAgentMessageDuplicated = normalizedAgentMessage
+    ? aiMessages.slice(-6).some((message) => {
+      const candidates = [
+        message.content,
+        message.response?.answer,
+        message.response?.summary,
+        message.response?.agentReason,
+        message.step?.command,
+        message.step?.explanation,
+        message.step?.riskReason,
+      ]
+      return candidates.some((candidate) => candidate?.trim() === normalizedAgentMessage)
+    })
+    : false
+  const shouldRenderAgentMessageCard = Boolean(normalizedAgentMessage) && !isAgentMessageDuplicated
 
   const renderAIResponseMessage = (message: AIChatMessageDraft, label: string) => {
     const response = message.response
     const commands = normalizeAssistCommands(response?.commands)
     const collapsed = isAIMessageCollapsed(message.id)
-    const shouldShowRawContent =
-      !response ||
-      (response.agentStatus !== 'command' &&
-        !response.summary &&
-        !response.answer &&
-        !response.warnings?.length &&
-        commands.length === 0)
     return (
       <article className={`ai-response-card ai-message-card ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
         {renderAIMessageHeader(message.id, label, message.createdAt)}
         {!collapsed ? (
           <>
-            {shouldShowRawContent && message.content ? renderMarkdown(message.content) : null}
+            {message.content ? renderMarkdown(message.content) : null}
             {response?.agentStatus === 'command' && response.riskLevel ? (
               <span className={`risk-badge risk-${response.riskLevel}`}>{riskLabel(response.riskLevel)}</span>
             ) : null}
@@ -7220,7 +7229,14 @@ export function App() {
                         <span>AI 正在实时返回，消息会按时间追加...</span>
                       </div>
                     ) : null}
-                    {agentMessage ? <p className={agentState === 'error' ? 'error-text' : 'hint-text'}>{agentMessage}</p> : null}
+                    {shouldRenderAgentMessageCard ? (
+                      <article className={`ai-message-card ${agentState === 'error' ? 'ai-error-card' : 'ai-status-line'}`}>
+                        <header className="ai-message-header">
+                          <strong>{agentState === 'error' ? '错误' : '状态'}</strong>
+                        </header>
+                        {renderMarkdown(normalizedAgentMessage)}
+                      </article>
+                    ) : null}
                   </div>
                 </div>
                 <div className={`ai-unified-input ${isAIInputCollapsed ? 'collapsed' : ''}`}>
