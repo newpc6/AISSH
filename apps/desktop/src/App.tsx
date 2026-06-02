@@ -31,6 +31,9 @@ import { ConfirmModal } from './components/modals/ConfirmModal'
 import { GroupModal } from './components/modals/GroupModal'
 import { HostDialog } from './components/modals/HostDialog'
 import { LogModal } from './components/modals/LogModal'
+import { MetricExpandModal } from './components/modals/MetricExpandModal'
+import { PendingAgentStepModal } from './components/modals/PendingAgentStepModal'
+import { SettingsDialog } from './components/modals/SettingsDialog'
 import {
   type AIPredictionRequest,
   type AIAgentMode,
@@ -7349,518 +7352,50 @@ export function App() {
 
       {isFeatureGuideOpen ? <FeatureGuide onClose={() => setIsFeatureGuideOpen(false)} /> : null}
 
-      {isSettingsDialogOpen ? (
-        <div className="modal-backdrop">
-          <section className="settings-modal">
-            <div className="modal-header">
-              <div>
-                <p className="section-label">设置</p>
-                <h3>偏好设置</h3>
-              </div>
-              <button type="button" title="关闭偏好设置窗口" onClick={() => setIsSettingsDialogOpen(false)}>×</button>
-            </div>
-
-            <div className="settings-layout">
-              <nav className="settings-nav">
-                {[
-                  ['general', '通用'],
-                  ['security', '安全'],
-                  ['metrics', '服务器指标'],
-                  ['ai', 'AI'],
-                ].map(([key, label]) => (
-                  <button
-                    className={settingsSection === key ? 'active' : ''}
-                    key={key}
-                    type="button"
-                    title={`切换到${label}设置`}
-                    onClick={() => setSettingsSection(key as SettingsSection)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </nav>
-
-              <div className="settings-content">
-                {settingsSection === 'general' ? (
-                  <>
-                    <label>
-                      <span>健康检查间隔（秒）</span>
-                      <input
-                        min="3"
-                        max="300"
-                        type="number"
-                        value={settings.healthCheckIntervalSeconds ?? defaultSettings.healthCheckIntervalSeconds}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            healthCheckIntervalSeconds: Number(event.target.value) || DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>每个 SSH 标签保留终端行数</span>
-                      <input
-                        min="100"
-                        type="number"
-                        value={settings.terminalRetainedLines}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            terminalRetainedLines: Number(event.target.value) || 1000,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>右侧服务器信息默认高度（像素）</span>
-                      <input
-                        min={MIN_RIGHT_SERVER_INFO_HEIGHT}
-                        max={MAX_RIGHT_SERVER_INFO_HEIGHT}
-                        type="number"
-                        value={settings.rightServerInfoPanelHeight ?? defaultSettings.rightServerInfoPanelHeight}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            rightServerInfoPanelHeight: Number(event.target.value) || DEFAULT_RIGHT_SERVER_INFO_HEIGHT,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>右侧区域默认宽度（像素）</span>
-                      <input
-                        min={MIN_RIGHT_PANEL_WIDTH}
-                        max={MAX_RIGHT_PANEL_WIDTH}
-                        type="number"
-                        value={settings.rightPanelWidth ?? defaultSettings.rightPanelWidth}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            rightPanelWidth: Number(event.target.value) || DEFAULT_RIGHT_PANEL_WIDTH,
-                          }))
-                        }
-                      />
-                    </label>
-                  </>
-                ) : null}
-
-                {settingsSection === 'security' ? (
-                  <>
-                    <label className="checkbox-row">
-                      <input
-                        checked={desktopLoginRequired}
-                        type="checkbox"
-                        onChange={(event) => setDesktopLoginRequired(event.target.checked)}
-                      />
-                      <span>桌面客户端启动时要求登录</span>
-                    </label>
-                    <p className="hint-text">
-                      网页访问始终需要登录；关闭此项后，本机安装版客户端会使用本机安全会话自动进入。
-                    </p>
-                    <label className="checkbox-row">
-                      <input
-                        checked={webAccessEnabled}
-                        type="checkbox"
-                        onChange={(event) => setWebAccessEnabled(event.target.checked)}
-                      />
-                      <span>启用网页远程访问</span>
-                    </label>
-                    <p className="hint-text">
-                      关闭后禁止浏览器网页登录，仅允许本机桌面客户端访问。
-                    </p>
-                    {authInitialized ? (
-                      <div className="password-change-section">
-                        <h3>修改登录密码</h3>
-                        <label>
-                          <span>旧密码</span>
-                          <input
-                            type="password"
-                            value={changePasswordForm.oldPassword}
-                            onChange={(event) =>
-                              setChangePasswordForm((current) => ({ ...current, oldPassword: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          <span>新密码</span>
-                          <input
-                            type="password"
-                            value={changePasswordForm.newPassword}
-                            onChange={(event) =>
-                              setChangePasswordForm((current) => ({ ...current, newPassword: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          <span>确认新密码</span>
-                          <input
-                            type="password"
-                            value={changePasswordForm.confirmPassword}
-                            onChange={(event) =>
-                              setChangePasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))
-                            }
-                          />
-                        </label>
-                        {changePasswordError ? <p className="error-text">{changePasswordError}</p> : null}
-                        {changePasswordSuccess ? <p className="success-text">{changePasswordSuccess}</p> : null}
-                        <button className="primary-button" type="button" onClick={changePassword}>
-                          修改密码
-                        </button>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-
-                {settingsSection === 'metrics' ? (
-                  <>
-                    <label>
-                      <span>服务器信息刷新频率（秒）</span>
-                      <input
-                        min="1"
-                        type="number"
-                        value={settings.metricsRefreshIntervalSeconds}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            metricsRefreshIntervalSeconds: Number(event.target.value) || 2,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>指标折线时间范围（分钟）</span>
-                      <input
-                        min="1"
-                        type="number"
-                        value={settings.metricsHistoryWindowMinutes}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            metricsHistoryWindowMinutes: Number(event.target.value) || 5,
-                          }))
-                        }
-                      />
-                    </label>
-                    <div className="form-row settings-pair">
-                      <label>
-                        <span>小图圆点数量</span>
-                        <input
-                          min="2"
-                          max="30"
-                          type="number"
-                          value={settings.metricsCompactPointLimit}
-                          onChange={(event) =>
-                            setSettings((current) => ({
-                              ...current,
-                              metricsCompactPointLimit: Number(event.target.value) || 5,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>放大图圆点数量</span>
-                        <input
-                          min="2"
-                          max="120"
-                          type="number"
-                          value={settings.metricsExpandedPointLimit}
-                          onChange={(event) =>
-                            setSettings((current) => ({
-                              ...current,
-                              metricsExpandedPointLimit: Number(event.target.value) || 20,
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                  </>
-                ) : null}
-
-                {settingsSection === 'ai' ? (
-                  <>
-                    <label className="checkbox-row">
-                      <input
-                        checked={settings.aiEnabled}
-                        type="checkbox"
-                        onChange={(event) => {
-                          const enabled = event.target.checked
-                          setSettings((current) => ({ ...current, aiEnabled: enabled }))
-                          if (!enabled) {
-                            clearAIPrediction()
-                          }
-                        }}
-                      />
-                      <span>开启 AI 功能</span>
-                    </label>
-                    <label className="checkbox-row">
-                      <input
-                        checked={settings.aiPredictionEnabled}
-                        disabled={!settings.aiEnabled}
-                        type="checkbox"
-                        onChange={(event) =>
-                          setSettings((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))
-                        }
-                      />
-                      <span>开启 AI 命令预测</span>
-                    </label>
-                    <label className="checkbox-row">
-                      <input
-                        checked={settings.aiPredictionThinkingEnabled}
-                        disabled={!settings.aiEnabled || !settings.aiPredictionEnabled}
-                        type="checkbox"
-                        onChange={(event) =>
-                          setSettings((current) => ({ ...current, aiPredictionThinkingEnabled: event.target.checked }))
-                        }
-                      />
-                      <span>显示预测 thinking</span>
-                    </label>
-                    <label className="checkbox-row">
-                      <input
-                        checked={settings.aiAgentThinkingEnabled}
-                        disabled={!settings.aiEnabled}
-                        type="checkbox"
-                        onChange={(event) =>
-                          setSettings((current) => ({ ...current, aiAgentThinkingEnabled: event.target.checked }))
-                        }
-                      />
-                      <span>开启 Agent 思考</span>
-                    </label>
-                    <p className="ai-model-help">
-                      关闭后会尽量让 OpenAI 兼容接口和 Ollama 跳过深度思考；Qwen/Ollama 会额外发送 /no_think，适合 qwen3 系列思考太久的场景。
-                    </p>
-                    <label>
-                      <span>预测命令数量</span>
-                      <input
-                        min="1"
-                        max="8"
-                        type="number"
-                        value={settings.aiPredictionCount}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            aiPredictionCount: Number(event.target.value) || 3,
-                          }))
-                        }
-                      />
-                    </label>
-                    <div className="form-row settings-pair">
-                      <label>
-                        <span>终端上下文字符数</span>
-                        <input
-                          min="500"
-                          max="50000"
-                          step="500"
-                          type="number"
-                          value={settings.aiTerminalContextLimit ?? defaultSettings.aiTerminalContextLimit}
-                          onChange={(event) =>
-                            setSettings((current) => ({
-                              ...current,
-                              aiTerminalContextLimit: Number(event.target.value) || 5000,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>历史命令条数</span>
-                        <input
-                          min="1"
-                          max="200"
-                          type="number"
-                          value={settings.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit}
-                          onChange={(event) =>
-                            setSettings((current) => ({
-                              ...current,
-                              aiCommandHistoryLimit: Number(event.target.value) || 20,
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                    <label>
-                      <span>对话上下文消息数</span>
-                      <input
-                        min="1"
-                        max="100"
-                        type="number"
-                        value={settings.aiConversationContextLimit ?? defaultSettings.aiConversationContextLimit}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            aiConversationContextLimit: Number(event.target.value) || 30,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>Agent 命令等待超时（秒）</span>
-                      <input
-                        min="10"
-                        max="1800"
-                        type="number"
-                        value={settings.agentCommandTimeoutSeconds ?? defaultSettings.agentCommandTimeoutSeconds}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            agentCommandTimeoutSeconds: Number(event.target.value) || 120,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>AI 请求超时（秒）</span>
-                      <input
-                        min="10"
-                        max="1800"
-                        type="number"
-                        value={settings.aiProviderTimeoutSeconds ?? defaultSettings.aiProviderTimeoutSeconds}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            aiProviderTimeoutSeconds: Number(event.target.value) || 120,
-                          }))
-                        }
-                      />
-                      <small>远程 Ollama 或大模型首次加载较慢时可调大，例如 120-300 秒。</small>
-                    </label>
-                    <label>
-                      <span>预测触发延迟（毫秒）</span>
-                      <input
-                        min="0"
-                        max="10000"
-                        step="100"
-                        type="number"
-                        value={settings.aiPredictionTriggerDelayMs ?? defaultSettings.aiPredictionTriggerDelayMs}
-                        onChange={(event) =>
-                          setSettings((current) => ({
-                            ...current,
-                            aiPredictionTriggerDelayMs: Number(event.target.value) || 1000,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>大模型地址</span>
-                      <input
-                        value={activeAIModelConfig?.baseUrl ?? ''}
-                        readOnly
-                        placeholder="https://api.openai.com/v1"
-                      />
-                    </label>
-                    <label>
-                      <span>API Key</span>
-                      <input
-                        type="password"
-                        value={activeAIModelConfig?.apiKey ?? ''}
-                        readOnly
-                        placeholder="sk-..."
-                      />
-                    </label>
-                    <label>
-                      <span>模型</span>
-                      <input
-                        value={activeAIModelConfig?.model ?? ''}
-                        readOnly
-                        placeholder="gpt-4.1-mini"
-                      />
-                    </label>
-                    <div className="ai-model-settings">
-                      <div className="ai-model-settings-head">
-                        <span>AI 模型配置</span>
-                        <div className="ai-model-actions">
-                          <button type="button" title="新增 OpenAI 兼容模型" onClick={() => addAIModelConfig('openai-compatible')}>+ OpenAI</button>
-                          <button type="button" title="新增 Ollama 模型" onClick={() => addAIModelConfig('ollama')}>+ Ollama</button>
-                        </div>
-                      </div>
-                      <p className="ai-model-help">
-                        Ollama 请填写 OpenAI 兼容地址，例如 http://111.4.141.154:41000/v1；不要只填 http://111.4.141.154:41000，否则会请求到 /chat/completions 并返回 404。API Key 通常可留空；模型名填写 ollama list 中的名称。
-                      </p>
-                      {settings.aiModels.length === 0 ? (
-                        <p className="hint-text">尚未配置 AI 模型。</p>
-                      ) : null}
-                      {settings.aiModels.map((model) => (
-                        <div className={`ai-model-config-row${model.id === settings.activeAIModelId ? ' active' : ''}`} key={model.id}>
-                          <label className="checkbox-row">
-                            <input
-                              checked={model.id === settings.activeAIModelId}
-                              name="active-ai-model"
-                              type="radio"
-                              onChange={() => setSettings((current) => normalizeAppSettings({ ...current, activeAIModelId: model.id }))}
-                            />
-                            <span>启用</span>
-                          </label>
-                          <label>
-                            <span>名称</span>
-                            <input
-                              value={model.name}
-                              onChange={(event) => updateAIModelConfig(model.id, { name: event.target.value })}
-                              placeholder={model.provider === 'ollama' ? 'Ollama' : 'OpenAI Compatible'}
-                            />
-                          </label>
-                          <label>
-                            <span>类型</span>
-                            <select
-                              value={model.provider}
-                              onChange={(event) => updateAIModelConfig(model.id, { provider: event.target.value as AIModelProvider })}
-                            >
-                              <option value="openai-compatible">OpenAI 兼容</option>
-                              <option value="ollama">Ollama</option>
-                            </select>
-                          </label>
-                          <label>
-                            <span>地址</span>
-                            <input
-                              value={model.baseUrl}
-                              onChange={(event) => updateAIModelConfig(model.id, { baseUrl: event.target.value })}
-                              placeholder={model.provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL : 'https://api.openai.com/v1'}
-                            />
-                          </label>
-                          <label>
-                            <span>API Key</span>
-                            <input
-                              type="password"
-                              value={model.apiKey}
-                              onChange={(event) => updateAIModelConfig(model.id, { apiKey: event.target.value })}
-                              placeholder={model.provider === 'ollama' ? 'Ollama 通常可留空' : 'sk-...'}
-                            />
-                          </label>
-                          <label>
-                            <span>模型</span>
-                            <input
-                              value={model.model}
-                              onChange={(event) => updateAIModelConfig(model.id, { model: event.target.value })}
-                              placeholder={model.provider === 'ollama' ? 'llama3.1' : 'gpt-4.1-mini'}
-                            />
-                          </label>
-                          <div className="ai-model-row-footer">
-                            <small>{model.provider === 'ollama' ? '使用 Ollama 的 OpenAI 兼容接口 /v1/chat/completions。' : '适用于 OpenAI、DeepSeek、通义千问等兼容接口。'}</small>
-                            <button type="button" title="删除这个模型配置" onClick={() => removeAIModelConfig(model.id)}>删除</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <label>
-                      <span>系统提示词</span>
-                      <textarea
-                        value={settings.aiSystemPrompt}
-                        onChange={(event) => setSettings((current) => ({ ...current, aiSystemPrompt: event.target.value }))}
-                        placeholder={DEFAULT_AI_SYSTEM_PROMPT}
-                      />
-                      <small>用于统一 AI 对话和 Agent 任务，会随请求发送给 Go core；AI 预测使用后端专用预测提示词。</small>
-                    </label>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            {settingsSavedMessage ? <p className="success-text">{settingsSavedMessage}</p> : null}
-            <div className="modal-actions">
-              <button type="button" title="关闭偏好设置窗口" onClick={() => setIsSettingsDialogOpen(false)}>关闭</button>
-              <button className="primary-button" type="button" title="保存偏好设置" onClick={() => void saveAllSettings()}>保存</button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <SettingsDialog
+        activeAIModelApiKey={activeAIModelConfig?.apiKey ?? ''}
+        activeAIModelBaseUrl={activeAIModelConfig?.baseUrl ?? ''}
+        activeAIModelModel={activeAIModelConfig?.model ?? ''}
+        authInitialized={authInitialized}
+        changePasswordError={changePasswordError}
+        changePasswordForm={changePasswordForm}
+        changePasswordSuccess={changePasswordSuccess}
+        defaultAiCommandHistoryLimit={defaultSettings.aiCommandHistoryLimit}
+        defaultAiConversationContextLimit={defaultSettings.aiConversationContextLimit}
+        defaultAiPredictionTriggerDelayMs={defaultSettings.aiPredictionTriggerDelayMs}
+        defaultAiProviderTimeoutSeconds={defaultSettings.aiProviderTimeoutSeconds}
+        defaultAiSystemPrompt={DEFAULT_AI_SYSTEM_PROMPT}
+        defaultAiTerminalContextLimit={defaultSettings.aiTerminalContextLimit}
+        defaultAgentCommandTimeoutSeconds={defaultSettings.agentCommandTimeoutSeconds}
+        defaultHealthCheckIntervalSeconds={DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS}
+        defaultOllamaBaseUrl={DEFAULT_OLLAMA_BASE_URL}
+        defaultRightPanelWidth={DEFAULT_RIGHT_PANEL_WIDTH}
+        defaultRightServerInfoHeight={DEFAULT_RIGHT_SERVER_INFO_HEIGHT}
+        defaultSettings={defaultSettings}
+        desktopLoginRequired={desktopLoginRequired}
+        maxRightPanelWidth={MAX_RIGHT_PANEL_WIDTH}
+        maxRightServerInfoHeight={MAX_RIGHT_SERVER_INFO_HEIGHT}
+        minRightPanelWidth={MIN_RIGHT_PANEL_WIDTH}
+        minRightServerInfoHeight={MIN_RIGHT_SERVER_INFO_HEIGHT}
+        normalizeSettings={normalizeAppSettings}
+        onAddAIModelConfig={addAIModelConfig}
+        onChangePassword={changePassword}
+        onChangePasswordFormChange={(updater) => setChangePasswordForm((current) => updater(current))}
+        onClearPrediction={clearAIPrediction}
+        onClose={() => setIsSettingsDialogOpen(false)}
+        onDesktopLoginRequiredChange={setDesktopLoginRequired}
+        onRemoveAIModelConfig={removeAIModelConfig}
+        onSave={() => { void saveAllSettings() }}
+        onSettingsChange={(updater) => setSettings((current) => updater(current))}
+        onSettingsSectionChange={setSettingsSection}
+        onUpdateAIModelConfig={updateAIModelConfig}
+        onWebAccessEnabledChange={setWebAccessEnabled}
+        open={isSettingsDialogOpen}
+        settings={settings}
+        settingsSavedMessage={settingsSavedMessage}
+        settingsSection={settingsSection}
+        webAccessEnabled={webAccessEnabled}
+      />
 
       <ConfirmModal
         dialog={confirmDialog}
@@ -7868,61 +7403,25 @@ export function App() {
         onConfirm={confirmAndRun}
       />
 
-      {pendingAgentStepId ? (
-        <div className="modal-backdrop">
-          <section className="confirm-modal">
-            <div className="modal-header">
-              <div>
-                <p className="section-label">AI Agent</p>
-                <h3>确认高风险命令</h3>
-              </div>
-              <button type="button" title="关闭确认" onClick={() => setPendingAgentStepId('')}>×</button>
-            </div>
-            {(() => {
-              const step = agentSteps.find((item) => item.id === pendingAgentStepId)
-              if (!step) return <p className="error-text">待确认命令不存在</p>
-              return (
-                <>
-                  <p className="confirm-copy">Agent 认为这一步风险较高，请确认后再执行。</p>
-                  <code className="confirm-command">{step.command}</code>
-                  {step.riskReason ? <p className="hint-text">{step.riskReason}</p> : null}
-                  <div className="modal-actions">
-                    <button type="button" title="取消执行" onClick={() => setPendingAgentStepId('')}>取消</button>
-                    <button
-                      className="danger-button"
-                      type="button"
-                      title="确认执行高风险命令"
-                      onClick={() => {
-                        const stepId = pendingAgentStepId
-                        setPendingAgentStepId('')
-                        agentRunningRef.current = agentModeRef.current === 'auto'
-                        void executeAgentStep(stepId, false, true)
-                      }}
-                    >
-                      确认执行
-                    </button>
-                  </div>
-                </>
-              )
-            })()}
-          </section>
-        </div>
-      ) : null}
+      <PendingAgentStepModal
+        open={Boolean(pendingAgentStepId)}
+        step={pendingAgentStepId ? agentSteps.find((item) => item.id === pendingAgentStepId) ?? null : null}
+        onClose={() => setPendingAgentStepId('')}
+        onConfirm={() => {
+          const stepId = pendingAgentStepId
+          setPendingAgentStepId('')
+          agentRunningRef.current = agentModeRef.current === 'auto'
+          void executeAgentStep(stepId, false, true)
+        }}
+      />
 
-      {expandedMetric ? (
-        <div className="modal-backdrop">
-          <section className="metric-modal">
-            <div className="modal-header">
-              <div>
-                <p className="section-label">当前服务器</p>
-                <h3>{expandedMetricLabel}</h3>
-              </div>
-              <button type="button" title="关闭放大图表" onClick={() => setExpandedMetric('')}>×</button>
-            </div>
-            {renderMetricChart(expandedMetric, expandedMetricLabel, false)}
-          </section>
-        </div>
-      ) : null}
+      <MetricExpandModal
+        label={expandedMetricLabel}
+        open={Boolean(expandedMetric)}
+        onClose={() => setExpandedMetric('')}
+      >
+        {expandedMetric ? renderMetricChart(expandedMetric, expandedMetricLabel, false) : null}
+      </MetricExpandModal>
 
       <AIInputExpandModal
         open={isAIInputExpanded}
