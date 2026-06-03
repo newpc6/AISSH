@@ -325,6 +325,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   overflow: hidden;
+  padding: 12px 14px 0;
 }
 
 .unified-ai-box.history-open .ai-conversation-shell {
