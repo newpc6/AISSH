@@ -107,7 +107,7 @@ export function ServersPanel({
             {group.hosts.map((host) => (
               <div
                 key={host.id}
-                className={`server-row ${batchMode ? 'batch-mode-row' : ''} ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''}`}
+                className={`server-row ${batchMode ? 'batch-mode-row' : ''} ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''} ${openHostMenuId === host.id ? 'menu-open' : ''}`}
                 onClick={() => onSelectHost(host.id)}
                 onDoubleClick={() => void onCreateSession(host.id)}
                 role="button"
