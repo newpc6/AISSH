@@ -529,16 +529,15 @@ export function App() {
     if (!sessionId) {
       return
     }
-    setAgentStateBySession((current) => {
-      const previous = current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
-      const nextState =
-        typeof updater === 'function'
-          ? updater(previous)
-          : { ...previous, ...updater }
-      const next = { ...current, [sessionId]: nextState }
-      agentStateBySessionRef.current = next
-      return next
-    })
+    const current = agentStateBySessionRef.current
+    const previous = current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
+    const nextState =
+      typeof updater === 'function'
+        ? updater(previous)
+        : { ...previous, ...updater }
+    const next = { ...current, [sessionId]: nextState }
+    agentStateBySessionRef.current = next
+    setAgentStateBySession(next)
   }
 
   const getAgentStepsForSession = (sessionId: string) =>
@@ -551,13 +550,12 @@ export function App() {
     if (!sessionId) {
       return
     }
-    setAgentStepsBySession((current) => {
-      const previous = current[sessionId] ?? []
-      const nextSteps = typeof updater === 'function' ? updater(previous) : updater
-      const next = { ...current, [sessionId]: nextSteps }
-      agentStepsBySessionRef.current = next
-      return next
-    })
+    const current = agentStepsBySessionRef.current
+    const previous = current[sessionId] ?? []
+    const nextSteps = typeof updater === 'function' ? updater(previous) : updater
+    const next = { ...current, [sessionId]: nextSteps }
+    agentStepsBySessionRef.current = next
+    setAgentStepsBySession(next)
   }
 
   const findAgentStepById = (stepId: string) => {
