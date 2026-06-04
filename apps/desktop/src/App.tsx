@@ -1441,7 +1441,7 @@ export function App() {
         return true
       }
       const key = event.key.toLowerCase()
-      if (event.ctrlKey && event.shiftKey && key === 'c') {
+      if (event.ctrlKey && !event.shiftKey && key === 'insert') {
         if (!terminal.hasSelection()) {
           return true
         }
