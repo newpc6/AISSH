@@ -15,6 +15,7 @@ type ServersPanelProps = {
   onCreateSession: (hostId?: string) => void | Promise<void>
   onDuplicateHost: (host: HostRecord) => void | Promise<void>
   onExportHosts: (includeSecrets: boolean) => void | Promise<void>
+  onMoveHost: (hostId: string, direction: 'up' | 'down') => void | Promise<void>
   onOpenAddHostDialog: () => void
   onOpenEditHostDialog: (host: HostRecord) => void
   onOpenGroupDialog: () => void
@@ -38,6 +39,7 @@ export function ServersPanel({
   onCreateSession,
   onDuplicateHost,
   onExportHosts,
+  onMoveHost,
   onOpenAddHostDialog,
   onOpenEditHostDialog,
   onOpenGroupDialog,
@@ -52,6 +54,11 @@ export function ServersPanel({
       void onCreateSession(hostId)
     }
   }
+
+  const showMoveButtons = !batchMode && !serverSearch.trim()
+  const flatHostIds = showMoveButtons
+    ? visibleHostGroups.flatMap((group) => group.hosts.map((host) => host.id))
+    : []
 
   return (
     <div className="left-content">
@@ -141,6 +148,34 @@ export function ServersPanel({
                 >
                   ⋯
                 </button>
+                {showMoveButtons ? (
+                  <span className="host-move-buttons">
+                    <button
+                      type="button"
+                      disabled={flatHostIds.indexOf(host.id) <= 0}
+                      title="上移"
+                      aria-label={`${host.name} 上移`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void onMoveHost(host.id, 'up')
+                      }}
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      disabled={flatHostIds.indexOf(host.id) >= flatHostIds.length - 1}
+                      title="下移"
+                      aria-label={`${host.name} 下移`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void onMoveHost(host.id, 'down')
+                      }}
+                    >
+                      ▼
+                    </button>
+                  </span>
+                ) : null}
                 {openHostMenuId === host.id ? (
                   <div className="host-menu" onClick={(event) => event.stopPropagation()}>
                     <button type="button" title="编辑服务器配置" onClick={() => onOpenEditHostDialog(host)}>编辑</button>

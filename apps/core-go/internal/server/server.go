@@ -652,6 +652,54 @@ func (m *sessionManager) deleteHost(hostID string) bool {
 	return false
 }
 
+type hostsReorderRequest struct {
+	HostIDs []string `json:"hostIds"`
+}
+
+func (m *sessionManager) reorderHosts(request hostsReorderRequest) []hostRecord {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(request.HostIDs) == 0 {
+		sanitized := make([]hostRecord, len(m.hosts))
+		for i, host := range m.hosts {
+			sanitized[i] = host.sanitized()
+		}
+		return sanitized
+	}
+
+	indexByID := make(map[string]int, len(m.hosts))
+	for i, host := range m.hosts {
+		indexByID[host.ID] = i
+	}
+
+	reordered := make([]hostRecord, 0, len(m.hosts))
+	seen := make(map[string]bool, len(m.hosts))
+	for _, hostID := range request.HostIDs {
+		idx, ok := indexByID[hostID]
+		if !ok || seen[hostID] {
+			continue
+		}
+		seen[hostID] = true
+		reordered = append(reordered, m.hosts[idx])
+	}
+	for _, host := range m.hosts {
+		if !seen[host.ID] {
+			reordered = append(reordered, host)
+		}
+	}
+
+	m.hosts = reordered
+	_ = m.store.save(m.hosts, m.groups)
+	m.logger.info("hosts", "hosts reordered", map[string]any{"count": len(m.hosts)})
+
+	sanitized := make([]hostRecord, len(m.hosts))
+	for i, host := range m.hosts {
+		sanitized[i] = host.sanitized()
+	}
+	return sanitized
+}
+
 func (m *sessionManager) importHosts(request hostsImportRequest) []hostRecord {
 	m.mu.Lock()
 	defer m.mu.Unlock()

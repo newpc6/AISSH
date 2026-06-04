@@ -2017,6 +2017,30 @@ export function App() {
     })
   }
 
+  const handleMoveHost = async (hostId: string, direction: 'up' | 'down') => {
+    const currentHosts = hostsRef.current
+    const index = currentHosts.findIndex((host) => host.id === hostId)
+    if (index < 0) return
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= currentHosts.length) return
+
+    const reordered = [...currentHosts]
+    ;[reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]]
+    setHosts(reordered)
+
+    try {
+      const hostIds = reordered.map((host) => host.id)
+      await apiFetch('/hosts/reorder', {
+        method: 'POST',
+        body: JSON.stringify({ hostIds }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+    } catch {
+      setHosts(currentHosts)
+    }
+  }
+
   const saveHostGroups = async () => {
     const groupEntries: HostGroup[] = []
     const activeNames = new Set<string>()
@@ -5638,6 +5662,7 @@ export function App() {
               onCreateSession={(hostId) => createSession(hostId)}
               onDuplicateHost={duplicateHost}
               onExportHosts={(includeSecrets) => exportHosts(includeSecrets)}
+              onMoveHost={handleMoveHost}
               onOpenAddHostDialog={openAddHostDialog}
               onOpenEditHostDialog={openEditHostDialog}
               onOpenGroupDialog={openGroupDialog}

@@ -486,6 +486,18 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		}
 		writeJSON(w, map[string][]hostRecord{"hosts": manager.importHosts(request)})
 	})
+	mux.HandleFunc("/api/hosts/reorder", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var request hostsReorderRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, manager.reorderHosts(request))
+	})
 	mux.HandleFunc("/api/hosts/", func(w http.ResponseWriter, r *http.Request) {
 		hostID := r.URL.Path[len("/api/hosts/"):]
 		if hostID == "" {
