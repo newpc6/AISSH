@@ -2408,6 +2408,40 @@ export function App() {
   const findBatchHostBySession = (sessionId: string) =>
     batchHostResultsRef.current.find((result) => result.sessionId === sessionId)
 
+  const waitForSessionConnected = async (sessionId: string, timeoutMs = 30000) => {
+    const existing = sessionsRef.current.find((item) => item.id === sessionId)
+    if (!existing) {
+      throw new Error('当前 SSH 会话不存在')
+    }
+    if (existing.status === 'connected') {
+      return existing
+    }
+    const start = Date.now()
+    return await new Promise<SessionRecord>((resolve, reject) => {
+      const check = () => {
+        const session = sessionsRef.current.find((item) => item.id === sessionId)
+        if (!session) {
+          reject(new Error('当前 SSH 会话不存在'))
+          return
+        }
+        if (session.status === 'connected') {
+          resolve(session)
+          return
+        }
+        if (session.status === 'error' || session.status === 'closed') {
+          reject(new Error(session.lastError || 'SSH 会话不可用'))
+          return
+        }
+        if (Date.now() - start > timeoutMs) {
+          reject(new Error('等待 SSH 会话连接超时'))
+          return
+        }
+        window.setTimeout(check, 300)
+      }
+      check()
+    })
+  }
+
   const batchMessagePrefix = (hostName: string, index?: number, total?: number) =>
     `[${typeof index === 'number' && total ? `${index + 1}/${total} ` : ''}${hostName}]`
 
@@ -5278,8 +5312,38 @@ export function App() {
     const located = findAgentStepById(stepId)
     const step = located?.step
     const sessionId = step?.sessionId || located?.sessionId || activeSessionIdRef.current
-    const session = sessionsRef.current.find((item) => item.id === sessionId)
-    if (!step || !session || session.status !== 'connected') {
+    if (!step) {
+      updateSessionAgentState(sessionId, { message: '当前 SSH 会话不可执行命令' })
+      appendLog('warn', 'ui.agent', 'agent command skipped because step is unavailable', {
+        stepID: stepId,
+        sessionID: sessionId,
+      })
+      return
+    }
+    let session = sessionsRef.current.find((item) => item.id === sessionId)
+    if (session?.status === 'connecting') {
+      updateSessionAgentState(sessionId, {
+        state: 'loading',
+        message: 'SSH 会话连接中，正在等待连接完成后执行命令...',
+      })
+      try {
+        session = await waitForSessionConnected(sessionId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '等待 SSH 会话连接失败'
+        updateSessionAgentState(sessionId, {
+          running: false,
+          state: 'idle',
+          message,
+        })
+        appendLog('warn', 'ui.agent', 'agent command skipped while waiting for session connection', {
+          stepID: stepId,
+          sessionID: sessionId,
+          error: message,
+        })
+        return
+      }
+    }
+    if (!session || session.status !== 'connected') {
       updateSessionAgentState(sessionId, { message: '当前 SSH 会话不可执行命令' })
       appendLog('warn', 'ui.agent', 'agent command skipped because session is unavailable', {
         stepID: stepId,
