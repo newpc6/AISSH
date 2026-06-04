@@ -4310,19 +4310,20 @@ export function App() {
       riskReason: response.riskReason,
       createdAt: new Date().toISOString(),
     }
-    const sessionAgentMode = getSessionAgentState(sessionId).mode
+    const currentAgentState = getSessionAgentState(sessionId)
     updateSessionAgentState(sessionId, {
       state: 'success',
       message: response.answer || response.agentReason || 'AI 已给出下一步命令',
     })
-    if (sessionAgentMode !== 'auto') {
+    if (currentAgentState.mode !== 'auto' || !currentAgentState.running) {
       updateSessionAgentState(sessionId, { running: false })
       return
     }
     void appendAIMessage('agent_step', command, { step }).then((message) => {
       const messageStep = { ...step, id: message.id }
       setAgentStepsForSession(sessionId, (current) => [messageStep, ...current].slice(0, 30))
-      if (sessionAgentMode === 'auto' && riskLevel !== 'high') {
+      const latestAgentState = getSessionAgentState(sessionId)
+      if (latestAgentState.mode === 'auto' && latestAgentState.running && riskLevel !== 'high') {
         updateSessionAgentState(sessionId, { running: true })
         void executeAgentStep(messageStep.id, true, true)
       } else if (riskLevel === 'high') {
@@ -4438,12 +4439,11 @@ export function App() {
     resetAIStreamBuffers()
     updateSessionAgentState(sessionId, { message: '正在让 Agent 规划下一步...' })
     try {
-      const sessionAgentMode = getSessionAgentState(sessionId).mode
       const response = await requestAIAssistStream(
         goal,
         {
           agentGoal: goal,
-          agentMode: sessionAgentMode,
+          agentMode: getSessionAgentState(sessionId).mode,
           agentSteps: steps,
           ignoreConversationContext: isBatchSession,
           suppressStreamingMessages: isBatchSession,
@@ -4507,7 +4507,8 @@ export function App() {
         await persistStreamingArtifacts(activeAIConversationIdRef.current)
         await appendAIMessage('command', response.answer || response.agentReason || 'Agent 已给出下一步命令。', { response })
       }
-      if (sessionAgentMode !== 'auto') {
+      const latestAgentState = getSessionAgentState(sessionId)
+      if (latestAgentState.mode !== 'auto' || !latestAgentState.running) {
         updateSessionAgentState(sessionId, {
           running: false,
           message: response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。',
@@ -4525,7 +4526,8 @@ export function App() {
       updateSessionAgentState(sessionId, {
         message: response.answer || response.agentReason || 'Agent 已给出下一步命令',
       })
-      if (sessionAgentMode === 'auto' && riskLevel !== 'high') {
+      const latestAutoState = getSessionAgentState(sessionId)
+      if (latestAutoState.mode === 'auto' && latestAutoState.running && riskLevel !== 'high') {
         updateSessionAgentState(sessionId, { running: true })
         void executeAgentStep(step.id, true, true)
       } else if (riskLevel === 'high') {
@@ -4563,6 +4565,7 @@ export function App() {
       running: false,
       state: 'idle',
       message: 'Agent 已停止',
+      pendingStepId: '',
     })
     clearAgentWaiter(sessionId)
   }
