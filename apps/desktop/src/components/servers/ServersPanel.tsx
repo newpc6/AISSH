@@ -137,18 +137,6 @@ export function ServersPanel({
                   </small>
                 </div>
                 <div className="host-row-actions">
-                  <button
-                    aria-label={`${host.name} 菜单`}
-                    className="host-menu-trigger"
-                    title={`${host.name} 更多操作`}
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onOpenHostMenuChange(openHostMenuId === host.id ? '' : host.id)
-                    }}
-                  >
-                    ⋯
-                  </button>
                   {showMoveButtons ? (
                     <>
                       <button
@@ -179,6 +167,18 @@ export function ServersPanel({
                       </button>
                     </>
                   ) : null}
+                  <button
+                    aria-label={`${host.name} 菜单`}
+                    className="host-menu-trigger"
+                    title={`${host.name} 更多操作`}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onOpenHostMenuChange(openHostMenuId === host.id ? '' : host.id)
+                    }}
+                  >
+                    ⋯
+                  </button>
                 </div>
                 {openHostMenuId === host.id ? (
                   <div className="host-menu" onClick={(event) => event.stopPropagation()}>
