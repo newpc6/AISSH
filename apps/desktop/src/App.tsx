@@ -138,6 +138,7 @@ import {
   clampPredictionPanelHeight,
   clampRightPanelWidth,
   clampRightServerInfoPanelHeight,
+  classifyAgentCommandTimeout,
   classifyCommandRisk,
   detectPreviewKind,
   displayApiPath,
@@ -5019,7 +5020,9 @@ export function App() {
     }
     const beforeContext = terminalContextTail(terminalCachesRef.current[sessionId], 12000)
     const marker = agentExitMarker(step.id)
-    const timeoutMs = normalizeAppSettings(sessionSettingsRef.current).agentCommandTimeoutSeconds * 1000
+    const baseTimeoutSeconds = normalizeAppSettings(sessionSettingsRef.current).agentCommandTimeoutSeconds
+    const timeoutSeconds = classifyAgentCommandTimeout(step.command, baseTimeoutSeconds)
+    const timeoutMs = timeoutSeconds * 1000
     clearAgentWaiter()
     updateAgentStep(step.id, { status: 'running', riskLevel, sessionId })
     setAgentState('loading')

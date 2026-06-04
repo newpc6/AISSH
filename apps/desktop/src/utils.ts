@@ -755,6 +755,46 @@ export function metricXAxisLabels(samples: MetricSample[]) {
   return [formatMetricTime(first.collectedAt), formatMetricTime(last.collectedAt)]
 }
 
+// classifyAgentCommandTimeout returns an appropriate timeout in seconds based on
+// the command type. Long-running commands (install, download, compile) get up to
+// 3x the base timeout, capped at 1800s. Quick inspection commands get at most 60s.
+export function classifyAgentCommandTimeout(command: string, baseTimeoutSeconds: number): number {
+  const maxTimeout = 1800
+  const quickTimeout = 60
+  const lower = command.toLowerCase().trim()
+  const longSignals = [
+    'install', 'uninstall', 'upgrade', 'update',
+    'download', 'wget ', 'curl ', 'git clone',
+    'pip install', 'conda install', 'apt install', 'apt-get install',
+    'yum install', 'dnf install', 'npm install', 'brew install',
+    'build', 'compile', 'make', 'cmake', 'cargo build',
+    'tar -x', 'unzip', '7z', 'aria2c',
+    'docker build', 'docker pull', 'docker compose up',
+    'nvidia-smi -l', 'nvitop',
+    'conda create', 'conda env',
+    'torch', 'transformers',
+  ]
+  const quickSignals = [
+    'ls ', 'll ', 'pwd', 'echo ', 'cat ', 'head ', 'tail ',
+    'grep ', 'which ', 'whereis ', 'type ', 'id ', 'whoami',
+    'ps ', 'df ', 'du ', 'free ', 'uptime', 'uname', 'hostname',
+    'date ', 'env ', 'cd ', 'true', 'false', 'test ',
+    'printenv', 'locale',
+  ]
+
+  for (const signal of longSignals) {
+    if (lower.includes(signal)) {
+      return Math.min(maxTimeout, baseTimeoutSeconds * 3)
+    }
+  }
+  for (const signal of quickSignals) {
+    if (lower.startsWith(signal)) {
+      return Math.min(quickTimeout, baseTimeoutSeconds)
+    }
+  }
+  return baseTimeoutSeconds
+}
+
 export function normalizeHostGroups(groups: HostGroup[], hosts: HostRecord[] = []) {
   const seen = new Set<string>()
   const normalized: HostGroup[] = []

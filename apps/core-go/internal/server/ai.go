@@ -77,14 +77,14 @@ const (
 	aiMaxPredictionCount     = 8
 	aiTerminalContextLimit   = 50000
 	aiCommandHistoryLimit    = 200
-	aiAssistContextLimit     = 50000
+	aiAssistContextLimit     = 200000
 	aiAssistPromptLimit      = 12000
-	aiAssistStepsLimit       = 30
+	aiAssistStepsLimit       = 60
 	aiDefaultRequestTimeout  = 120 * time.Second
 	aiMinRequestTimeout      = 10 * time.Second
 	aiMaxRequestTimeout      = 30 * time.Minute
 	aiMaxTokens              = 1024
-	aiAssistMaxTokens        = 1600
+	aiAssistMaxTokens        = 4096
 	aiProviderBodyReadLimit  = 1024 * 1024
 	aiLogSnippetLimit        = 2000
 )
@@ -852,7 +852,7 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	}
 	for index, step := range request.AgentSteps {
 		step.Command = redactSensitiveText(trimToLastRunes(step.Command, 2000))
-		step.Output = redactSensitiveText(trimToLastRunes(step.Output, 8000))
+		step.Output = redactSensitiveText(trimOutputSmart(step.Output, 2000, 6000))
 		request.AgentSteps[index] = step
 	}
 	request.AgentGoal = trimToLastRunes(strings.TrimSpace(request.AgentGoal), aiAssistPromptLimit)
@@ -909,6 +909,29 @@ func trimToLastRunes(value string, limit int) string {
 		return value
 	}
 	return string(runes[len(runes)-limit:])
+}
+
+// trimOutputSmart keeps headRunes from the beginning and tailRunes from the end,
+// inserting a truncation marker in between. This ensures critical error messages
+// at both the beginning and end of long outputs are preserved.
+func trimOutputSmart(value string, headRunes int, tailRunes int) string {
+	if headRunes <= 0 && tailRunes <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	totalLimit := headRunes + tailRunes
+	if totalLimit <= 0 || len(runes) <= totalLimit {
+		return value
+	}
+	if headRunes <= 0 {
+		return string(runes[len(runes)-tailRunes:])
+	}
+	if tailRunes <= 0 {
+		return string(runes[:headRunes])
+	}
+	head := string(runes[:headRunes])
+	tail := string(runes[len(runes)-tailRunes:])
+	return head + "\n...\n(中间输出已省略)\n...\n" + tail
 }
 
 func redactSensitiveText(value string) string {
