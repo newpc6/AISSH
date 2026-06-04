@@ -537,6 +537,71 @@ export function App() {
     }
   }
 
+  const copyTerminalSelection = async () => {
+    const text = xtermRef.current?.getSelection() ?? ''
+    if (!text) {
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      clearErrorForRequest('clipboard', 'COPY')
+      appendLog('debug', 'ui.terminal', 'terminal selection copied', { chars: text.length })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '复制终端选中文本失败'
+      appendLog('warn', 'ui.terminal', 'terminal selection copy failed', { error: message })
+      setErrorMessage(message, {
+        title: '复制失败',
+        method: 'COPY',
+        path: 'clipboard',
+        source: '终端选区',
+      })
+    }
+  }
+
+  const pasteClipboardToTerminal = async () => {
+    const sessionId = activeSessionIdRef.current
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
+    if (!session) {
+      return
+    }
+    if (session.status !== 'connected') {
+      setErrorMessage('当前 SSH 会话已断开，请点击重连后继续输入')
+      return
+    }
+    if (!navigator.clipboard?.readText) {
+      setErrorMessage('当前环境不支持读取系统剪贴板', {
+        title: '粘贴失败',
+        method: 'PASTE',
+        path: 'clipboard',
+        source: '系统剪贴板',
+      })
+      return
+    }
+
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text) {
+        return
+      }
+      xtermRef.current?.focus()
+      setActiveViewId(`session:${session.id}`)
+      clearAIPrediction({ sessionId: session.id })
+      observeTerminalInput(session.id, text)
+      queueSessionInput(session.id, text)
+      clearErrorForRequest('clipboard', 'PASTE')
+      appendLog('debug', 'ui.terminal', 'clipboard pasted into terminal', { chars: text.length })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '读取系统剪贴板失败'
+      appendLog('warn', 'ui.terminal', 'terminal paste failed', { error: message })
+      setErrorMessage(message, {
+        title: '粘贴失败',
+        method: 'PASTE',
+        path: 'clipboard',
+        source: '系统剪贴板',
+      })
+    }
+  }
+
   const updatePredictionGhostPositionNow = () => {
     const terminal = xtermRef.current
     const surface = terminalRef.current
@@ -1370,6 +1435,32 @@ export function App() {
       terminal.writeln('AI SSH workspace ready.')
       terminal.writeln('选择左侧服务器并创建会话，或点击左侧 + 添加 SSH 连接。')
     }
+
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') {
+        return true
+      }
+      const key = event.key.toLowerCase()
+      if (event.ctrlKey && event.shiftKey && key === 'c') {
+        if (!terminal.hasSelection()) {
+          return true
+        }
+        void copyTerminalSelection()
+        event.preventDefault()
+        return false
+      }
+      if (event.ctrlKey && !event.shiftKey && key === 'v') {
+        void pasteClipboardToTerminal()
+        event.preventDefault()
+        return false
+      }
+      if (event.shiftKey && !event.ctrlKey && !event.metaKey && key === 'tab') {
+        triggerManualAIPrediction()
+        event.preventDefault()
+        return false
+      }
+      return true
+    })
 
     const onResize = () => {
       fitAddon.fit()
@@ -3378,7 +3469,11 @@ export function App() {
     [],
   )
 
-  const requestAIPredictions = async (history = commandHistoryRef.current, sessionId = activeSessionIdRef.current) => {
+  const requestAIPredictions = async (
+    history = commandHistoryRef.current,
+    sessionId = activeSessionIdRef.current,
+    options: { manual?: boolean } = {},
+  ) => {
     const normalized = normalizeAppSettings(sessionSettingsRef.current)
     const existingPrediction = getAIPredictionForSession(sessionId)
     const inFlightRequestID = aiPredictionInFlightRef.current[sessionId]
@@ -3387,7 +3482,7 @@ export function App() {
     if (
       !normalized.aiEnabled ||
       !aiEnabledRef.current ||
-      !normalized.aiPredictionEnabled ||
+      (!normalized.aiPredictionEnabled && !options.manual) ||
       !session ||
       !host ||
       agentWaiterRef.current?.sessionId === sessionId
@@ -3496,7 +3591,7 @@ export function App() {
         const rawPreview = formatAIPredictionRawPreview(rawPredictionContent, rawPredictionThinking)
         failedDetail = rawPreview
           ? `${failedDetail}\n\n模型返回片段：\n${rawPreview}`
-          : (failedDetail || 'Go core 流式预测结束后没有返回可执行命令。')
+          : failedDetail || 'Go core 流式预测结束后没有返回可执行命令。'
         throw new Error('AI 返回的预测命令无效，已过滤结构化残片')
       }
       if (hasNewerPredictionCommand()) {
@@ -3573,6 +3668,23 @@ export function App() {
         }
       }
     }
+  }
+
+  const triggerManualAIPrediction = (sessionId = activeSessionIdRef.current) => {
+    if (!sessionId) {
+      return
+    }
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
+    if (!session) {
+      return
+    }
+    if (session.status !== 'connected') {
+      setErrorMessage('当前 SSH 会话已断开，请点击重连后再触发 AI 预测')
+      return
+    }
+    window.clearTimeout(pendingAIPredictionTimerRef.current[sessionId])
+    delete pendingAIPredictionTimerRef.current[sessionId]
+    void requestAIPredictions(commandHistoryRef.current, sessionId, { manual: true })
   }
 
   const buildAIContextPayload = (sessionId = activeSessionIdRef.current) => {
@@ -3960,6 +4072,7 @@ export function App() {
       agentThinkingEnabled: normalized.aiAgentThinkingEnabled,
       timeoutSeconds: normalized.aiProviderTimeoutSeconds,
       systemPrompt: normalized.aiSystemPrompt,
+      systemPromptOverride: normalized.aiSystemPromptOverride,
       prompt,
       terminalContext,
       selectedText: [
@@ -4397,6 +4510,10 @@ export function App() {
         if (activeSession.status === 'error' || activeSession.status === 'closed') {
           setErrorMessage('当前 SSH 会话已断开，请点击重连后继续输入')
         }
+        return
+      }
+      if (data === '\u001b[Z') {
+        triggerManualAIPrediction(activeSession.id)
         return
       }
       if (data === '\t' && activePredictions.length > 0 && !commandBufferRef.current.trim()) {

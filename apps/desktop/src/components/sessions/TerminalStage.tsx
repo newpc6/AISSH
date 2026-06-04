@@ -280,7 +280,7 @@ export function TerminalStage({
                 </div>
               ) : null}
               {activePredictions.length > 0 ? (
-                <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；输入其他字符会清空建议。</p>
+                <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；按 Shift+Tab 可手动重新触发预测，输入其他字符会清空建议。</p>
               ) : null}
             </div>
           ) : null}
