@@ -136,46 +136,50 @@ export function ServersPanel({
                     {host.username}@{host.address}:{host.port}
                   </small>
                 </div>
-                <button
-                  aria-label={`${host.name} 菜单`}
-                  className="host-menu-trigger"
-                  title={`${host.name} 更多操作`}
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onOpenHostMenuChange(openHostMenuId === host.id ? '' : host.id)
-                  }}
-                >
-                  ⋯
-                </button>
-                {showMoveButtons ? (
-                  <span className="host-move-buttons">
-                    <button
-                      type="button"
-                      disabled={flatHostIds.indexOf(host.id) <= 0}
-                      title="上移"
-                      aria-label={`${host.name} 上移`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void onMoveHost(host.id, 'up')
-                      }}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      disabled={flatHostIds.indexOf(host.id) >= flatHostIds.length - 1}
-                      title="下移"
-                      aria-label={`${host.name} 下移`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void onMoveHost(host.id, 'down')
-                      }}
-                    >
-                      ▼
-                    </button>
-                  </span>
-                ) : null}
+                <div className="host-row-actions">
+                  <button
+                    aria-label={`${host.name} 菜单`}
+                    className="host-menu-trigger"
+                    title={`${host.name} 更多操作`}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onOpenHostMenuChange(openHostMenuId === host.id ? '' : host.id)
+                    }}
+                  >
+                    ⋯
+                  </button>
+                  {showMoveButtons ? (
+                    <>
+                      <button
+                        className="host-move-btn"
+                        type="button"
+                        disabled={flatHostIds.indexOf(host.id) <= 0}
+                        title="上移"
+                        aria-label={`${host.name} 上移`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void onMoveHost(host.id, 'up')
+                        }}
+                      >
+                        ▲
+                      </button>
+                      <button
+                        className="host-move-btn"
+                        type="button"
+                        disabled={flatHostIds.indexOf(host.id) >= flatHostIds.length - 1}
+                        title="下移"
+                        aria-label={`${host.name} 下移`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void onMoveHost(host.id, 'down')
+                        }}
+                      >
+                        ▼
+                      </button>
+                    </>
+                  ) : null}
+                </div>
                 {openHostMenuId === host.id ? (
                   <div className="host-menu" onClick={(event) => event.stopPropagation()}>
                     <button type="button" title="编辑服务器配置" onClick={() => onOpenEditHostDialog(host)}>编辑</button>

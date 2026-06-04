@@ -650,15 +650,15 @@ button {
   cursor: pointer;
 }
 
-.host-move-buttons {
+.host-row-actions {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin-right: 2px;
+  align-items: center;
+  gap: 2px;
 }
 
-.host-move-buttons button {
-  width: 20px;
+.host-move-btn {
+  width: 28px;
   height: 18px;
   border: 1px solid transparent;
   border-radius: 3px;
@@ -673,13 +673,13 @@ button {
   cursor: pointer;
 }
 
-.host-move-buttons button:hover:not(:disabled) {
+.host-move-btn:hover:not(:disabled) {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.08);
   color: #e8edf4;
 }
 
-.host-move-buttons button:disabled {
+.host-move-btn:disabled {
   opacity: 0.25;
   cursor: default;
 }
