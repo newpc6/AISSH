@@ -35,7 +35,7 @@ const featureModules: FeatureModule[] = [
     features: [
       { name: '模型配置', description: '支持多个 OpenAI 兼容模型和 Ollama 模型，并选择当前启用项。', usage: '设置 > AI 中新增模型；Ollama 地址填写到 /v1，例如 http://host:11434/v1。' },
       { name: '统一 AI 输入', description: '直接输入问题、目标或让 AI 根据终端内容生成命令。', usage: '右侧 AI 面板输入需求，Ctrl+Enter 或发送按钮提交。' },
-      { name: 'Agent 模式', description: '审核模式需人工执行命令，自动模式会自动推进低风险命令。', usage: '在 AI 输入框下方选择审核或自动，高风险命令仍需确认。' },
+      { name: 'Agent 模式', description: '审核模式需人工执行命令，自动模式会自动推进低风险命令，完全自动模式会直接执行所有命令。', usage: '在 AI 输入框下方选择审核、自动或完全自动；完全自动模式不会再拦截高风险命令。' },
       { name: '思考控制', description: '可关闭 Agent 思考以减少 Qwen/Ollama 长时间推理。', usage: '设置 > AI 中关闭“开启 Agent 思考”。' },
       { name: '命令预测', description: '根据终端上下文预测下一条可能输入的命令。', usage: '在终端区域查看预测，启用预测 thinking 可观察模型推理片段。' },
     ],

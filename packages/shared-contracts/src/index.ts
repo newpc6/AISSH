@@ -97,6 +97,7 @@ export interface AppSettings {
   aiCommandHistoryLimit: number
   aiConversationContextLimit: number
   aiSystemPrompt: string
+  aiSystemPromptOverride: boolean
   aiAgentThinkingEnabled: boolean
   aiProviderTimeoutSeconds: number
   agentCommandTimeoutSeconds: number
@@ -266,7 +267,7 @@ export interface AIPredictionResponse {
   commands: string[]
 }
 
-export type AIAgentMode = 'review' | 'auto'
+export type AIAgentMode = 'review' | 'auto' | 'full-auto'
 export type AIRiskLevel = 'low' | 'medium' | 'high'
 export type AIAgentStatus = 'command' | 'done' | 'question'
 export type AIAgentStepStatus = 'pending' | 'approved' | 'running' | 'executed' | 'skipped' | 'failed'
@@ -291,6 +292,7 @@ export interface AIAssistRequest {
   agentThinkingEnabled?: boolean
   timeoutSeconds?: number
   systemPrompt?: string
+  systemPromptOverride?: boolean
   prompt: string
   terminalContext?: string
   selectedText?: string

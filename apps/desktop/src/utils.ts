@@ -49,7 +49,7 @@ export const FILE_PREVIEW_CONFIRM_BYTES = 8 * 1024 * 1024
 export const ERROR_DETAIL_LIMIT = 1200
 export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434/v1'
 export const DEFAULT_AI_SYSTEM_PROMPT =
-  '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案。需要推进终端任务时，每次返回一条可执行的命令；如果是复杂任务，应该在 agentReason 中说明整体计划，命令执行后会拿到输出和退出码，你再根据结果决定下一步。复杂任务可以分多步推进，比如先查询信息、根据结果再做下一步操作。高风险命令必须等待人工确认。'
+  '你是 AI SSH 的统一运维助手。你需要根据用户输入、选中文本、终端上下文、历史命令、当前目录和主机信息，自动判断用户是在问答、解释错误、总结日志、生成命令，还是希望你驱动终端完成目标。普通问答直接给出中文答案。需要推进终端任务时，每次返回一条可执行的命令；如果是复杂任务，应该在 agentReason 中说明整体计划，命令执行后会拿到输出和退出码，你再根据结果决定下一步。复杂任务可以分多步推进，比如先查询信息、根据结果再做下一步操作。agentMode=review 时所有命令等待人工执行；agentMode=auto 时低风险命令自动执行、高风险命令等待人工确认；agentMode=full-auto 时所有命令都可自动执行。'
 
 export const textFileExtensions = new Set([
   'bash',
@@ -128,6 +128,7 @@ export const defaultSettings: AppSettings = {
   aiCommandHistoryLimit: 20,
   aiConversationContextLimit: 30,
   aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
+  aiSystemPromptOverride: false,
   aiAgentThinkingEnabled: true,
   aiProviderTimeoutSeconds: 120,
   agentCommandTimeoutSeconds: 120,
@@ -574,6 +575,7 @@ export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSetti
     aiCommandHistoryLimit: Math.max(1, Math.min(200, Number(value.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit) || 20)),
     aiConversationContextLimit: Math.max(1, Math.min(100, Number(value.aiConversationContextLimit ?? defaultSettings.aiConversationContextLimit) || 30)),
     aiSystemPrompt: typeof value.aiSystemPrompt === 'string' && value.aiSystemPrompt.trim() ? value.aiSystemPrompt : defaultSettings.aiSystemPrompt,
+    aiSystemPromptOverride: value.aiSystemPromptOverride ?? defaultSettings.aiSystemPromptOverride,
     aiAgentThinkingEnabled: value.aiAgentThinkingEnabled ?? defaultSettings.aiAgentThinkingEnabled,
     aiProviderTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.aiProviderTimeoutSeconds ?? defaultSettings.aiProviderTimeoutSeconds) || 120)),
     agentCommandTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.agentCommandTimeoutSeconds ?? defaultSettings.agentCommandTimeoutSeconds) || 120)),

@@ -4315,7 +4315,7 @@ export function App() {
       state: 'success',
       message: response.answer || response.agentReason || 'AI 已给出下一步命令',
     })
-    if (currentAgentState.mode !== 'auto' || !currentAgentState.running) {
+    if (currentAgentState.mode === 'review' || !currentAgentState.running) {
       updateSessionAgentState(sessionId, { running: false })
       return
     }
@@ -4323,7 +4323,10 @@ export function App() {
       const messageStep = { ...step, id: message.id }
       setAgentStepsForSession(sessionId, (current) => [messageStep, ...current].slice(0, 30))
       const latestAgentState = getSessionAgentState(sessionId)
-      if (latestAgentState.mode === 'auto' && latestAgentState.running && riskLevel !== 'high') {
+      if (
+        latestAgentState.running &&
+        (latestAgentState.mode === 'full-auto' || (latestAgentState.mode === 'auto' && riskLevel !== 'high'))
+      ) {
         updateSessionAgentState(sessionId, { running: true })
         void executeAgentStep(messageStep.id, true, true)
       } else if (riskLevel === 'high') {
@@ -4508,7 +4511,7 @@ export function App() {
         await appendAIMessage('command', response.answer || response.agentReason || 'Agent 已给出下一步命令。', { response })
       }
       const latestAgentState = getSessionAgentState(sessionId)
-      if (latestAgentState.mode !== 'auto' || !latestAgentState.running) {
+      if (latestAgentState.mode === 'review' || !latestAgentState.running) {
         updateSessionAgentState(sessionId, {
           running: false,
           message: response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。',
@@ -4527,7 +4530,10 @@ export function App() {
         message: response.answer || response.agentReason || 'Agent 已给出下一步命令',
       })
       const latestAutoState = getSessionAgentState(sessionId)
-      if (latestAutoState.mode === 'auto' && latestAutoState.running && riskLevel !== 'high') {
+      if (
+        latestAutoState.running &&
+        (latestAutoState.mode === 'full-auto' || (latestAutoState.mode === 'auto' && riskLevel !== 'high'))
+      ) {
         updateSessionAgentState(sessionId, { running: true })
         void executeAgentStep(step.id, true, true)
       } else if (riskLevel === 'high') {
@@ -5178,7 +5184,7 @@ export function App() {
     }
     const sessionId = activeSessionIdRef.current
     const normalizedRisk = riskLevel || classifyCommandRisk(normalized)
-    if (normalizedRisk === 'high' && !confirmed) {
+    if (normalizedRisk === 'high' && !confirmed && getSessionAgentState(sessionId).mode !== 'full-auto') {
       requestConfirm({
         section: 'AI 命令',
         title: '确认高风险命令',
@@ -5212,7 +5218,7 @@ export function App() {
     const stepMessage = await appendAIMessage('agent_step', normalized, { step })
     step.id = stepMessage.id
     setAgentStepsForSession(sessionId, (current) => [step, ...current].slice(0, 30))
-    void executeAgentStep(step.id, getSessionAgentState(sessionId).mode === 'auto', true)
+    void executeAgentStep(step.id, getSessionAgentState(sessionId).mode !== 'review', true)
   }
 
   const updateAgentStep = (stepId: string, patch: Partial<AIAgentPlanStep>) => {
@@ -5354,7 +5360,7 @@ export function App() {
       return
     }
     const riskLevel = step.riskLevel || classifyCommandRisk(step.command)
-    if (riskLevel === 'high' && !confirmed) {
+    if (riskLevel === 'high' && !confirmed && getSessionAgentState(sessionId).mode !== 'full-auto') {
       updateSessionAgentState(sessionId, {
         running: false,
         pendingStepId: step.id,

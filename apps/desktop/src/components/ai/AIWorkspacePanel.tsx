@@ -219,6 +219,10 @@ export function AIWorkspacePanel({
                   <input checked={agentMode === 'auto'} type="radio" onChange={() => onSetAgentMode('auto')} />
                   <span>自动模式</span>
                 </label>
+                <label title="后果自负：AI 给出的所有命令都会自动执行，不再进行风险审核或确认">
+                  <input checked={agentMode === 'full-auto'} type="radio" onChange={() => onSetAgentMode('full-auto')} />
+                  <span>完全自动</span>
+                </label>
               </>
             )}
           </div>
