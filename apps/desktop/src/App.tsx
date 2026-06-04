@@ -45,7 +45,6 @@ import { useWorkspaceInteractions } from './hooks/useWorkspaceInteractions'
 import { useWorkspaceViewState } from './hooks/useWorkspaceViewState'
 import {
   type AIPredictionRequest,
-  type AIAgentMode,
   type AIAssistRequest,
   type AIAssistResponse,
   type AIModelConfig,
@@ -104,6 +103,7 @@ import {
   type MetricSample,
   type PredictionGhostPosition,
   type RightTool,
+  type SessionAgentState,
   type SessionReconnectResponse,
   type SettingsSection,
   type TerminalCache,
@@ -198,6 +198,15 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
   streamingContent: '',
 }
 
+const DEFAULT_SESSION_AGENT_STATE: SessionAgentState = {
+  mode: 'review',
+  state: 'idle',
+  message: '',
+  goal: '',
+  running: false,
+  pendingStepId: '',
+}
+
 export function App() {
   const [_health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -276,11 +285,8 @@ export function App() {
   const [isAIInputCollapsed, setIsAIInputCollapsed] = useState(false)
   const [isAIInputExpanded, setIsAIInputExpanded] = useState(false)
   const [terminalSelectionAction, setTerminalSelectionAction] = useState<TerminalSelectionAction | null>(null)
-  const [agentMode, setAgentMode] = useState<AIAgentMode>('review')
-  const [agentState, setAgentState] = useState<LoadState>('idle')
-  const [agentMessage, setAgentMessage] = useState('')
-  const [agentSteps, setAgentSteps] = useState<AIAgentPlanStep[]>([])
-  const [pendingAgentStepId, setPendingAgentStepId] = useState('')
+  const [agentStateBySession, setAgentStateBySession] = useState<Record<string, SessionAgentState>>({})
+  const [agentStepsBySession, setAgentStepsBySession] = useState<Record<string, AIAgentPlanStep[]>>({})
   const [rightServerInfoPanelHeight, setRightServerInfoPanelHeight] = useState(DEFAULT_RIGHT_SERVER_INFO_HEIGHT)
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH)
   const [predictionGhostPosition, setPredictionGhostPosition] = useState<PredictionGhostPosition | null>(null)
@@ -339,11 +345,9 @@ export function App() {
   const aiPredictionIgnoredRequestRef = useRef<Record<string, number>>({})
   const aiPredictionCursorRef = useRef<Record<string, number>>({})
   const aiPredictionCycleStartedRef = useRef<Record<string, boolean>>({})
-  const agentRunningRef = useRef(false)
-  const agentGoalRef = useRef('')
-  const agentStepsRef = useRef<AIAgentPlanStep[]>([])
-  const agentModeRef = useRef<AIAgentMode>('review')
-  const agentWaiterRef = useRef<AgentCommandWaiter | null>(null)
+  const agentStateBySessionRef = useRef<Record<string, SessionAgentState>>({})
+  const agentStepsBySessionRef = useRef<Record<string, AIAgentPlanStep[]>>({})
+  const agentWaitersRef = useRef<Record<string, AgentCommandWaiter>>({})
   const terminalLineBufferRef = useRef<Record<string, string>>({})
   const batchAbortRef = useRef(false)
   const batchHostResultsRef = useRef<BatchHostResult[]>([])
@@ -514,6 +518,70 @@ export function App() {
 
   const getAIPredictionForSession = (sessionId: string) =>
     aiPredictionBySessionRef.current[sessionId] ?? EMPTY_AI_PREDICTION_STATE
+
+  const getSessionAgentState = (sessionId: string) =>
+    agentStateBySessionRef.current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
+
+  const updateSessionAgentState = (
+    sessionId: string,
+    updater: Partial<SessionAgentState> | ((current: SessionAgentState) => SessionAgentState),
+  ) => {
+    if (!sessionId) {
+      return
+    }
+    setAgentStateBySession((current) => {
+      const previous = current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
+      const nextState =
+        typeof updater === 'function'
+          ? updater(previous)
+          : { ...previous, ...updater }
+      const next = { ...current, [sessionId]: nextState }
+      agentStateBySessionRef.current = next
+      return next
+    })
+  }
+
+  const getAgentStepsForSession = (sessionId: string) =>
+    agentStepsBySessionRef.current[sessionId] ?? []
+
+  const setAgentStepsForSession = (
+    sessionId: string,
+    updater: AIAgentPlanStep[] | ((current: AIAgentPlanStep[]) => AIAgentPlanStep[]),
+  ) => {
+    if (!sessionId) {
+      return
+    }
+    setAgentStepsBySession((current) => {
+      const previous = current[sessionId] ?? []
+      const nextSteps = typeof updater === 'function' ? updater(previous) : updater
+      const next = { ...current, [sessionId]: nextSteps }
+      agentStepsBySessionRef.current = next
+      return next
+    })
+  }
+
+  const findAgentStepById = (stepId: string) => {
+    for (const [sessionId, steps] of Object.entries(agentStepsBySessionRef.current)) {
+      const step = steps.find((item) => item.id === stepId)
+      if (step) {
+        return { sessionId, step }
+      }
+    }
+    return null
+  }
+
+  const clearAgentWaiter = (sessionId?: string) => {
+    if (sessionId) {
+      const waiter = agentWaitersRef.current[sessionId]
+      if (waiter) {
+        window.clearTimeout(waiter.timeoutId)
+        delete agentWaitersRef.current[sessionId]
+      }
+      return
+    }
+    Object.values(agentWaitersRef.current).forEach((waiter) => window.clearTimeout(waiter.timeoutId))
+    agentWaitersRef.current = {}
+  }
 
   const clearAIPrediction = (
     options: { cancelPending?: boolean; sessionId?: string; resetGhost?: boolean } = {},
@@ -732,8 +800,9 @@ export function App() {
 
   const appendSessionTerminalOutput = (sessionId: string, data: string) => {
     const maxLines = sessionSettingsRef.current.terminalRetainedLines
-    if (agentWaiterRef.current?.sessionId === sessionId) {
-      agentWaiterRef.current.rawOutput += data
+    const waiter = agentWaitersRef.current[sessionId]
+    if (waiter) {
+      waiter.rawOutput += data
     }
     const buffer = terminalLineBufferRef.current[sessionId] ?? ''
     const combined = buffer + data
@@ -1603,7 +1672,7 @@ export function App() {
       return
     }
     element.scrollTop = element.scrollHeight
-  }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, agentMessage, isAIHistoryOpen])
+  }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, activeSessionId, agentStateBySession, isAIHistoryOpen])
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -1671,16 +1740,16 @@ export function App() {
   }, [commandHistory])
 
   useEffect(() => {
-    agentStepsRef.current = agentSteps
-  }, [agentSteps])
+    agentStateBySessionRef.current = agentStateBySession
+  }, [agentStateBySession])
+
+  useEffect(() => {
+    agentStepsBySessionRef.current = agentStepsBySession
+  }, [agentStepsBySession])
 
   useEffect(() => {
     batchHostResultsRef.current = batchHostResults
   }, [batchHostResults])
-
-  useEffect(() => {
-    agentModeRef.current = agentMode
-  }, [agentMode])
 
   useEffect(() => {
     terminalCachesRef.current = terminalCaches
@@ -1758,6 +1827,13 @@ export function App() {
     sessionCount: sessions.length,
     sessionTabsRef,
   })
+  const activeAgentSessionId = activeSession?.id ?? ''
+  const activeAgentState = activeAgentSessionId ? getSessionAgentState(activeAgentSessionId) : DEFAULT_SESSION_AGENT_STATE
+  const agentState = activeAgentState.state
+  const agentMessage = activeAgentState.message
+  const activeAgentMode = activeAgentState.mode
+  const agentSteps = activeAgentSessionId ? getAgentStepsForSession(activeAgentSessionId) : []
+  const pendingAgentStepId = activeAgentState.pendingStepId
 
   const toggleBatchMode = () => {
     setBatchMode((current) => !current)
@@ -2298,7 +2374,7 @@ export function App() {
   }
 
   const setBatchHostSteps = (hostId: string, sessionId: string) => {
-    const steps = agentStepsRef.current.filter((step) => step.sessionId === sessionId)
+    const steps = getAgentStepsForSession(sessionId)
     updateBatchHostResults((current) =>
       current.map((r) =>
         r.hostId === hostId
@@ -2312,6 +2388,13 @@ export function App() {
       ),
     )
     return steps
+  }
+
+  const setAgentStatusMessage = (message: string, sessionId = activeSessionIdRef.current) => {
+    if (!sessionId) {
+      return
+    }
+    updateSessionAgentState(sessionId, { message })
   }
 
   const updateBatchHostResults = (
@@ -2454,7 +2537,10 @@ export function App() {
         { response },
         targetConversationId,
       )
-      setAgentMessage('批量任务总结已生成')
+      const activeBatchSessionId = results.find((result) => result.sessionId)?.sessionId
+      if (activeBatchSessionId) {
+        updateSessionAgentState(activeBatchSessionId, { message: '批量任务总结已生成' })
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '批量总结生成失败'
       setAiAssistantState('error')
@@ -2465,7 +2551,10 @@ export function App() {
         {},
         targetConversationId,
       )
-      setAgentMessage('批量任务已完成，但 AI 总结生成失败')
+      const activeBatchSessionId = results.find((result) => result.sessionId)?.sessionId
+      if (activeBatchSessionId) {
+        updateSessionAgentState(activeBatchSessionId, { message: '批量任务已完成，但 AI 总结生成失败' })
+      }
     }
   }
 
@@ -2475,10 +2564,7 @@ export function App() {
     updateBatchHostResults((current) =>
       current.map((r) => (r.hostId === hostId ? { ...r, status: 'connecting' as const } : r)),
     )
-    setAgentMessage(`[${index + 1}/${total}] 正在连接 ${hostName}...`)
     void appendBatchStatusMessage(hostName, '开始连接 SSH 会话...', index, total)
-    setAgentSteps([])
-    agentStepsRef.current = []
 
     let sessionId = ''
     try {
@@ -2518,16 +2604,17 @@ export function App() {
       updateBatchHostResults((current) =>
         current.map((r) => (r.hostId === hostId ? { ...r, status: 'running' as const, stepCount: 0 } : r)),
       )
-      setAgentMessage(`[${index + 1}/${total}] 正在 ${hostName} 上执行：${task}`)
       void appendBatchStatusMessage(hostName, `连接成功，开始执行任务：${task}`, index, total)
 
-      agentGoalRef.current = task
-      agentModeRef.current = 'auto'
-      setAgentMode('auto')
-      setAgentState('loading')
-      agentRunningRef.current = true
-      setAgentSteps([])
-      agentStepsRef.current = []
+      updateSessionAgentState(sessionId, {
+        goal: task,
+        mode: 'auto',
+        state: 'loading',
+        running: true,
+        message: `[${index + 1}/${total}] 正在 ${hostName} 上执行：${task}`,
+        pendingStepId: '',
+      })
+      setAgentStepsForSession(sessionId, [])
       setActiveSession(sessionId)
       replaceTerminalWithCache(sessionId)
       fitAddonRef.current?.fit()
@@ -2537,12 +2624,12 @@ export function App() {
       await new Promise<void>((resolve) => {
         const lastStepCountRef = { value: 0 }
         const check = () => {
-          if (batchAbortRef.current || !agentRunningRef.current) {
+          if (batchAbortRef.current || !getSessionAgentState(sessionId).running) {
             setBatchHostSteps(hostId, sessionId)
             resolve()
             return
           }
-          const steps = agentStepsRef.current.filter((s) => s.sessionId === sessionId)
+          const steps = getAgentStepsForSession(sessionId)
           if (steps.length !== lastStepCountRef.value) {
             lastStepCountRef.value = steps.length
             updateBatchHostResults((current) =>
@@ -2558,7 +2645,7 @@ export function App() {
         current.map((r) =>
           r.hostId === hostId
             ? (() => {
-                const steps = agentStepsRef.current.filter((step) => step.sessionId === sessionId)
+                const steps = getAgentStepsForSession(sessionId)
                 const hasFailedStep = steps.some((step) => step.status === 'failed')
                 const hasIncompleteStep = hasIncompleteAgentStep(steps)
                 const status = batchAbortRef.current || steps.length === 0 || hasFailedStep || hasIncompleteStep
@@ -2594,7 +2681,7 @@ export function App() {
             ? {
                 ...r,
                 status: 'failed' as const,
-                steps: sessionId ? agentStepsRef.current.filter((step) => step.sessionId === sessionId) : r.steps,
+                steps: sessionId ? getAgentStepsForSession(sessionId) : r.steps,
                 summary: message,
               }
             : r,
@@ -2618,10 +2705,8 @@ export function App() {
     setBatchActive(true)
     setBatchHostIndex(0)
     setRightTool('ai')
-    agentRunningRef.current = false
     clearAgentWaiter()
-    setAgentState('success')
-    setAgentMessage('')
+    setAgentStatusMessage('')
     try {
       const conversation = await createAIConversation(`批量任务：${task.slice(0, 18) || '执行'}`)
       batchConversationIdRef.current = conversation.id
@@ -2630,7 +2715,7 @@ export function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建批量任务对话失败'
       setAiAssistantError(message)
-      setAgentMessage(message)
+      setAgentStatusMessage(message)
     }
 
     for (let i = 0; i < hosts.length; i++) {
@@ -2643,7 +2728,12 @@ export function App() {
     setBatchHostIndex(0)
     const finalResults = batchHostResultsRef.current
     const summary = summarizeBatchResults(finalResults)
-    setAgentMessage(summary ? '批量执行完成，正在生成最终总结...' : '批量任务已全部完成')
+    const activeBatchSessionId = finalResults.find((result) => result.sessionId)?.sessionId
+    if (activeBatchSessionId) {
+      updateSessionAgentState(activeBatchSessionId, {
+        message: summary ? '批量执行完成，正在生成最终总结...' : '批量任务已全部完成',
+      })
+    }
     if (summary) {
       await requestBatchFinalSummary(task, finalResults, batchConversationIdRef.current)
     }
@@ -3396,7 +3486,7 @@ export function App() {
     }
     const session = sessionsRef.current.find((item) => item.id === sessionId)
     const hostId = session?.hostId
-    const isAgentExecuting = Boolean(agentWaiterRef.current?.sessionId === session?.id)
+    const isAgentExecuting = Boolean(session?.id && agentWaitersRef.current[session.id])
 
     const inferredPath = inferRemotePathFromCommand(normalized, filePathRef.current)
     if (
@@ -3485,7 +3575,7 @@ export function App() {
       (!normalized.aiPredictionEnabled && !options.manual) ||
       !session ||
       !host ||
-      agentWaiterRef.current?.sessionId === sessionId
+      Boolean(agentWaitersRef.current[sessionId])
     ) {
       if (!inFlightRequestID || existingPrediction.state !== 'loading') {
         clearAIPrediction({ sessionId })
@@ -3662,7 +3752,7 @@ export function App() {
           nextCommand !== requestCommand &&
           normalized.aiEnabled &&
           normalized.aiPredictionEnabled &&
-          agentWaiterRef.current?.sessionId !== sessionId
+          !agentWaitersRef.current[sessionId]
         ) {
           scheduleAIPrediction(commandHistoryRef.current, normalized.aiPredictionTriggerDelayMs, sessionId)
         }
@@ -3702,9 +3792,9 @@ export function App() {
     }
   }
 
-  const resolveAgentGoal = (fallback = '') => {
+  const resolveAgentGoal = (fallback = '', sessionId = activeSessionIdRef.current) => {
     return (
-      agentGoalRef.current.trim() ||
+      (sessionId ? getSessionAgentState(sessionId).goal.trim() : '') ||
       aiUnifiedPrompt.trim() ||
       aiAssistantResponse?.answer?.trim() ||
       aiAssistantResponse?.summary?.trim() ||
@@ -3917,12 +4007,14 @@ export function App() {
     }
     setAiMessages(messages)
     aiMessagesRef.current = messages
-    agentStepsRef.current = messages
+    const sessionSteps = messages
       .map((message) => (message.kind === 'agent_step' && message.step ? ({ ...message.step, id: message.id } as AIAgentPlanStep) : null))
       .filter((step): step is AIAgentPlanStep => Boolean(step))
       .slice(-30)
       .reverse()
-    setAgentSteps(agentStepsRef.current)
+    if (activeSessionIdRef.current) {
+      setAgentStepsForSession(activeSessionIdRef.current, sessionSteps)
+    }
     return messages
   }
 
@@ -3959,9 +4051,10 @@ export function App() {
     aiMessagesRef.current = []
     setAiAssistantResponse(null)
     resetAIStreamBuffers()
-    setAgentSteps([])
-    agentStepsRef.current = []
-    agentGoalRef.current = ''
+    if (activeSessionIdRef.current) {
+      setAgentStepsForSession(activeSessionIdRef.current, [])
+      updateSessionAgentState(activeSessionIdRef.current, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
+    }
     return conversation
   }
 
@@ -3980,9 +4073,10 @@ export function App() {
       aiMessagesRef.current = []
       resetAIStreamBuffers()
       setAiAssistantResponse(null)
-      setAgentSteps([])
-      agentStepsRef.current = []
-      agentGoalRef.current = ''
+      if (activeSessionIdRef.current) {
+        setAgentStepsForSession(activeSessionIdRef.current, [])
+        updateSessionAgentState(activeSessionIdRef.current, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
+      }
       if (nextConversations.length > 0) {
         await selectAIConversation(nextConversations[0].id)
       } else {
@@ -4017,9 +4111,10 @@ export function App() {
     activeAIConversationIdRef.current = conversationId
     setAiAssistantResponse(null)
     resetAIStreamBuffers()
-    setAgentSteps([])
-    agentStepsRef.current = []
-    agentGoalRef.current = ''
+    if (activeSessionIdRef.current) {
+      setAgentStepsForSession(activeSessionIdRef.current, [])
+      updateSessionAgentState(activeSessionIdRef.current, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
+    }
     await loadAIMessages(conversationId)
   }
 
@@ -4087,9 +4182,9 @@ export function App() {
       hostName: session?.hostName,
       hostAddress: host?.address,
       username: host?.username,
-      agentMode: requestOptions.agentMode ?? agentModeRef.current,
-      agentGoal: requestOptions.agentGoal ?? resolveAgentGoal(prompt),
-      agentSteps: requestOptions.agentSteps ?? agentStepsRef.current,
+      agentMode: requestOptions.agentMode ?? getSessionAgentState(sessionId).mode,
+      agentGoal: requestOptions.agentGoal ?? resolveAgentGoal(prompt, sessionId),
+      agentSteps: requestOptions.agentSteps ?? getAgentStepsForSession(sessionId),
       ...requestOptions,
     }
     const response = await apiFetch(AI_ASSIST_STREAM_API_PATH, {
@@ -4141,27 +4236,31 @@ export function App() {
     return requestAIAssistStream(
       prompt,
       {
-        agentMode: agentModeRef.current,
+        agentMode: activeAgentMode,
         agentGoal: prompt,
-        agentSteps: agentStepsRef.current,
+        agentSteps,
         ...options,
       },
     )
   }
 
-  const addAgentStepFromAIResponse = (response: AIAssistResponse) => {
+  const addAgentStepFromAIResponse = (response: AIAssistResponse, sessionId = activeSessionIdRef.current) => {
     const command = stripTerminalControlSequences(response.agentCommand || firstString(response.commands)).trim()
     if (response.agentStatus === 'done') {
-      agentRunningRef.current = false
-      setAgentState('success')
-      setAgentMessage('')
+      updateSessionAgentState(sessionId, {
+        running: false,
+        state: 'success',
+        message: '',
+      })
       return
     }
     if (response.agentStatus === 'question' || !command) {
       if (response.agentStatus === 'question') {
-        agentRunningRef.current = false
-        setAgentState('idle')
-        setAgentMessage('')
+        updateSessionAgentState(sessionId, {
+          running: false,
+          state: 'idle',
+          message: '',
+        })
       }
       return
     }
@@ -4173,30 +4272,33 @@ export function App() {
       id: `step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       command,
       status: 'pending',
-      sessionId: activeSessionIdRef.current,
+      sessionId,
       explanation: response.agentReason || response.answer,
       riskLevel,
       riskReason: response.riskReason,
       createdAt: new Date().toISOString(),
     }
-    setAgentState('success')
-    setAgentMessage(response.answer || response.agentReason || 'AI 已给出下一步命令')
-    if (agentModeRef.current !== 'auto') {
-      agentRunningRef.current = false
+    const sessionAgentMode = getSessionAgentState(sessionId).mode
+    updateSessionAgentState(sessionId, {
+      state: 'success',
+      message: response.answer || response.agentReason || 'AI 已给出下一步命令',
+    })
+    if (sessionAgentMode !== 'auto') {
+      updateSessionAgentState(sessionId, { running: false })
       return
     }
     void appendAIMessage('agent_step', command, { step }).then((message) => {
       const messageStep = { ...step, id: message.id }
-      const updatedSteps = [messageStep, ...agentStepsRef.current].slice(0, 30)
-      setAgentSteps(updatedSteps)
-      agentStepsRef.current = updatedSteps
-      if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
-        agentRunningRef.current = true
+      setAgentStepsForSession(sessionId, (current) => [messageStep, ...current].slice(0, 30))
+      if (sessionAgentMode === 'auto' && riskLevel !== 'high') {
+        updateSessionAgentState(sessionId, { running: true })
         void executeAgentStep(messageStep.id, true, true)
       } else if (riskLevel === 'high') {
-        agentRunningRef.current = false
-        setPendingAgentStepId(messageStep.id)
-        setAgentMessage('检测到高风险命令，请人工确认后执行')
+        updateSessionAgentState(sessionId, {
+          running: false,
+          pendingStepId: messageStep.id,
+          message: '检测到高风险命令，请人工确认后执行',
+        })
       }
     })
   }
@@ -4205,6 +4307,7 @@ export function App() {
     if (aiAssistantState === 'loading' || !settings.aiEnabled) {
       return
     }
+    const sessionId = activeSessionIdRef.current
     const prompt = aiUnifiedPrompt.trim()
     const selectedText = window.getSelection()?.toString().trim() ?? ''
     const requestPrompt = prompt || selectedText
@@ -4223,11 +4326,14 @@ export function App() {
     setAiAssistantError('')
     setAiAssistantResponse(null)
     resetAIStreamBuffers()
-    setAgentMessage('')
+    updateSessionAgentState(sessionId, { message: '' })
     setAiUnifiedPrompt('')
     await appendAIMessage('user', requestPrompt, {}, conversationId)
-    agentGoalRef.current = requestPrompt
-    agentRunningRef.current = agentModeRef.current === 'auto'
+    updateSessionAgentState(sessionId, (current) => ({
+      ...current,
+      goal: requestPrompt,
+      running: current.mode === 'auto',
+    }))
     try {
       const response = await requestAIUnifiedStream(requestPrompt)
       response.commands = normalizeAssistCommands(response.commands)
@@ -4239,7 +4345,7 @@ export function App() {
       } else {
         await appendAIMessage('assistant', response.answer || response.summary || response.agentReason || 'AI 已返回结果。', { response }, conversationId)
       }
-      addAgentStepFromAIResponse(response)
+      addAgentStepFromAIResponse(response, sessionId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI 请求失败'
       await appendAIMessage('error', message, {}, conversationId)
@@ -4274,16 +4380,18 @@ export function App() {
     onStartBatchExecution: startBatchExecution,
   })
 
-  const requestAgentNextStep = async (steps = agentStepsRef.current, sessionId = activeSessionIdRef.current) => {
-    const goal = resolveAgentGoal()
+  const requestAgentNextStep = async (steps = getAgentStepsForSession(activeSessionIdRef.current), sessionId = activeSessionIdRef.current) => {
+    const goal = resolveAgentGoal('', sessionId)
     const batchHost = findBatchHostBySession(sessionId)
     const isBatchSession = Boolean(batchHost)
     const batchConversationId = isBatchSession ? batchConversationIdRef.current : ''
     const batchHostName = batchHost?.hostName || sessionsRef.current.find((item) => item.id === sessionId)?.hostName || '服务器'
     const batchPrefix = isBatchSession ? `【${batchHostName}】` : ''
     if (!goal) {
-      setAgentMessage('请先输入任务目标，或先让 AI 生成一个命令')
-      agentRunningRef.current = false
+      updateSessionAgentState(sessionId, {
+        message: '请先输入任务目标，或先让 AI 生成一个命令',
+        running: false,
+      })
       return
     }
     const session = sessionsRef.current.find((item) => item.id === sessionId)
@@ -4294,15 +4402,16 @@ export function App() {
       })
       return
     }
-    setAgentState('loading')
+    updateSessionAgentState(sessionId, { state: 'loading' })
     resetAIStreamBuffers()
-    setAgentMessage('正在让 Agent 规划下一步...')
+    updateSessionAgentState(sessionId, { message: '正在让 Agent 规划下一步...' })
     try {
+      const sessionAgentMode = getSessionAgentState(sessionId).mode
       const response = await requestAIAssistStream(
         goal,
         {
           agentGoal: goal,
-          agentMode: agentModeRef.current,
+          agentMode: sessionAgentMode,
           agentSteps: steps,
           ignoreConversationContext: isBatchSession,
           suppressStreamingMessages: isBatchSession,
@@ -4310,7 +4419,10 @@ export function App() {
         sessionId,
       )
       if (response.agentStatus === 'done') {
-        setAgentState('success')
+        updateSessionAgentState(sessionId, {
+          state: 'success',
+          running: false,
+        })
         if (isBatchSession) {
           await appendAIMessage(
             'agent_result',
@@ -4322,12 +4434,14 @@ export function App() {
           await persistStreamingArtifacts(activeAIConversationIdRef.current)
           await appendAIMessage('agent_result', response.answer || response.summary || response.agentReason || '已根据命令输出生成执行结论。', { response })
         }
-        setAgentMessage('已根据命令输出生成执行结论。')
-        agentRunningRef.current = false
+        updateSessionAgentState(sessionId, { message: '已根据命令输出生成执行结论。' })
         return
       }
       if (response.agentStatus === 'question' || !response.agentCommand) {
-        setAgentState('idle')
+        updateSessionAgentState(sessionId, {
+          state: 'idle',
+          running: false,
+        })
         if (isBatchSession) {
           await appendAIMessage(
             'agent_result',
@@ -4339,8 +4453,7 @@ export function App() {
           await persistStreamingArtifacts(activeAIConversationIdRef.current)
           await appendAIMessage('agent_result', response.answer || response.agentReason || 'AI 需要更多信息。', { response })
         }
-        setAgentMessage('AI 需要更多信息，已生成说明。')
-        agentRunningRef.current = false
+        updateSessionAgentState(sessionId, { message: 'AI 需要更多信息，已生成说明。' })
         return
       }
       const command = stripTerminalControlSequences(response.agentCommand).trim()
@@ -4357,14 +4470,16 @@ export function App() {
         riskReason: response.riskReason,
         createdAt: new Date().toISOString(),
       }
-      setAgentState('success')
+      updateSessionAgentState(sessionId, { state: 'success' })
       if (!isBatchSession) {
         await persistStreamingArtifacts(activeAIConversationIdRef.current)
         await appendAIMessage('command', response.answer || response.agentReason || 'Agent 已给出下一步命令。', { response })
       }
-      if (agentModeRef.current !== 'auto') {
-        agentRunningRef.current = false
-        setAgentMessage(response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。')
+      if (sessionAgentMode !== 'auto') {
+        updateSessionAgentState(sessionId, {
+          running: false,
+          message: response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。',
+        })
         return
       }
       if (isBatchSession) {
@@ -4374,22 +4489,26 @@ export function App() {
         const stepMessage = await appendAIMessage('agent_step', command, { step })
         step.id = stepMessage.id
       }
-      const nextSteps = [step, ...steps].slice(0, 30)
-      setAgentSteps(nextSteps)
-      agentStepsRef.current = nextSteps
-      setAgentMessage(response.answer || response.agentReason || 'Agent 已给出下一步命令')
-      if (agentModeRef.current === 'auto' && riskLevel !== 'high') {
-        agentRunningRef.current = true
+      setAgentStepsForSession(sessionId, [step, ...steps].slice(0, 30))
+      updateSessionAgentState(sessionId, {
+        message: response.answer || response.agentReason || 'Agent 已给出下一步命令',
+      })
+      if (sessionAgentMode === 'auto' && riskLevel !== 'high') {
+        updateSessionAgentState(sessionId, { running: true })
         void executeAgentStep(step.id, true, true)
       } else if (riskLevel === 'high') {
-        agentRunningRef.current = false
-        setPendingAgentStepId(step.id)
+        updateSessionAgentState(sessionId, {
+          running: false,
+          pendingStepId: step.id,
+        })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent 请求失败'
-      setAgentState('error')
-      setAgentMessage(message)
-      agentRunningRef.current = false
+      updateSessionAgentState(sessionId, {
+        state: 'error',
+        message,
+        running: false,
+      })
       if (isBatchSession) {
         void appendAIMessage('agent_result', `${batchPrefix} Agent 请求失败：${message}`, {}, batchConversationId)
       }
@@ -4402,16 +4521,18 @@ export function App() {
     }
   }
 
-  const continueAgentTask = () => {
-    agentRunningRef.current = true
-    void requestAgentNextStep()
+  const continueAgentTask = (sessionId = activeSessionIdRef.current) => {
+    updateSessionAgentState(sessionId, { running: true })
+    void requestAgentNextStep(getAgentStepsForSession(sessionId), sessionId)
   }
 
-  const stopAgentTask = () => {
-    agentRunningRef.current = false
-    clearAgentWaiter()
-    setAgentState('idle')
-    setAgentMessage('Agent 已停止')
+  const stopAgentTask = (sessionId = activeSessionIdRef.current) => {
+    updateSessionAgentState(sessionId, {
+      running: false,
+      state: 'idle',
+      message: 'Agent 已停止',
+    })
+    clearAgentWaiter(sessionId)
   }
 
   const updateAlternateScreenMode = (sessionId: string, data: string) => {
@@ -4613,8 +4734,8 @@ export function App() {
       appendLog('error', 'ui.sse', messageText, { sessionID: session.id, url: streamUrl })
       source.close()
       delete eventSourcesRef.current[session.id]
-      if (agentWaiterRef.current?.sessionId === session.id) {
-        const waiter = agentWaiterRef.current
+      const waiter = agentWaitersRef.current[session.id]
+      if (waiter) {
         finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
       }
       markSessionDisconnected(session.id, messageText)
@@ -4659,8 +4780,8 @@ export function App() {
 
       if (payload.type === 'error') {
         const messageText = payload.data ?? '会话发生错误'
-        if (agentWaiterRef.current?.sessionId === session.id) {
-          const waiter = agentWaiterRef.current
+        const waiter = agentWaitersRef.current[session.id]
+        if (waiter) {
           finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
         }
         setErrorMessage(messageText)
@@ -4681,8 +4802,8 @@ export function App() {
       appendLog('debug', 'ui.sse', 'session stream closed', { sessionID: session.id })
       const latestSession = sessionsRef.current.find((item) => item.id === session.id)
       if (latestSession?.status === 'connected' || latestSession?.status === 'connecting') {
-        if (agentWaiterRef.current?.sessionId === session.id) {
-          const waiter = agentWaiterRef.current
+        const waiter = agentWaitersRef.current[session.id]
+        if (waiter) {
           finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
         }
         markSessionDisconnected(session.id, '会话输出流已关闭，请重连当前 SSH 会话')
@@ -4858,7 +4979,7 @@ export function App() {
       : session.hostName
     try {
       await navigator.clipboard.writeText(text)
-      setAgentMessage(`已复制 SSH 信息：${text}`)
+      updateSessionAgentState(session.id, { message: `已复制 SSH 信息：${text}` })
     } catch (error) {
       const message = error instanceof Error ? error.message : '复制 SSH 信息失败'
       setErrorMessage(message, {
@@ -4962,7 +5083,11 @@ export function App() {
     }
   }
 
-  const executeCommand = (command: string, targetSessionId = activeSession?.id ?? '') => {
+  const executeCommandToSession = (
+    command: string,
+    targetSessionId = activeSession?.id ?? '',
+    options: { preserveActiveView?: boolean } = {},
+  ) => {
     const normalized = stripTerminalControlSequences(command).trim()
     const session = sessionsRef.current.find((item) => item.id === targetSessionId)
     if (!normalized || !session) {
@@ -4973,8 +5098,10 @@ export function App() {
       return
     }
     clearAIPrediction()
-    xtermRef.current?.focus()
-    setActiveViewId(`session:${session.id}`)
+    if (!options.preserveActiveView) {
+      xtermRef.current?.focus()
+      setActiveViewId(`session:${session.id}`)
+    }
     const sessionDraft = terminalCachesRef.current[session.id]?.commandDraft ?? ''
     const input = `${sessionDraft ? '\u0015' : ''}${normalized}\r`
     if (session.id === activeSessionIdRef.current) {
@@ -4982,6 +5109,10 @@ export function App() {
     }
     setSessionCommandDraft(session.id, '')
     queueSessionInput(session.id, input)
+  }
+
+  const executeCommand = (command: string, targetSessionId = activeSession?.id ?? '') => {
+    executeCommandToSession(command, targetSessionId)
   }
 
   const copyCommand = async (command: string) => {
@@ -5010,6 +5141,7 @@ export function App() {
     if (!normalized) {
       return
     }
+    const sessionId = activeSessionIdRef.current
     const normalizedRisk = riskLevel || classifyCommandRisk(normalized)
     if (normalizedRisk === 'high' && !confirmed) {
       requestConfirm({
@@ -5023,15 +5155,20 @@ export function App() {
       })
       return
     }
-    const goal = resolveAgentGoal(`执行命令并根据结果回答用户：${normalized}`)
-    agentGoalRef.current = goal
+    const goal = resolveAgentGoal(`执行命令并根据结果回答用户：${normalized}`, sessionId)
+    updateSessionAgentState(sessionId, (current) => ({
+      ...current,
+      goal,
+      running: true,
+      message: '命令已发送到终端，执行完成后会继续读取结果并让 AI 判断下一步。',
+    }))
     const lastCommandMessage = [...aiMessagesRef.current].reverse().find((message) => message.kind === 'command' && message.response)
     const commandResponse = lastCommandMessage?.response
     const step: AIAgentPlanStep = {
       id: `step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       command: normalized,
       status: 'pending',
-      sessionId: activeSessionIdRef.current,
+      sessionId,
       explanation: commandResponse?.answer || commandResponse?.agentReason || aiAssistantResponse?.answer || aiAssistantResponse?.agentReason || '用户已确认执行 AI 生成命令',
       riskLevel: normalizedRisk,
       riskReason: commandResponse?.riskReason || aiAssistantResponse?.riskReason,
@@ -5039,18 +5176,18 @@ export function App() {
     }
     const stepMessage = await appendAIMessage('agent_step', normalized, { step })
     step.id = stepMessage.id
-    const nextSteps = [step, ...agentStepsRef.current].slice(0, 30)
-    agentStepsRef.current = nextSteps
-    setAgentSteps(nextSteps)
-    agentRunningRef.current = true
-    setAgentMessage('命令已发送到终端，执行完成后会继续读取结果并让 AI 判断下一步。')
-    void executeAgentStep(step.id, agentModeRef.current === 'auto', true)
+    setAgentStepsForSession(sessionId, (current) => [step, ...current].slice(0, 30))
+    void executeAgentStep(step.id, getSessionAgentState(sessionId).mode === 'auto', true)
   }
 
   const updateAgentStep = (stepId: string, patch: Partial<AIAgentPlanStep>) => {
-    const next = agentStepsRef.current.map((step) => (step.id === stepId ? { ...step, ...patch } : step))
-    agentStepsRef.current = next
-    setAgentSteps(next)
+    const located = findAgentStepById(stepId)
+    if (!located) {
+      return
+    }
+    setAgentStepsForSession(located.sessionId, (current) =>
+      current.map((step) => (step.id === stepId ? { ...step, ...patch } : step)),
+    )
   }
 
   const replaceAIMessage = (messageId: string, patch: Partial<AIChatMessageDraft>) => {
@@ -5079,11 +5216,12 @@ export function App() {
 
   const finishAgentStep = (stepId: string, sessionId: string, beforeContext: string, timedOut = false, marker = '') => {
     const latestContext = terminalContextTail(terminalCachesRef.current[sessionId], 20000)
-    const capturedRawOutput = agentWaiterRef.current?.stepId === stepId ? agentWaiterRef.current.rawOutput : ''
+    const waiter = agentWaitersRef.current[sessionId]
+    const capturedRawOutput = waiter?.stepId === stepId ? waiter.rawOutput : ''
     const rawOutput = capturedRawOutput || (latestContext.startsWith(beforeContext) ? latestContext.slice(beforeContext.length) : latestContext)
-    if (agentWaiterRef.current?.stepId === stepId) {
-      window.clearTimeout(agentWaiterRef.current.timeoutId)
-      agentWaiterRef.current = null
+    if (waiter?.stepId === stepId) {
+      window.clearTimeout(waiter.timeoutId)
+      delete agentWaitersRef.current[sessionId]
     }
     const exitCode = marker ? extractAgentExitCode(rawOutput, marker) : undefined
     const output = marker ? stripAgentMarker(rawOutput, marker) : rawOutput
@@ -5094,7 +5232,7 @@ export function App() {
       output: output.trim().slice(-8000),
       exitCode,
     })
-    const completedStep = agentStepsRef.current.find((step) => step.id === stepId)
+    const completedStep = getAgentStepsForSession(sessionId).find((step) => step.id === stepId)
     if (completedStep) {
       replaceAndPersistAIMessage(stepId, { content: completedStep.command, step: completedStep })
     }
@@ -5106,45 +5244,43 @@ export function App() {
       timedOut,
     })
     if (timedOut) {
-      agentRunningRef.current = false
-      setAgentState('idle')
-      setAgentMessage('命令等待超时，Agent 已暂停。请确认终端状态后点击继续。')
+      updateSessionAgentState(sessionId, {
+        running: false,
+        state: 'idle',
+        message: '命令等待超时，Agent 已暂停。请确认终端状态后点击继续。',
+      })
       return
     }
-    if (agentRunningRef.current) {
-      setAgentMessage(
-        exitedWithError
+    if (getSessionAgentState(sessionId).running) {
+      updateSessionAgentState(sessionId, {
+        message: exitedWithError
           ? `命令退出码 ${exitCode}，正在让 AI 根据输出判断结论或下一步...`
           : '命令已完成，正在规划下一步...',
-      )
-      void requestAgentNextStep(agentStepsRef.current, sessionId)
+      })
+      void requestAgentNextStep(getAgentStepsForSession(sessionId), sessionId)
     } else {
-      setAgentState('success')
-      setAgentMessage(exitedWithError ? `命令已完成，退出码 ${exitCode}` : '命令已完成')
-    }
-  }
-
-  const clearAgentWaiter = () => {
-    if (agentWaiterRef.current) {
-      window.clearTimeout(agentWaiterRef.current.timeoutId)
-      agentWaiterRef.current = null
+      updateSessionAgentState(sessionId, {
+        state: 'success',
+        message: exitedWithError ? `命令已完成，退出码 ${exitCode}` : '命令已完成',
+      })
     }
   }
 
   const handleAgentPrompt = (sessionId: string) => {
-    const waiter = agentWaiterRef.current
-    if (!waiter || waiter.sessionId !== sessionId) {
+    const waiter = agentWaitersRef.current[sessionId]
+    if (!waiter) {
       return
     }
     finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, false, waiter.marker)
   }
 
   const executeAgentStep = async (stepId: string, fromAuto = false, confirmed = false) => {
-    const step = agentStepsRef.current.find((item) => item.id === stepId)
-    const sessionId = step?.sessionId || activeSessionIdRef.current
+    const located = findAgentStepById(stepId)
+    const step = located?.step
+    const sessionId = step?.sessionId || located?.sessionId || activeSessionIdRef.current
     const session = sessionsRef.current.find((item) => item.id === sessionId)
     if (!step || !session || session.status !== 'connected') {
-      setAgentMessage('当前 SSH 会话不可执行命令')
+      updateSessionAgentState(sessionId, { message: '当前 SSH 会话不可执行命令' })
       appendLog('warn', 'ui.agent', 'agent command skipped because session is unavailable', {
         stepID: stepId,
         sessionID: sessionId,
@@ -5154,9 +5290,11 @@ export function App() {
     }
     const riskLevel = step.riskLevel || classifyCommandRisk(step.command)
     if (riskLevel === 'high' && !confirmed) {
-      agentRunningRef.current = false
-      setPendingAgentStepId(step.id)
-      setAgentMessage(fromAuto ? '检测到高风险命令，已暂停自动执行，请人工确认' : '检测到高风险命令，请确认后执行')
+      updateSessionAgentState(sessionId, {
+        running: false,
+        pendingStepId: step.id,
+        message: fromAuto ? '检测到高风险命令，已暂停自动执行，请人工确认' : '检测到高风险命令，请确认后执行',
+      })
       return
     }
     const beforeContext = terminalContextTail(terminalCachesRef.current[sessionId], 12000)
@@ -5164,10 +5302,13 @@ export function App() {
     const baseTimeoutSeconds = normalizeAppSettings(sessionSettingsRef.current).agentCommandTimeoutSeconds
     const timeoutSeconds = classifyAgentCommandTimeout(step.command, baseTimeoutSeconds)
     const timeoutMs = timeoutSeconds * 1000
-    clearAgentWaiter()
+    clearAgentWaiter(sessionId)
     updateAgentStep(step.id, { status: 'running', riskLevel, sessionId })
-    setAgentState('loading')
-    setAgentMessage('命令执行中，等待远端命令完成...')
+    updateSessionAgentState(sessionId, {
+      state: 'loading',
+      message: '命令执行中，等待远端命令完成...',
+      pendingStepId: '',
+    })
     appendLog('info', 'ui.agent', 'agent command started', {
       stepID: step.id,
       sessionID: sessionId,
@@ -5175,13 +5316,13 @@ export function App() {
       timeoutMs,
     })
     const timeoutId = window.setTimeout(() => {
-      if (agentWaiterRef.current?.stepId === step.id) {
+      if (agentWaitersRef.current[sessionId]?.stepId === step.id) {
         finishAgentStep(step.id, sessionId, beforeContext, true, marker)
       }
     }, timeoutMs)
     clearAIPrediction({ sessionId })
-    agentWaiterRef.current = { stepId: step.id, sessionId, beforeContext, marker, rawOutput: '', timeoutId }
-    executeCommand(wrapAgentCommand(step.command, marker), sessionId)
+    agentWaitersRef.current[sessionId] = { stepId: step.id, sessionId, beforeContext, marker, rawOutput: '', timeoutId }
+    executeCommandToSession(wrapAgentCommand(step.command, marker), sessionId, { preserveActiveView: true })
   }
 
   const applyPrediction = () => {
@@ -5380,8 +5521,14 @@ export function App() {
                     type="button"
                     title={`执行 AI 命令：${displayedStep.command}`}
                     onClick={() => {
-                      agentGoalRef.current = resolveAgentGoal(`执行命令并根据结果回答用户：${displayedStep.command}`)
-                      agentRunningRef.current = true
+                      if (!displayedStep.sessionId) {
+                        return
+                      }
+                      updateSessionAgentState(displayedStep.sessionId, (current) => ({
+                        ...current,
+                        goal: resolveAgentGoal(`执行命令并根据结果回答用户：${displayedStep.command}`, displayedStep.sessionId),
+                        running: true,
+                      }))
                       void executeAgentStep(displayedStep.id)
                     }}
                   >
@@ -5392,7 +5539,12 @@ export function App() {
                       className="ai-icon-button"
                       type="button"
                       title="让 AI 根据该步骤输出继续判断"
-                      onClick={() => void requestAgentNextStep(agentStepsRef.current, activeSessionIdRef.current)}
+                      onClick={() => {
+                        if (!displayedStep.sessionId) {
+                          return
+                        }
+                        void requestAgentNextStep(getAgentStepsForSession(displayedStep.sessionId), displayedStep.sessionId)
+                      }}
                     >
                       ↻
                     </button>
@@ -5984,7 +6136,7 @@ export function App() {
                 activeAIConversationId={activeAIConversationId}
                 activeAIModelLabel={activeAIModelConfig?.model || activeAIModelConfig?.name || '未配置'}
                 activeAIModelTitle={activeAIModelConfig ? `当前模型：${activeAIModelConfig.model || activeAIModelConfig.name}` : '未配置 AI 模型'}
-                agentMode={agentMode}
+                agentMode={activeAgentMode}
                 agentState={agentState}
                 aiAssistantError={aiAssistantError}
                 aiAssistantState={aiAssistantState}
@@ -6011,17 +6163,22 @@ export function App() {
                 shouldRenderAgentMessageCard={shouldRenderAgentMessageCard}
                 onClearAiInput={() => { updateAiUnifiedInputValue(''); setAiAssistantError('') }}
                 onCloseBatchHostCard={closeBatchHostCard}
-                onContinueAgentTask={continueAgentTask}
+                onContinueAgentTask={() => continueAgentTask(activeAgentSessionId)}
                 onCreateConversation={() => { void createAIConversation('新对话') }}
                 onDeleteConversation={confirmDeleteAIConversation}
                 onLoadMoreConversations={() => { void loadAIConversations(false) }}
                 onRemoveBatchSelectedHost={removeBatchSelectedHost}
                 onSelectConversation={(conversationId) => { void selectAIConversation(conversationId) }}
-                onSetAgentMode={setAgentMode}
+                onSetAgentMode={(mode) => {
+                  if (!activeAgentSessionId) {
+                    return
+                  }
+                  updateSessionAgentState(activeAgentSessionId, { mode })
+                }}
                 onSetIsAIInputCollapsed={setIsAIInputCollapsed}
                 onSetIsAIInputExpanded={setIsAIInputExpanded}
                 onStartBatchExecution={() => { void startBatchExecution() }}
-                onStopAgentTask={stopAgentTask}
+                onStopAgentTask={() => stopAgentTask(activeAgentSessionId)}
                 onSubmitAiUnifiedInput={() => { void submitAiUnifiedInput() }}
                 onToggleAIHistory={() => setIsAIHistoryOpen((current) => !current)}
                 onUpdateAiUnifiedInputValue={updateAiUnifiedInputValue}
@@ -6160,11 +6317,13 @@ export function App() {
       <PendingAgentStepModal
         open={Boolean(pendingAgentStepId)}
         step={pendingAgentStepId ? agentSteps.find((item) => item.id === pendingAgentStepId) ?? null : null}
-        onClose={() => setPendingAgentStepId('')}
+        onClose={() => updateSessionAgentState(activeAgentSessionId, { pendingStepId: '' })}
         onConfirm={() => {
           const stepId = pendingAgentStepId
-          setPendingAgentStepId('')
-          agentRunningRef.current = agentModeRef.current === 'auto'
+          updateSessionAgentState(activeAgentSessionId, {
+            pendingStepId: '',
+            running: activeAgentMode === 'auto',
+          })
           void executeAgentStep(stepId, false, true)
         }}
       />

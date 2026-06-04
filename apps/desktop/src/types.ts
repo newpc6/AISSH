@@ -1,4 +1,5 @@
 import type {
+  AIAgentMode,
   AIAgentStep,
   AIAssistResponse,
   AIChatMessage,
@@ -146,6 +147,15 @@ export type AgentCommandWaiter = {
   marker: string
   rawOutput: string
   timeoutId: number
+}
+
+export type SessionAgentState = {
+  mode: AIAgentMode
+  state: LoadState
+  message: string
+  goal: string
+  running: boolean
+  pendingStepId: string
 }
 
 export type AIStreamEvent = {
