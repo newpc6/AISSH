@@ -334,6 +334,7 @@ export function App() {
   const aiStreamContentRef = useRef('')
   const aiStreamThinkingMessageIdRef = useRef('')
   const aiStreamContentMessageIdRef = useRef('')
+  const thinkingScrollFrameRef = useRef<number | undefined>(undefined)
   const leftModeRef = useRef<LeftMode>('servers')
   const trackTerminalPathRef = useRef(true)
   const inputQueuesRef = useRef<Record<string, Promise<void>>>({})
@@ -1671,6 +1672,15 @@ export function App() {
     }
     element.scrollTop = element.scrollHeight
   }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, activeSessionId, agentStateBySession, isAIHistoryOpen])
+
+  useEffect(
+    () => () => {
+      if (thinkingScrollFrameRef.current) {
+        window.cancelAnimationFrame(thinkingScrollFrameRef.current)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -3928,6 +3938,24 @@ export function App() {
     setAiMessages((current) => [...current, message])
   }
 
+  const scrollStreamingThinkingToBottom = () => {
+    const messageId = aiStreamThinkingMessageIdRef.current
+    if (!messageId) {
+      return
+    }
+    if (thinkingScrollFrameRef.current) {
+      window.cancelAnimationFrame(thinkingScrollFrameRef.current)
+    }
+    thinkingScrollFrameRef.current = window.requestAnimationFrame(() => {
+      thinkingScrollFrameRef.current = undefined
+      const card = aiMessageListRef.current?.querySelector<HTMLElement>(`[data-ai-message-id="${messageId}"] .markdown-body`)
+      if (!card) {
+        return
+      }
+      card.scrollTop = card.scrollHeight
+    })
+  }
+
   const updateStreamingThinkingMessage = (text: string) => {
     if (!text) {
       return
@@ -3938,6 +3966,13 @@ export function App() {
     const messageId = aiStreamThinkingMessageIdRef.current
     setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
   }
+
+  useEffect(() => {
+    if (!aiStreamThinking) {
+      return
+    }
+    scrollStreamingThinkingToBottom()
+  }, [aiStreamThinking])
 
   const startStreamingContentMessage = () => {
     const message = makeLocalAIMessage('content', '')
@@ -5515,7 +5550,7 @@ export function App() {
     }
     if (message.kind === 'thinking') {
       return (
-        <article className="ai-stream-card ai-message-card" key={message.id}>
+        <article className="ai-stream-card ai-message-card" key={message.id} data-ai-message-id={message.id}>
           {renderAIMessageHeader(message.id, '思考', message.createdAt)}
           {!collapsed ? renderMarkdown(message.content, '思考中...') : null}
         </article>
