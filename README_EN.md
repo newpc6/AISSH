@@ -81,6 +81,34 @@ The main workspace is divided into three columns:
 - **Center**: Session main area with quick connect when no active session
 - **Right**: Server info, AI assistant, command history, and favorites
 
+The screenshot above shows an English-mode workspace with a live SSH session, built-in metrics, and an AI-assisted hardware inspection summary. Sensitive server account, IP, and port details are masked in the documentation images.
+
+## 📸 Product Tour
+
+### Remote File Browser
+
+![Remote Files](docs/images/readme/02-files.jpg)
+
+Browse remote directories, follow the terminal working path, and switch between terminal work and file operations without leaving the same workspace.
+
+### AI Conversation & History
+
+![AI History](docs/images/readme/03-history.jpg)
+
+The AI workspace keeps conversation history tied to operational context, so you can review previous troubleshooting or infrastructure Q&A while staying inside the same SSH session.
+
+### Favorite Commands
+
+![Favorite Commands](docs/images/readme/04-favorites.jpg)
+
+Save repeatable commands for one-click reuse, copy, or execution. This is especially useful for routine inspections, deployment helpers, and standardized operational workflows.
+
+### Preferences & AI Configuration
+
+![Preferences](docs/images/readme/05-settings.jpg)
+
+Configure language, workspace behavior, server metrics, and AI provider settings from one compact preferences surface.
+
 ## 🚀 Getting Started
 
 ### Installation

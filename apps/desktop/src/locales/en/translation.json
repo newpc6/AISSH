@@ -558,7 +558,8 @@
     "executePrediction": "Execute AI predicted command: {{command}}",
     "copy": "Copy",
     "execute": "Run",
-    "predictionHint": "On an empty command line, press Tab to cycle suggestions and Enter to run the current one. Press Shift+Tab to retrigger prediction, Ctrl+Insert to copy selected text, and typing any other character clears suggestions."
+    "predictionHint": "On an empty command line, press Tab to cycle suggestions and Enter to run the current one. Press Shift+Tab to retrigger prediction, Ctrl+Insert to copy selected text, and typing any other character clears suggestions.",
+    "addConnection": "Add SSH connection"
   },
   "serverInfo": {
     "disconnected": "Disconnected",
@@ -626,5 +627,13 @@
     "error": "Disconnected",
     "closed": "Closed",
     "idle": "Idle"
+  },
+  "servers": {
+    "title": "Servers",
+    "groups": "Groups",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "connect": "Connect",
+    "reconnect": "Reconnect"
   }
 }
