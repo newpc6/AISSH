@@ -92,13 +92,14 @@
 .info-panel.collapsed .info-panel-header {
   align-items: center;
   gap: 0;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr) 22px;
 }
 
 .info-panel.collapsed .panel-icon-button {
   width: 22px;
   height: 22px;
   font-size: 10px;
+  justify-self: end;
 }
 
 .info-panel.collapsed + .right-panel-resizer {
