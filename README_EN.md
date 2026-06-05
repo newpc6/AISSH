@@ -1,10 +1,10 @@
 # AI SSH
 
+[中文文档](README.md) | English Documentation
+
 **AI-Powered Intelligent SSH Workbench for Modern DevOps**
 
 AI SSH is a desktop-first intelligent SSH tool that integrates SSH sessions, file management, server monitoring, and AI-powered automation into a unified workspace. It's designed for daily operations, troubleshooting, and batch operations with AI as your intelligent co-pilot.
-
-[中文文档](README.md)
 
 ## 🤖 AI-Powered Automation
 

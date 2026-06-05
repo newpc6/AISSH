@@ -1,5 +1,7 @@
 # AI SSH
 
+[English Documentation](README_EN.md) | 中文文档
+
 AI SSH 是一个桌面优先的智能 SSH 工具，把 SSH 会话、文件管理、服务器状态和 AI 辅助能力放进同一个工作台里，适合日常运维、排障和批量操作。
 
 
