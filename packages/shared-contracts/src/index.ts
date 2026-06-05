@@ -83,6 +83,16 @@ export interface AISkill {
   updatedAt: string
 }
 
+export interface AIModelListResponse {
+  models: AIModelConfig[]
+  activeModelId: string
+}
+
+export interface AIModelReplaceRequest {
+  models: AIModelConfig[]
+  activeModelId: string
+}
+
 export interface AISkillListResponse {
   skills: AISkill[]
 }
@@ -91,6 +101,10 @@ export interface AISkillUpsertRequest {
   id?: string
   name: string
   prompt: string
+}
+
+export interface AISkillReplaceRequest {
+  skills: AISkillUpsertRequest[]
 }
 
 export interface AppSettings {

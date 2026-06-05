@@ -183,6 +183,65 @@ func (s *aiSkillStore) getSkill(id string) (aiSkill, error) {
 	return skill, err
 }
 
+func (s *aiSkillStore) replaceSkills(skills []aiSkill) ([]aiSkill, error) {
+	db, err := s.ensureDB()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	normalized := make([]aiSkill, 0, len(skills))
+	seen := map[string]struct{}{}
+	for index, skill := range skills {
+		id := strings.TrimSpace(skill.ID)
+		if id == "" {
+			id = "skill-" + uuid.NewString()
+		}
+		name := normalizeAISkillName(skill.Name)
+		prompt := normalizeAISkillPrompt(skill.Prompt)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		createdAt := strings.TrimSpace(skill.CreatedAt)
+		if createdAt == "" {
+			createdAt = now
+		}
+		normalized = append(normalized, aiSkill{
+			ID:        id,
+			Name:      name,
+			Prompt:    prompt,
+			CreatedAt: createdAt,
+			UpdatedAt: now,
+		})
+		_ = index
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.Exec(`DELETE FROM ai_skills`); err != nil {
+		return nil, err
+	}
+	for _, skill := range normalized {
+		if _, err = tx.Exec(`INSERT INTO ai_skills(id, name, prompt, created_at, updated_at) VALUES(?, ?, ?, ?, ?)`, skill.ID, skill.Name, skill.Prompt, skill.CreatedAt, skill.UpdatedAt); err != nil {
+			return nil, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
 func normalizeAISkillName(name string) string {
 	normalized := strings.TrimSpace(name)
 	if normalized == "" {

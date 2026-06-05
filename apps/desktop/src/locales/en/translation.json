@@ -48,7 +48,6 @@
     "openFiles": "Open files",
     "logs": "Logs",
     "featureGuide": "Feature guide",
-    "preferences": "Preferences",
     "copySelection": "Copy selected text",
     "copy": "Copy",
     "expandLeftPanel": "Expand left panel",
@@ -65,20 +64,19 @@
     "favorites": "Favorites",
     "unconfigured": "Unconfigured",
     "currentModel": "Current model: {{model}}",
-    "unconfiguredModel": "No AI model configured"
+    "unconfiguredModel": "No AI model configured",
+    "appSettings": "App settings",
+    "aiModels": "AI models",
+    "aiSkills": "AI skills"
   },
   "settings": {
     "title": "Settings",
-    "preferences": "Preferences",
-    "closePreferences": "Close preferences window",
-    "savePreferences": "Save preferences",
     "switchToSection": "Switch to {{section}} settings",
     "sections": {
       "general": "General",
       "security": "Security",
       "metrics": "Server Metrics",
-      "ai": "AI",
-      "skills": "Skills"
+      "ai": "AI"
     },
     "general": {
       "language": "Language",
@@ -176,7 +174,10 @@
       "namePlaceholder": "For example: Safe Linux inspection",
       "promptPlaceholder": "For example: Prefer read-only commands first, explain findings clearly, and avoid service restarts unless explicitly requested.",
       "defaultName": "Skill {{count}}"
-    }
+    },
+    "dialogTitle": "App settings",
+    "closeDialog": "Close settings window",
+    "saveDialog": "Save settings"
   },
   "files": {
     "parentDirectory": "Parent Directory"
@@ -651,5 +652,36 @@
     "moveDown": "Move down",
     "connect": "Connect",
     "reconnect": "Reconnect"
+  },
+  "modelsDialog": {
+    "title": "AI models",
+    "heading": "Model configuration",
+    "close": "Close AI models dialog",
+    "save": "Save AI models",
+    "help": "Manage multiple AI model endpoints in one table. Choose the active model used by chat, prediction, and agent workflows.",
+    "tableTitle": "Model list",
+    "table": {
+      "actions": "Actions"
+    }
+  },
+  "skillsDialog": {
+    "title": "AI skills",
+    "heading": "Skill library",
+    "close": "Close AI skills dialog",
+    "save": "Save AI skills",
+    "add": "Add skill",
+    "help": "Store reusable instructions here. Checked skills in AI chat will be sent as extra operating guidance.",
+    "empty": "No skills yet.",
+    "remove": "Remove skill",
+    "table": {
+      "name": "Skill name",
+      "prompt": "Prompt",
+      "actions": "Actions"
+    }
+  },
+  "messages": {
+    "settingsSaved": "Settings saved",
+    "modelsSaved": "AI models saved",
+    "skillsSaved": "AI skills saved"
   }
 }

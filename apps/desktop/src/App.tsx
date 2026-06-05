@@ -22,6 +22,8 @@ import { HostDialog } from './components/modals/HostDialog'
 import { LogModal } from './components/modals/LogModal'
 import { MetricExpandModal } from './components/modals/MetricExpandModal'
 import { PendingAgentStepModal } from './components/modals/PendingAgentStepModal'
+import { AIModelsDialog } from './components/modals/AIModelsDialog'
+import { AISkillsDialog } from './components/modals/AISkillsDialog'
 import { SettingsDialog } from './components/modals/SettingsDialog'
 import { MetricChart } from './components/right-rail/MetricChart'
 import { ServerInfoPanel } from './components/right-rail/ServerInfoPanel'
@@ -55,10 +57,13 @@ import { useWorkspaceViewState } from './hooks/useWorkspaceViewState'
 import {
   type AISkill,
   type AISkillListResponse,
+  type AISkillReplaceRequest,
   type AIPredictionRequest,
   type AIAssistRequest,
   type AIAssistResponse,
   type AIModelConfig,
+  type AIModelListResponse,
+  type AIModelReplaceRequest,
   type AIModelProvider,
   type AIChatMessage,
   type AIChatMessageKind,
@@ -149,7 +154,6 @@ import {
   formatBytes,
   formatEditableText,
   formatFullDateTime,
-  getActiveAIModelConfig,
   inferRemotePathFromCommand,
   isLikelyStatic405,
   localFileName,
@@ -184,8 +188,6 @@ import {
 } from './utils'
 
 const APP_CONFIG_BACKUP_STORAGE_KEY = 'ai-ssh:app-config-backup'
-const AI_PROVIDER_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel', 'aiModels', 'activeAIModelId'] as const
-const AI_PROVIDER_STRING_SETTING_KEYS = ['aiBaseUrl', 'aiApiKey', 'aiModel'] as const
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -243,6 +245,8 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [isServerInfoCollapsed, setIsServerInfoCollapsed] = useState(false)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const [isSkillDialogOpen, setIsSkillDialogOpen] = useState(false)
+  const [isModelDialogOpen, setIsModelDialogOpen] = useState(false)
   const [isFeatureGuideOpen, setIsFeatureGuideOpen] = useState(false)
   const [isHostDialogOpen, setIsHostDialogOpen] = useState(false)
   const [hostDialogMode, setHostDialogMode] = useState<HostDialogMode>('create')
@@ -265,7 +269,11 @@ export function App() {
   const [expandedPredictionThinkingSessionId, setExpandedPredictionThinkingSessionId] = useState('')
   const [aiUnifiedPrompt, setAiUnifiedPrompt] = useState('')
   const [aiSkills, setAiSkills] = useState<AISkill[]>([])
+  const [skillDrafts, setSkillDrafts] = useState<AISkill[]>([])
   const [selectedAISkillIds, setSelectedAISkillIds] = useState<string[]>([])
+  const [aiModelConfigs, setAIModelConfigs] = useState<AIModelConfig[]>([])
+  const [aiModelDrafts, setAIModelDrafts] = useState<AIModelConfig[]>([])
+  const [activeAIModelId, setActiveAIModelId] = useState('')
   const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
   const [aiAssistantResponse, setAiAssistantResponse] = useState<AIAssistResponse | null>(null)
   const [aiAssistantError, setAiAssistantError] = useState('')
@@ -413,11 +421,15 @@ export function App() {
   const {
     openFeatureGuide,
     openGroupDialog,
+    openModelDialog,
     openSettingsDialog,
+    openSkillDialog,
   } = useDesktopOverlays({
     openHostGroupDialog,
     setIsFeatureGuideOpen,
+    setIsModelDialogOpen,
     setIsSettingsDialogOpen,
+    setIsSkillDialogOpen,
     setOpenTopMenu,
     setSettingsSavedMessage,
   })
@@ -1258,24 +1270,18 @@ export function App() {
     predictionPanelHeight?: number
     favoriteCommands?: string[]
   }>) => {
-    const shouldMergeExistingConfig =
-      !configLoadedRef.current ||
-      !overrides?.settings ||
-      AI_PROVIDER_SETTING_KEYS.some((key) => overrides.settings?.[key] === undefined)
     let existingConfig: Record<string, unknown> = {}
     let existingApp: Record<string, unknown> = {}
-    if (shouldMergeExistingConfig) {
-      try {
-        const response = await apiFetch('/config')
-        if (response.ok) {
-          existingConfig = (await response.json()) as Record<string, unknown>
-          existingApp = isRecord(existingConfig.app) ? existingConfig.app : {}
-        }
-      } catch (error) {
-        appendLog('warn', 'ui.config', 'load config before save failed', {
-          error: error instanceof Error ? error.message : String(error),
-        })
+    try {
+      const response = await apiFetch('/config')
+      if (response.ok) {
+        existingConfig = (await response.json()) as Record<string, unknown>
+        existingApp = isRecord(existingConfig.app) ? existingConfig.app : {}
       }
+    } catch (error) {
+      appendLog('warn', 'ui.config', 'load config before save failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
     }
     const backupApp = loadLocalAppConfigBackup()
     const mergedSettings = {
@@ -1283,28 +1289,6 @@ export function App() {
       ...existingApp,
       ...(overrides?.settings ?? settings),
     } as Partial<AppSettings>
-    for (const key of AI_PROVIDER_STRING_SETTING_KEYS) {
-      const overrideValue = overrides?.settings?.[key]
-      const currentValue = settings[key]
-      const existingValue = existingApp[key]
-      const backupValue = backupApp[key]
-      const shouldRestoreAIValue = !configLoadedRef.current || overrideValue === undefined
-      if (
-        shouldRestoreAIValue &&
-        (overrideValue === undefined || String(overrideValue).trim() === '') &&
-        !String(currentValue ?? '').trim() &&
-        (
-          (typeof existingValue === 'string' && existingValue.trim()) ||
-          (typeof backupValue === 'string' && backupValue.trim())
-        )
-      ) {
-        mergedSettings[key] = typeof existingValue === 'string' && existingValue.trim()
-          ? existingValue
-          : typeof backupValue === 'string'
-            ? backupValue
-            : ''
-      }
-    }
     const normalized = normalizeAppSettings(mergedSettings)
     const appConfig = {
       ...backupApp,
@@ -1320,11 +1304,6 @@ export function App() {
       leftRailWidth: overrides?.leftRailWidth ?? leftRailWidth,
       predictionPanelHeight: overrides?.predictionPanelHeight ?? predictionPanelHeight,
       aiEnabled: normalized.aiEnabled,
-      aiBaseUrl: normalized.aiBaseUrl,
-      aiApiKey: normalized.aiApiKey,
-      aiModel: normalized.aiModel,
-      aiModels: normalized.aiModels,
-      activeAIModelId: normalized.activeAIModelId,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
@@ -1388,20 +1367,7 @@ export function App() {
         const cfg = await resp.json() as Record<string, unknown>
         const rawApp = isRecord(cfg.app) ? cfg.app : undefined
         const backupApp = loadLocalAppConfigBackup()
-        const app = rawApp
-          ? {
-              ...rawApp,
-              ...Object.fromEntries(
-                AI_PROVIDER_STRING_SETTING_KEYS
-                  .filter((key) =>
-                    !String(rawApp[key] ?? '').trim() &&
-                    typeof backupApp[key] === 'string' &&
-                    String(backupApp[key]).trim(),
-                  )
-                  .map((key) => [key, backupApp[key]]),
-              ),
-            }
-          : backupApp
+        const app = rawApp ? { ...rawApp } : backupApp
         if (app) {
           const settings = normalizeAppSettings({
             healthCheckIntervalSeconds: app.healthCheckIntervalSeconds as number,
@@ -1413,11 +1379,6 @@ export function App() {
             rightServerInfoPanelHeight: app.rightServerInfoPanelHeight as number,
             rightPanelWidth: app.rightPanelWidth as number,
             aiEnabled: app.aiEnabled as boolean,
-            aiBaseUrl: (app.aiBaseUrl ?? '') as string,
-            aiApiKey: (app.aiApiKey ?? '') as string,
-            aiModel: (app.aiModel ?? '') as string,
-            aiModels: app.aiModels as AIModelConfig[] | undefined,
-            activeAIModelId: (app.activeAIModelId ?? '') as string,
             aiPredictionEnabled: app.aiPredictionEnabled as boolean,
             aiPredictionThinkingEnabled: app.aiPredictionThinkingEnabled as boolean,
             aiPredictionCount: app.aiPredictionCount as number,
@@ -1447,10 +1408,6 @@ export function App() {
           if (Array.isArray(app.favoriteCommands)) {
             setFavoriteCommands(normalizeFavoriteCommands(app.favoriteCommands))
           }
-          const restoredAISettings = AI_PROVIDER_SETTING_KEYS.some((key) => rawApp && app[key] !== rawApp[key])
-          if (restoredAISettings) {
-            void saveAppConfig({ settings })
-          }
         }
       } catch (error) {
         appendLog('warn', 'ui.config', 'load config from API failed, falling back to localStorage', {
@@ -1461,6 +1418,14 @@ export function App() {
       }
     }
     void loadConfig()
+  }, [])
+
+  useEffect(() => {
+    void loadAIModels().catch((error) => {
+      appendLog('warn', 'ui.aiModels', 'load ai models failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
   }, [])
 
   useEffect(() => {
@@ -1934,7 +1899,7 @@ export function App() {
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
-  const activeAIModelConfig = getActiveAIModelConfig(settings)
+  const activeAIModelConfig = aiModelConfigs.find((model) => model.id === activeAIModelId) ?? aiModelConfigs[0] ?? null
   const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
   const visibleLogs = useVisibleLogs(logs, logLevel, logSearch)
   const selectedAISkills = useMemo(
@@ -1978,61 +1943,80 @@ export function App() {
   const loadAISkills = async () => {
     const response = await apiFetch('/ai/skills')
     if (!response.ok) {
-      throw new Error(`加载 AI skill 失败：${response.status}`)
+      throw new Error(`?? AI skill ???${response.status}`)
     }
     const data = (await response.json()) as AISkillListResponse
     const skills = Array.isArray(data.skills) ? data.skills : []
     setAiSkills(skills)
+    setSkillDrafts(skills.map((skill) => ({ ...skill })))
     setSelectedAISkillIds((current) => current.filter((id) => skills.some((skill) => skill.id === id)))
     return skills
   }
 
-  const createAISkill = async () => {
-    const response = await apiFetch('/ai/skills', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: t('settings.skills.defaultName', { count: aiSkills.length + 1 }),
+  const loadAIModels = async () => {
+    const response = await apiFetch('/ai/models')
+    if (!response.ok) {
+      throw new Error(`Load AI models failed: ${response.status}`)
+    }
+    const data = (await response.json()) as AIModelListResponse
+    const models = Array.isArray(data.models) ? data.models : []
+    const nextActiveModelId = typeof data.activeModelId === 'string' ? data.activeModelId : ''
+    setAIModelConfigs(models)
+    setAIModelDrafts(models.map((model) => ({ ...model })))
+    setActiveAIModelId(nextActiveModelId)
+    setSettings((current) => normalizeAppSettings({ ...current, aiModels: models, activeAIModelId: nextActiveModelId }))
+    return { models, activeModelId: nextActiveModelId }
+  }
+
+  const createAISkill = () => {
+    setSkillDrafts((current) => [
+      {
+        id: `skill-draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        name: t('settings.skills.defaultName', { count: current.length + 1 }),
         prompt: '',
-      }),
-    })
-    if (!response.ok) {
-      const detail = await readResponseErrorDetail(response)
-      throw new Error(detail || `创建 AI skill 失败：${response.status}`)
-    }
-    const created = (await response.json()) as AISkill
-    setAiSkills((current) => [created, ...current])
+        createdAt: '',
+        updatedAt: '',
+      },
+      ...current,
+    ])
   }
 
-  const updateAISkill = async (id: string, patch: Partial<Pick<AISkill, 'name' | 'prompt'>>) => {
-    const target = aiSkills.find((skill) => skill.id === id)
-    if (!target) return
-    const response = await apiFetch(`/ai/skills/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: patch.name ?? target.name,
-        prompt: patch.prompt ?? target.prompt,
-      }),
-    })
-    if (!response.ok) {
-      const detail = await readResponseErrorDetail(response)
-      throw new Error(detail || `保存 AI skill 失败：${response.status}`)
-    }
-    const updated = (await response.json()) as AISkill
-    setAiSkills((current) => current.map((skill) => (skill.id === id ? updated : skill)))
+  const updateAISkill = (id: string, patch: Partial<Pick<AISkill, 'name' | 'prompt'>>) => {
+    setSkillDrafts((current) => current.map((skill) => (skill.id === id ? { ...skill, ...patch } : skill)))
   }
 
-  const removeAISkill = async (id: string) => {
-    const response = await apiFetch(`/ai/skills/${id}`, {
-      method: 'DELETE',
-    })
-    if (!response.ok) {
-      const detail = await readResponseErrorDetail(response)
-      throw new Error(detail || `删除 AI skill 失败：${response.status}`)
-    }
-    setAiSkills((current) => current.filter((skill) => skill.id !== id))
+  const removeAISkill = (id: string) => {
+    setSkillDrafts((current) => current.filter((skill) => skill.id !== id))
     setSelectedAISkillIds((current) => current.filter((skillId) => skillId !== id))
+  }
+
+  const addAIModelConfig = (provider: AIModelProvider) => {
+    const nextModel = provider === 'ollama'
+      ? newOllamaModelConfig()
+      : provider === 'anthropic-claude'
+        ? newAnthropicClaudeModelConfig()
+        : newOpenAICompatibleModelConfig()
+    setAIModelDrafts((current) => [...current, nextModel])
+    setActiveAIModelId((current) => current || nextModel.id)
+  }
+
+  const updateAIModelConfig = (id: string, patch: Partial<AIModelConfig>) => {
+    setAIModelDrafts((current) => current.map((model) => {
+      if (model.id !== id) return model
+      const next = { ...model, ...patch }
+      if (patch.provider === 'ollama' && !next.baseUrl.trim()) {
+        next.baseUrl = DEFAULT_OLLAMA_BASE_URL
+      }
+      if (patch.provider === 'anthropic-claude' && !next.baseUrl.trim()) {
+        next.baseUrl = 'https://api.anthropic.com/v1'
+      }
+      return next
+    }))
+  }
+
+  const removeAIModelConfig = (id: string) => {
+    setAIModelDrafts((current) => current.filter((model) => model.id !== id))
+    setActiveAIModelId((current) => current === id ? '' : current)
   }
 
   const selectPrivateKeyFile = async (file: File | null) => {
@@ -2413,7 +2397,7 @@ export function App() {
       terminalCachesRef.current = next
       return next
     })
-    setSettingsSavedMessage('偏好设置已保存')
+    setSettingsSavedMessage(t('messages.settingsSaved'))
     setErrorMessage('')
     appendLog('info', 'ui.settings', 'settings saved', {
       healthCheckIntervalSeconds: normalized.healthCheckIntervalSeconds,
@@ -2436,7 +2420,7 @@ export function App() {
       aiProviderTimeoutSeconds: normalized.aiProviderTimeoutSeconds,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
     })
-    window.setTimeout(() => setSettingsSavedMessage(''), 2200)
+    window.setTimeout(() => setSettingsSavedMessage(t('messages.settingsSaved')), 2200)
   }
 
   const saveAuthSettings = async () => {
@@ -2922,6 +2906,53 @@ export function App() {
     container.scrollBy({ top: offset, behavior: 'smooth' })
   }, [batchHostIndex, batchActive, batchHostResults.length])
 
+  const saveAIModels = async () => {
+    const payload: AIModelReplaceRequest = {
+      models: aiModelDrafts,
+      activeModelId: activeAIModelId,
+    }
+    const response = await apiFetch('/ai/models', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) {
+      const detail = await readResponseErrorDetail(response)
+      throw new Error(detail || `Save AI models failed: ${response.status}`)
+    }
+    const data = (await response.json()) as AIModelListResponse
+    const models = Array.isArray(data.models) ? data.models : []
+    const nextActiveModelId = typeof data.activeModelId === 'string' ? data.activeModelId : ''
+    setAIModelConfigs(models)
+    setAIModelDrafts(models.map((model) => ({ ...model })))
+    setActiveAIModelId(nextActiveModelId)
+    setSettings((current) => normalizeAppSettings({ ...current, aiModels: models, activeAIModelId: nextActiveModelId }))
+    setSettingsSavedMessage(t('messages.modelsSaved'))
+    window.setTimeout(() => setSettingsSavedMessage(''), 2200)
+  }
+
+  const saveAISkills = async () => {
+    const payload: AISkillReplaceRequest = {
+      skills: skillDrafts.map((skill) => ({ id: skill.id, name: skill.name, prompt: skill.prompt })),
+    }
+    const response = await apiFetch('/ai/skills', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) {
+      const detail = await readResponseErrorDetail(response)
+      throw new Error(detail || `Save AI skills failed: ${response.status}`)
+    }
+    const data = (await response.json()) as AISkillListResponse
+    const skills = Array.isArray(data.skills) ? data.skills : []
+    setAiSkills(skills)
+    setSkillDrafts(skills.map((skill) => ({ ...skill })))
+    setSelectedAISkillIds((current) => current.filter((id) => skills.some((skill) => skill.id === id)))
+    setSettingsSavedMessage(t('messages.skillsSaved'))
+    window.setTimeout(() => setSettingsSavedMessage(''), 2200)
+  }
+
   const saveAllSettings = async () => {
     saveSettings()
     try {
@@ -2934,51 +2965,10 @@ export function App() {
     if (authInitialized) {
       const saved = await saveAuthSettings()
       if (saved) {
-        setSettingsSavedMessage('偏好设置已保存')
-        window.setTimeout(() => setSettingsSavedMessage(''), 2200)
+        setSettingsSavedMessage(t('messages.settingsSaved'))
+        window.setTimeout(() => setSettingsSavedMessage(t('messages.settingsSaved')), 2200)
       }
     }
-  }
-
-  const addAIModelConfig = (provider: AIModelProvider) => {
-    const nextModel = provider === 'ollama'
-      ? newOllamaModelConfig()
-      : provider === 'anthropic-claude'
-        ? newAnthropicClaudeModelConfig()
-        : newOpenAICompatibleModelConfig()
-    setSettings((current) => ({
-      ...current,
-      aiModels: [...current.aiModels, nextModel],
-      activeAIModelId: current.activeAIModelId || nextModel.id,
-    }))
-  }
-
-  const updateAIModelConfig = (id: string, patch: Partial<AIModelConfig>) => {
-    setSettings((current) => {
-      const aiModels = current.aiModels.map((model) => {
-        if (model.id !== id) return model
-        const next = { ...model, ...patch }
-        if (patch.provider === 'ollama' && !next.baseUrl.trim()) {
-          next.baseUrl = DEFAULT_OLLAMA_BASE_URL
-        }
-        if (patch.provider === 'anthropic-claude' && !next.baseUrl.trim()) {
-          next.baseUrl = 'https://api.anthropic.com/v1'
-        }
-        return next
-      })
-      return normalizeAppSettings({ ...current, aiModels })
-    })
-  }
-
-  const removeAIModelConfig = (id: string) => {
-    setSettings((current) => {
-      const aiModels = current.aiModels.filter((model) => model.id !== id)
-      return normalizeAppSettings({
-        ...current,
-        aiModels,
-        activeAIModelId: current.activeAIModelId === id ? (aiModels[0]?.id ?? '') : current.activeAIModelId,
-      })
-    })
   }
 
   const updateLogSettings = async (nextSettings: Partial<LogSettings>) => {
@@ -3771,7 +3761,7 @@ export function App() {
     if (inFlightRequestID) {
       return
     }
-    const activeModel = getActiveAIModelConfig(normalized)
+    const activeModel = activeAIModelConfig
     if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       updateAIPredictionForSession(sessionId, {
         predictions: [],
@@ -4015,7 +4005,7 @@ export function App() {
     if (!normalized.aiEnabled) {
       throw new Error('AI 功能已关闭，请先在设置中开启')
     }
-    const activeModel = getActiveAIModelConfig(normalized)
+    const activeModel = activeAIModelConfig
     if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
@@ -5381,7 +5371,9 @@ ${recentContext}` : '',
                   {key === 'settings' ? (
                     <>
                       <button type="button" title={t('appMenu.featureGuide')} onClick={openFeatureGuide}>{t('appMenu.featureGuide')}</button>
-                      <button type="button" title={t('appMenu.preferences')} onClick={openSettingsDialog}>{t('appMenu.preferences')}</button>
+                      <button type="button" title={t('appMenu.appSettings')} onClick={openSettingsDialog}>{t('appMenu.appSettings')}</button>
+                      <button type="button" title={t('appMenu.aiModels')} onClick={openModelDialog}>{t('appMenu.aiModels')}</button>
+                      <button type="button" title={t('appMenu.aiSkills')} onClick={openSkillDialog}>{t('appMenu.aiSkills')}</button>
                     </>
                   ) : null}
                   {key === 'edit' ? <button type="button" title={t('appMenu.copySelection')} disabled>{t('appMenu.copy')}</button> : null}
@@ -5820,9 +5812,6 @@ ${recentContext}` : '',
       {isFeatureGuideOpen ? <FeatureGuide onClose={() => setIsFeatureGuideOpen(false)} /> : null}
 
       <SettingsDialog
-        activeAIModelApiKey={activeAIModelConfig?.apiKey ?? ''}
-        activeAIModelBaseUrl={activeAIModelConfig?.baseUrl ?? ''}
-        activeAIModelModel={activeAIModelConfig?.model ?? ''}
         authInitialized={authInitialized}
         changePasswordError={changePasswordError}
         changePasswordForm={changePasswordForm}
@@ -5835,8 +5824,6 @@ ${recentContext}` : '',
         defaultAiTerminalContextLimit={defaultSettings.aiTerminalContextLimit}
         defaultAgentCommandTimeoutSeconds={defaultSettings.agentCommandTimeoutSeconds}
         defaultHealthCheckIntervalSeconds={DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS}
-        aiSkills={aiSkills}
-        defaultOllamaBaseUrl={DEFAULT_OLLAMA_BASE_URL}
         defaultRightPanelWidth={DEFAULT_RIGHT_PANEL_WIDTH}
         defaultRightServerInfoHeight={DEFAULT_RIGHT_SERVER_INFO_HEIGHT}
         defaultSettings={defaultSettings}
@@ -5845,27 +5832,45 @@ ${recentContext}` : '',
         maxRightServerInfoHeight={MAX_RIGHT_SERVER_INFO_HEIGHT}
         minRightPanelWidth={MIN_RIGHT_PANEL_WIDTH}
         minRightServerInfoHeight={MIN_RIGHT_SERVER_INFO_HEIGHT}
-        normalizeSettings={normalizeAppSettings}
-        onAddAIModelConfig={addAIModelConfig}
-        onAddAISkill={() => { void createAISkill() }}
         onChangePassword={changePassword}
         onChangePasswordFormChange={(updater) => setChangePasswordForm((current) => updater(current))}
         onClearPrediction={clearAIPrediction}
         onClose={() => setIsSettingsDialogOpen(false)}
         onDesktopLoginRequiredChange={setDesktopLoginRequired}
-        onRemoveAISkill={(id) => { void removeAISkill(id) }}
-        onRemoveAIModelConfig={removeAIModelConfig}
         onSave={() => { void saveAllSettings() }}
         onSettingsChange={(updater) => setSettings((current) => updater(current))}
         onSettingsSectionChange={setSettingsSection}
-        onUpdateAISkill={(id, patch) => { void updateAISkill(id, patch) }}
-        onUpdateAIModelConfig={updateAIModelConfig}
         onWebAccessEnabledChange={setWebAccessEnabled}
         open={isSettingsDialogOpen}
         settings={settings}
         settingsSavedMessage={settingsSavedMessage}
         settingsSection={settingsSection}
         webAccessEnabled={webAccessEnabled}
+      />
+
+      <AIModelsDialog
+        activeModelId={activeAIModelId}
+        defaultOllamaBaseUrl={DEFAULT_OLLAMA_BASE_URL}
+        models={aiModelDrafts}
+        onActiveChange={setActiveAIModelId}
+        onAdd={addAIModelConfig}
+        onClose={() => setIsModelDialogOpen(false)}
+        onRemove={removeAIModelConfig}
+        onSave={() => { void saveAIModels() }}
+        onUpdate={updateAIModelConfig}
+        open={isModelDialogOpen}
+        savedMessage={settingsSavedMessage}
+      />
+
+      <AISkillsDialog
+        onAdd={createAISkill}
+        onClose={() => setIsSkillDialogOpen(false)}
+        onRemove={removeAISkill}
+        onSave={() => { void saveAISkills() }}
+        onUpdate={updateAISkill}
+        open={isSkillDialogOpen}
+        savedMessage={settingsSavedMessage}
+        skills={skillDrafts}
       />
 
       <ConfirmModal

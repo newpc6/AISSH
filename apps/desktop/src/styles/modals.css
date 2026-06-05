@@ -1009,3 +1009,79 @@ code {
 }
 
 
+
+.models-modal,
+.skills-modal {
+  width: min(1120px, 100%);
+  max-height: min(78vh, 820px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #101821;
+  padding: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+}
+
+.skills-modal {
+  width: min(980px, 100%);
+}
+
+.skills-modal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.table-modal-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.skills-table-wrap {
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.skills-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.skills-table th,
+.skills-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: top;
+}
+
+.skills-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(9, 14, 22, 0.96);
+  color: #a8b6ca;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.skills-table td input,
+.skills-table td textarea {
+  width: 100%;
+}
+
+.skills-table td textarea {
+  min-height: 140px;
+}
+
+.skills-table td:last-child {
+  width: 84px;
+}

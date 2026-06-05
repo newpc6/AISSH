@@ -1,40 +1,8 @@
 import type { ChangeEvent } from 'react'
-import type { AIModelProvider, AISkill, AppSettings } from '@ai-ssh/shared-contracts'
+import type { AppSettings } from '@ai-ssh/shared-contracts'
 import type { SettingsSection } from '../../types'
 import { useTranslation } from 'react-i18next'
 import { LanguageSwitcher } from '../common/LanguageSwitcher'
-
-const AI_PROVIDER_VALUES: AIModelProvider[] = ['openai-compatible', 'anthropic-claude', 'ollama']
-
-function aiProviderLabel(provider: AIModelProvider, t: (key: string) => string) {
-  if (provider === 'ollama') return t('settings.ai.provider.ollama')
-  if (provider === 'anthropic-claude') return t('settings.ai.provider.anthropicClaude')
-  return t('settings.ai.provider.openaiCompatible')
-}
-
-function aiModelPlaceholder(provider: AIModelProvider, t: (key: string) => string) {
-  if (provider === 'ollama') return t('settings.ai.placeholders.ollamaModel')
-  if (provider === 'anthropic-claude') return t('settings.ai.placeholders.claudeModel')
-  return t('settings.ai.placeholders.openaiModel')
-}
-
-function aiBaseUrlPlaceholder(provider: AIModelProvider, defaultOllamaBaseUrl: string) {
-  if (provider === 'ollama') return defaultOllamaBaseUrl
-  if (provider === 'anthropic-claude') return 'https://api.anthropic.com/v1'
-  return 'https://api.openai.com/v1'
-}
-
-function aiKeyPlaceholder(provider: AIModelProvider, t: (key: string) => string) {
-  if (provider === 'ollama') return t('settings.ai.placeholders.ollamaApiKey')
-  if (provider === 'anthropic-claude') return t('settings.ai.placeholders.claudeApiKey')
-  return t('settings.ai.placeholders.defaultApiKey')
-}
-
-function aiProviderHelp(provider: AIModelProvider, t: (key: string) => string) {
-  if (provider === 'ollama') return t('settings.ai.providerHelp.ollama')
-  if (provider === 'anthropic-claude') return t('settings.ai.providerHelp.anthropicClaude')
-  return t('settings.ai.providerHelp.openaiCompatible')
-}
 
 type ChangePasswordForm = {
   oldPassword: string
@@ -54,9 +22,6 @@ type SettingsDialogProps = {
   changePasswordError: string
   changePasswordSuccess: string
   settingsSavedMessage: string
-  activeAIModelBaseUrl: string
-  activeAIModelApiKey: string
-  activeAIModelModel: string
   minRightServerInfoHeight: number
   maxRightServerInfoHeight: number
   minRightPanelWidth: number
@@ -71,8 +36,6 @@ type SettingsDialogProps = {
   defaultAgentCommandTimeoutSeconds: number
   defaultAiProviderTimeoutSeconds: number
   defaultAiPredictionTriggerDelayMs: number
-  defaultOllamaBaseUrl: string
-  aiSkills: AISkill[]
   onClose: () => void
   onSettingsSectionChange: (section: SettingsSection) => void
   onSettingsChange: (updater: (current: AppSettings) => AppSettings) => void
@@ -81,14 +44,7 @@ type SettingsDialogProps = {
   onChangePasswordFormChange: (updater: (current: ChangePasswordForm) => ChangePasswordForm) => void
   onChangePassword: () => void
   onClearPrediction: () => void
-  onAddAIModelConfig: (provider: AIModelProvider) => void
-  onAddAISkill: () => void
-  onUpdateAISkill: (id: string, patch: Partial<Pick<AISkill, 'name' | 'prompt'>>) => void
-  onRemoveAISkill: (id: string) => void
-  onUpdateAIModelConfig: (id: string, patch: Record<string, unknown>) => void
-  onRemoveAIModelConfig: (id: string) => void
   onSave: () => void
-  normalizeSettings: (settings: AppSettings) => AppSettings
 }
 
 export function SettingsDialog({
@@ -103,9 +59,6 @@ export function SettingsDialog({
   changePasswordError,
   changePasswordSuccess,
   settingsSavedMessage,
-  activeAIModelBaseUrl,
-  activeAIModelApiKey,
-  activeAIModelModel,
   minRightServerInfoHeight,
   maxRightServerInfoHeight,
   minRightPanelWidth,
@@ -120,8 +73,6 @@ export function SettingsDialog({
   defaultAgentCommandTimeoutSeconds,
   defaultAiProviderTimeoutSeconds,
   defaultAiPredictionTriggerDelayMs,
-  defaultOllamaBaseUrl,
-  aiSkills,
   onClose,
   onSettingsSectionChange,
   onSettingsChange,
@@ -130,14 +81,7 @@ export function SettingsDialog({
   onChangePasswordFormChange,
   onChangePassword,
   onClearPrediction,
-  onAddAIModelConfig,
-  onAddAISkill,
-  onUpdateAISkill,
-  onRemoveAISkill,
-  onUpdateAIModelConfig,
-  onRemoveAIModelConfig,
   onSave,
-  normalizeSettings,
 }: SettingsDialogProps) {
   const { t } = useTranslation()
 
@@ -158,9 +102,9 @@ export function SettingsDialog({
         <div className="modal-header">
           <div>
             <p className="section-label">{t('settings.title')}</p>
-            <h3>{t('settings.preferences')}</h3>
+            <h3>{t('settings.dialogTitle')}</h3>
           </div>
-          <button type="button" title={t('settings.closePreferences')} onClick={onClose}>×</button>
+          <button type="button" title={t('settings.closeDialog')} onClick={onClose}>×</button>
         </div>
 
         <div className="settings-layout">
@@ -170,7 +114,6 @@ export function SettingsDialog({
               ['security', t('settings.sections.security')],
               ['metrics', t('settings.sections.metrics')],
               ['ai', t('settings.sections.ai')],
-              ['skills', t('settings.sections.skills')],
             ].map(([key, label]) => (
               <button
                 className={settingsSection === key ? 'active' : ''}
@@ -414,121 +357,11 @@ export function SettingsDialog({
                   />
                 </label>
                 <label>
-                  <span>{t('settings.ai.modelBaseUrl')}</span>
-                  <input value={activeAIModelBaseUrl} readOnly placeholder="https://api.openai.com/v1" />
-                </label>
-                <label>
-                  <span>{t('settings.ai.modelApiKey')}</span>
-                  <input type="password" value={activeAIModelApiKey} readOnly placeholder="sk-..." />
-                </label>
-                <label>
-                  <span>{t('settings.ai.modelName')}</span>
-                  <input value={activeAIModelModel} readOnly placeholder="gpt-4.1-mini" />
-                </label>
-                <div className="ai-model-settings">
-                  <div className="ai-model-settings-head">
-                    <span>{t('settings.ai.modelConfigTitle')}</span>
-                    <div className="ai-model-actions">
-                      <button type="button" title={t('settings.ai.modelActionTitles.addOpenAI')} onClick={() => onAddAIModelConfig('openai-compatible')}>{t('settings.ai.addOpenAI')}</button>
-                      <button type="button" title={t('settings.ai.modelActionTitles.addClaude')} onClick={() => onAddAIModelConfig('anthropic-claude')}>{t('settings.ai.addClaude')}</button>
-                      <button type="button" title={t('settings.ai.modelActionTitles.addOllama')} onClick={() => onAddAIModelConfig('ollama')}>{t('settings.ai.addOllama')}</button>
-                    </div>
-                  </div>
-                  <p className="ai-model-help">{t('settings.ai.modelHelp')}</p>
-                  {settings.aiModels.length === 0 ? <p className="hint-text">{t('settings.ai.noModels')}</p> : null}
-                  {settings.aiModels.length > 0 ? (
-                    <div className="ai-model-table-wrap">
-                      <table className="ai-model-table">
-                        <thead>
-                          <tr>
-                            <th>{t('settings.ai.modelTable.enable')}</th>
-                            <th>{t('settings.ai.modelTable.name')}</th>
-                            <th>{t('settings.ai.modelTable.type')}</th>
-                            <th>{t('settings.ai.modelTable.baseUrl')}</th>
-                            <th>{t('settings.ai.modelTable.key')}</th>
-                            <th>{t('settings.ai.modelTable.model')}</th>
-                            <th>{t('settings.ai.modelTable.thinking')}</th>
-                            <th>{t('settings.ai.modelTable.description')}</th>
-                            <th />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {settings.aiModels.map((model) => (
-                            <tr className={model.id === settings.activeAIModelId ? 'active' : ''} key={model.id}>
-                              <td>
-                                <label className="checkbox-row compact">
-                                  <input
-                                    checked={model.id === settings.activeAIModelId}
-                                    name="active-ai-model"
-                                    type="radio"
-                                    onChange={() => onSettingsChange((current) => normalizeSettings({ ...current, activeAIModelId: model.id }))}
-                                  />
-                                </label>
-                              </td>
-                              <td>
-                                <input
-                                  value={model.name}
-                                  onChange={(event) => onUpdateAIModelConfig(model.id, { name: event.target.value })}
-                                  placeholder={aiProviderLabel(model.provider, t)}
-                                />
-                              </td>
-                              <td>
-                                <select value={model.provider} onChange={(event) => onUpdateAIModelConfig(model.id, { provider: event.target.value as AIModelProvider })}>
-                                  {AI_PROVIDER_VALUES.map((provider) => (
-                                    <option key={provider} value={provider}>{aiProviderLabel(provider, t)}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td>
-                                <input
-                                  value={model.baseUrl}
-                                  onChange={(event) => onUpdateAIModelConfig(model.id, { baseUrl: event.target.value })}
-                                  placeholder={aiBaseUrlPlaceholder(model.provider, defaultOllamaBaseUrl)}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="password"
-                                  value={model.apiKey}
-                                  onChange={(event) => onUpdateAIModelConfig(model.id, { apiKey: event.target.value })}
-                                  placeholder={aiKeyPlaceholder(model.provider, t)}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  value={model.model}
-                                  onChange={(event) => onUpdateAIModelConfig(model.id, { model: event.target.value })}
-                                  placeholder={aiModelPlaceholder(model.provider, t)}
-                                />
-                              </td>
-                              <td>
-                                <label className="checkbox-row compact">
-                                  <input
-                                    checked={model.thinkingEnabled}
-                                    type="checkbox"
-                                    onChange={(event) => onUpdateAIModelConfig(model.id, { thinkingEnabled: event.target.checked })}
-                                  />
-                                </label>
-                              </td>
-                              <td>
-                                <small>{aiProviderHelp(model.provider, t)}</small>
-                              </td>
-                              <td>
-                                <button type="button" title={t('settings.ai.modelActionTitles.removeModel')} onClick={() => onRemoveAIModelConfig(model.id)}>{t('app.delete')}</button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
-                </div>
-                <label>
                   <span>{t('settings.ai.systemPrompt')}</span>
                   <textarea
                     value={settings.aiSystemPrompt}
-                    onChange={(event) => onSettingsChange((current) => ({ ...current, aiSystemPrompt: event.target.value }))}
                     placeholder={defaultAiSystemPrompt}
+                    onChange={(event) => onSettingsChange((current) => ({ ...current, aiSystemPrompt: event.target.value }))}
                   />
                   <label className="checkbox-row">
                     <input
@@ -542,51 +375,13 @@ export function SettingsDialog({
                 </label>
               </>
             ) : null}
-
-            {settingsSection === 'skills' ? (
-              <div className="skills-settings">
-                <div className="ai-model-settings-head">
-                  <span>{t('settings.skills.title')}</span>
-                  <button type="button" title={t('settings.skills.add')} onClick={onAddAISkill}>{t('settings.skills.add')}</button>
-                </div>
-                <p className="ai-model-help">{t('settings.skills.help')}</p>
-                {aiSkills.length === 0 ? <p className="hint-text">{t('settings.skills.empty')}</p> : null}
-                <div className="skills-settings-list">
-                  {aiSkills.map((skill) => (
-                    <article className="skill-editor-card" key={skill.id}>
-                      <label>
-                        <span>{t('settings.skills.name')}</span>
-                        <input
-                          value={skill.name}
-                          placeholder={t('settings.skills.namePlaceholder')}
-                          onChange={(event) => onUpdateAISkill(skill.id, { name: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        <span>{t('settings.skills.prompt')}</span>
-                        <textarea
-                          value={skill.prompt}
-                          placeholder={t('settings.skills.promptPlaceholder')}
-                          onChange={(event) => onUpdateAISkill(skill.id, { prompt: event.target.value })}
-                        />
-                      </label>
-                      <div className="skill-editor-actions">
-                        <button type="button" title={t('settings.skills.remove')} onClick={() => onRemoveAISkill(skill.id)}>
-                          {t('settings.skills.remove')}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
 
         {settingsSavedMessage ? <p className="success-text">{settingsSavedMessage}</p> : null}
         <div className="modal-actions">
-          <button type="button" title={t('settings.closePreferences')} onClick={onClose}>{t('app.close')}</button>
-          <button className="primary-button" type="button" title={t('settings.savePreferences')} onClick={onSave}>{t('app.save')}</button>
+          <button type="button" title={t('settings.closeDialog')} onClick={onClose}>{t('app.close')}</button>
+          <button className="primary-button" type="button" title={t('settings.saveDialog')} onClick={onSave}>{t('app.save')}</button>
         </div>
       </section>
     </div>

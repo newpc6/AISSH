@@ -23,6 +23,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 	authenticator := newWebAuthenticator(logger)
 	aiChats := newAIChatStore(logger)
 	aiSkills := newAISkillStore(logger)
+	aiModels := newAIModelStore(logger)
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -437,6 +438,20 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				return
 			}
 			writeJSON(w, map[string][]aiSkill{"skills": skills})
+		case http.MethodPut:
+			var request struct {
+				Skills []aiSkill `json:"skills"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			skills, err := aiSkills.replaceSkills(request.Skills)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string][]aiSkill{"skills": skills})
 		case http.MethodPost:
 			var request aiSkill
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -486,6 +501,40 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				return
 			}
 			writeJSON(w, map[string]string{"status": "ok"})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/ai/models", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			state, err := aiModels.listModels()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string]any{
+				"models":        state.Models,
+				"activeModelId": state.ActiveModelID,
+			})
+		case http.MethodPut:
+			var request struct {
+				Models        []AIModelConfig `json:"models"`
+				ActiveModelID string          `json:"activeModelId"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			state, err := aiModels.replaceModels(request.Models, request.ActiveModelID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]any{
+				"models":        state.Models,
+				"activeModelId": state.ActiveModelID,
+			})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

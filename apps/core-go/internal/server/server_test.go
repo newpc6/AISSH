@@ -191,6 +191,61 @@ func TestAISkillEndpointsCRUD(t *testing.T) {
 	}
 }
 
+func TestAIModelEndpointsReplaceAndList(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
+	t.Setenv("AI_SSH_HOSTS_PATH", filepath.Join(t.TempDir(), "hosts.json"))
+	t.Setenv("AI_SSH_AI_CHAT_STORE_PATH", filepath.Join(os.TempDir(), "ai-ssh-model-test-"+strings.ReplaceAll(time.Now().UTC().Format(time.RFC3339Nano), ":", "-")+".sqlite3"))
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	replaceReq := httptest.NewRequest(http.MethodPut, "/api/ai/models", bytes.NewBufferString(`{
+		"models":[
+			{
+				"id":"openai-main",
+				"name":"OpenAI Main",
+				"provider":"openai-compatible",
+				"baseUrl":"https://api.openai.com/v1",
+				"apiKey":"sk-test",
+				"model":"gpt-4.1-mini",
+				"thinkingEnabled":true
+			},
+			{
+				"id":"claude-main",
+				"name":"Claude Main",
+				"provider":"anthropic-claude",
+				"baseUrl":"https://api.anthropic.com/v1",
+				"apiKey":"sk-ant-test",
+				"model":"claude-sonnet-4-0",
+				"thinkingEnabled":false
+			}
+		],
+		"activeModelId":"claude-main"
+	}`))
+	replaceReq.Header.Set("Content-Type", "application/json")
+	replaceRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(replaceRecorder, replaceReq)
+	if replaceRecorder.Code != http.StatusOK {
+		t.Fatalf("expected replace models 200, got %d body=%s", replaceRecorder.Code, replaceRecorder.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/ai/models", nil)
+	listRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(listRecorder, listReq)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("expected list models 200, got %d body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	body := listRecorder.Body.String()
+	if !strings.Contains(body, `"activeModelId":"claude-main"`) {
+		t.Fatalf("expected active model in body, got %s", body)
+	}
+	if !strings.Contains(body, `"provider":"anthropic-claude"`) || !strings.Contains(body, `"provider":"openai-compatible"`) {
+		t.Fatalf("expected persisted models in body, got %s", body)
+	}
+}
+
 func TestWebAuthProtectsAPIAndAllowsLogin(t *testing.T) {
 	t.Setenv("AI_SSH_WEB_AUTH", "1")
 	t.Setenv("AI_SSH_WEB_USER", "admin")
