@@ -18,7 +18,7 @@ i18n
     resources,
     lng: localStorage.getItem('ai-ssh-language') || 'zh', // 默认中文
     fallbackLng: 'zh',
-    debug: false,
+    debug: true, // 开启调试模式，方便排查问题
     interpolation: {
       escapeValue: false // React already escapes values
     }
