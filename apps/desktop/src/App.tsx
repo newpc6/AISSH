@@ -327,6 +327,8 @@ export function App() {
   const batchCardsRef = useRef<HTMLDivElement | null>(null)
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
+  const terminalReplayTokenRef = useRef(0)
+  const terminalReplayQueueRef = useRef<Promise<void>>(Promise.resolve())
   const {
     clearPreviewConversationId,
     getDisplayedConversationId,
@@ -717,12 +719,39 @@ export function App() {
       return
     }
 
-    terminal.clear()
-    const cache = terminalCachesRef.current[sessionId]
-    if (cache?.chunks.length) {
-      terminal.write(cache.chunks.join(''))
-    }
-    commandBufferRef.current = cache?.commandDraft ?? ''
+    const replayToken = ++terminalReplayTokenRef.current
+    const replay = () => new Promise<void>((resolve) => {
+      const currentTerminal = xtermRef.current
+      if (!currentTerminal || replayToken !== terminalReplayTokenRef.current) {
+        resolve()
+        return
+      }
+
+      const cache = terminalCachesRef.current[sessionId]
+      const output = cache?.chunks.join('') ?? ''
+      commandBufferRef.current = cache?.commandDraft ?? ''
+
+      currentTerminal.reset()
+      if (!output) {
+        currentTerminal.refresh(0, Math.max(0, currentTerminal.rows - 1))
+        schedulePredictionGhostPositionUpdate()
+        resolve()
+        return
+      }
+
+      currentTerminal.write(output, () => {
+        if (replayToken === terminalReplayTokenRef.current) {
+          currentTerminal.refresh(0, Math.max(0, currentTerminal.rows - 1))
+          currentTerminal.scrollToBottom()
+          schedulePredictionGhostPositionUpdate()
+        }
+        resolve()
+      })
+    })
+
+    terminalReplayQueueRef.current = terminalReplayQueueRef.current
+      .catch(() => undefined)
+      .then(replay)
   }
 
   const appendSessionTerminalOutput = (sessionId: string, data: string) => {
