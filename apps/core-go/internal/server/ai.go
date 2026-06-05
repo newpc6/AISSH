@@ -1013,7 +1013,7 @@ func finalizeAssistResponse(result aiAssistResponse) aiAssistResponse {
 func buildAssistPrompt(request aiAssistRequest) string {
 	history, _ := json.Marshal(request.CommandHistory)
 	steps, _ := json.Marshal(request.AgentSteps)
-	return fmt.Sprintf("\u5f53\u524d\u4e3b\u673a\uff1a%s\n\u8fde\u63a5\u4fe1\u606f\uff1a%s@%s\n\u5f53\u524d\u76ee\u5f55\uff1a%s\nAgent \u6a21\u5f0f\uff1a%s\n\u6d41\u7a0b\u8981\u6c42\uff1a\u5982\u679c Agent \u5df2\u6267\u884c\u6b65\u9aa4 JSON \u4e2d\u5df2\u6709 output \u548c exitCode\uff0c\u5fc5\u987b\u628a\u5b83\u4f5c\u4e3a\u6700\u65b0\u4e8b\u5b9e\u5224\u65ad\u4efb\u52a1\u662f\u5426\u5b8c\u6210\uff1b\u4e0d\u8981\u53ea\u6839\u636e\u7ec8\u7aef\u4e0a\u4e0b\u6587\u6216\u7528\u6237\u8f93\u5165\u5224\u65ad\u3002\u6267\u884c\u7ed3\u679c\u80fd\u56de\u7b54\u76ee\u6807\u65f6\u76f4\u63a5\u8fd4\u56de done \u548c answer\uff1b\u4e0d\u8db3\u65f6\u624d\u8fd4\u56de\u4e0b\u4e00\u6b65 command\u3002\n\u6700\u8fd1\u547d\u4ee4\u5386\u53f2 JSON\uff08\u6309\u65f6\u95f4\u4ece\u65e7\u5230\u65b0\uff09\uff1a%s\nAgent \u5df2\u6267\u884c\u6b65\u9aa4 JSON\uff08\u6309\u65f6\u95f4\u4ece\u65e7\u5230\u65b0\uff09\uff1a%s\n\nAgent \u76ee\u6807\uff1a%s\n\u7528\u6237\u8f93\u5165\uff1a%s\n\u5f53\u524d\u547d\u4ee4\u8349\u7a3f\uff1a%s\n\n\u7528\u6237\u9009\u4e2d\u6587\u672c\uff1a%s\n\n\u7ec8\u7aef\u4e0a\u4e0b\u6587\uff08\u6700\u65b0\u5185\u5bb9\u5728\u672b\u5c3e\uff09\uff1a\n%s\n\n\u8bf7\u4e25\u683c\u6309\u7cfb\u7edf\u8981\u6c42\u8fd4\u56de JSON\u3002",
+	return fmt.Sprintf("当前主机：%s\n连接信息：%s@%s\n当前目录：%s\nAgent 模式：%s\n流程要求：如果 Agent 已执行步骤 JSON 中已有 output 和 exitCode，必须把它作为最新事实判断任务是否完成；不要只根据终端上下文或用户输入判断。执行结果能回答目标时直接返回 done 和 answer；不足时才返回下一步 command。\n最近命令历史 JSON（按时间从旧到新）：%s\nAgent 已执行步骤 JSON（按时间从旧到新）：%s\n\nAgent 目标：%s\n用户输入：%s\n当前命令草稿：%s\n\n用户选中文本：%s\n\n终端上下文（最新内容在末尾）：\n%s\n\n请严格按系统要求返回 JSON。",
 		emptyAsDash(request.HostName),
 		emptyAsDash(request.Username),
 		emptyAsDash(request.HostAddress),
@@ -1188,7 +1188,7 @@ func chatCompletionsURL(baseURL string) (string, error) {
 
 func buildPredictionPrompt(request aiPredictionRequest) string {
 	history, _ := json.Marshal(request.CommandHistory)
-	return fmt.Sprintf("\u5f53\u524d\u4e3b\u673a\uff1a%s\n\u8fde\u63a5\u4fe1\u606f\uff1a%s@%s\n\u9700\u8981\u9884\u6d4b\u7684\u547d\u4ee4\u6570\u91cf\uff1a%d\n\u6700\u8fd1\u547d\u4ee4\u5386\u53f2 JSON\uff08\u6309\u65f6\u95f4\u4ece\u65e7\u5230\u65b0\uff09\uff1a%s\n\n\u7ec8\u7aef\u4e0a\u4e0b\u6587\uff08\u6700\u65b0\u5185\u5bb9\u5728\u672b\u5c3e\uff09\uff1a\n%s\n\n\u56de\u8f66\u524d\u5f53\u524d\u547d\u4ee4\u8349\u7a3f\uff1a%s\n\n\u5fc5\u987b\u9884\u6d4b\u4e0b\u4e00\u6b65\u547d\u4ee4\u3002\u5373\u4f7f\u4e0d\u786e\u5b9a\uff0c\u4e5f\u8fd4\u56de\u4fdd\u5b88\u7684\u67e5\u770b\u578b\u547d\u4ee4\u3002\n\u4e0d\u8981\u5728 content \u4e2d\u8f93\u51fa\u89e3\u91ca\u3001\u5206\u6790\u3001Markdown \u6216\u7a7a\u5185\u5bb9\u3002\u8bf7\u53ea\u8fd4\u56de\u4e25\u683c JSON\uff1a{\"commands\":[\"\u547d\u4ee41\",\"\u547d\u4ee42\"]}",
+	return fmt.Sprintf("当前主机：%s\n连接信息：%s@%s\n需要预测的命令数量：%d\n最近命令历史 JSON（按时间从旧到新）：%s\n\n终端上下文（最新内容在末尾）：\n%s\n\n回车前当前命令草稿：%s\n\n必须预测下一步命令。即使不确定，也返回保守的查看型命令。\n不要在 content 中输出解释、分析、Markdown 或空内容。请只返回严格 JSON：{\"commands\":[\"命令1\",\"命令2\"]}",
 		emptyAsDash(request.HostName),
 		emptyAsDash(request.Username),
 		emptyAsDash(request.HostAddress),
