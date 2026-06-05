@@ -31,6 +31,7 @@ import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
 import { useAIUnifiedInput } from './hooks/useAIUnifiedInput'
+import { useAIConversationData } from './hooks/useAIConversationData'
 import { useAIMessageStore } from './hooks/useAIMessageStore'
 import { DEFAULT_SESSION_AGENT_STATE, useSessionAgentState } from './hooks/useSessionAgentState'
 import { useSessionAIConversationBinding } from './hooks/useSessionAIConversationBinding'
@@ -52,13 +53,7 @@ import {
   type AIAssistResponse,
   type AIModelConfig,
   type AIModelProvider,
-  type AIChatConversation,
-  type AIChatConversationCreateRequest,
-  type AIChatConversationListResponse,
   type AIChatMessage,
-  type AIChatMessageCreateRequest,
-  type AIChatMessageUpdateRequest,
-  type AIChatMessagesResponse,
   type AIChatMessageKind,
   type AIRiskLevel,
   type AuthSettingsResponse,
@@ -267,8 +262,6 @@ export function App() {
   const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
   const [aiAssistantResponse, setAiAssistantResponse] = useState<AIAssistResponse | null>(null)
   const [aiAssistantError, setAiAssistantError] = useState('')
-  const [aiConversations, setAiConversations] = useState<AIChatConversation[]>([])
-  const [hasMoreConversations, setHasMoreConversations] = useState(false)
   const [activeAIConversationId, setActiveAIConversationId] = useState('')
   const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
   const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
@@ -313,7 +306,6 @@ export function App() {
   const commandHistoryRef = useRef<string[]>([])
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
   const aiPredictionBySessionRef = useRef<Record<string, AIPredictionSessionState>>({})
-  const aiConversationsRef = useRef<AIChatConversation[]>([])
   const activeAIConversationIdRef = useRef('')
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
   const leftModeRef = useRef<LeftMode>('servers')
@@ -354,35 +346,6 @@ export function App() {
     setAgentStepsForSession,
     updateSessionAgentState,
   } = useSessionAgentState()
-  const persistAIMessageRequest = async (
-    conversationId: string,
-    message: AIChatMessageCreateRequest,
-  ): Promise<AIChatMessageDraft> => {
-    const response = await apiFetch(`/ai/chats/${conversationId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message),
-    })
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `保存 AI 消息失败：${response.status}`)
-    }
-    return (await response.json()) as AIChatMessageDraft
-  }
-  const updatePersistedAIMessageRequest = async (
-    conversationId: string,
-    messageId: string,
-    message: AIChatMessageUpdateRequest,
-  ): Promise<AIChatMessageDraft> => {
-    const response = await apiFetch(`/ai/chats/${conversationId}/messages/${messageId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message),
-    })
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `更新 AI 消息失败：${response.status}`)
-    }
-    return (await response.json()) as AIChatMessageDraft
-  }
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
@@ -477,34 +440,6 @@ export function App() {
     }
     setLogs((current) => [...current.slice(-199), entry])
   }
-
-  const {
-    aiMessageConversationIdsRef,
-    aiMessages,
-    aiMessagesRef,
-    aiStreamContent,
-    aiStreamContentRef,
-    aiStreamThinking,
-    aiStreamThinkingRef,
-    appendAIMessage,
-    persistStreamingArtifacts,
-    replaceAndPersistAIMessage,
-    resetAIStreamBuffers,
-    setAiMessages,
-    setAiStreamContent,
-    setAiStreamThinking,
-    updateStreamingContentMessage,
-    updateStreamingThinkingMessage,
-  } = useAIMessageStore({
-    activeConversationIdRef: activeAIConversationIdRef,
-    aiMessageListRef,
-    appendLog,
-    loadAIConversations: () => {
-      void loadAIConversations()
-    },
-    persistAIMessageRequest,
-    updatePersistedAIMessageRequest,
-  })
 
   const setErrorMessage = (
     message: string,
@@ -991,6 +926,66 @@ export function App() {
       throw error
     }
   }
+  const {
+    aiMessageConversationIdsRef,
+    aiMessages,
+    aiMessagesRef,
+    aiStreamContent,
+    aiStreamContentRef,
+    aiStreamThinking,
+    aiStreamThinkingRef,
+    appendAIMessage,
+    persistStreamingArtifacts,
+    replaceAndPersistAIMessage,
+    resetAIStreamBuffers,
+    setAiMessages,
+    setAiStreamContent,
+    setAiStreamThinking,
+    updateStreamingContentMessage,
+    updateStreamingThinkingMessage,
+  } = useAIMessageStore({
+    activeConversationIdRef: activeAIConversationIdRef,
+    aiMessageListRef,
+    appendLog,
+    apiFetch,
+    loadAIConversations: () => {
+      void loadAIConversations()
+    },
+    readResponseErrorDetail,
+  })
+  const resetSessionAgentState = (sessionId: string) => {
+    setAgentStepsForSession(sessionId, [])
+    updateSessionAgentState(sessionId, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
+  }
+  const {
+    aiConversations,
+    aiConversationsRef,
+    createAIConversation,
+    hasMoreConversations,
+    loadAIConversations,
+    loadAIMessages,
+    removeAIConversation,
+  } = useAIConversationData({
+    activeConversationIdRef: activeAIConversationIdRef,
+    activeSessionIdRef,
+    aiMessagesRef,
+    apiFetch,
+    readResponseErrorDetail,
+    resetAIStreamBuffers,
+    resetSessionAgentState,
+    setActiveConversationId: (conversationId) => {
+      setActiveAIConversationId(conversationId)
+      activeAIConversationIdRef.current = conversationId
+    },
+    setAiAssistantError,
+    setAiAssistantResponse: (response) => setAiAssistantResponse(response as AIAssistResponse | null),
+    setAiMessages,
+    setLiveConversationId,
+    clearPreviewConversationId,
+    getDisplayedConversationId,
+    removeConversationReferences,
+    setSessionStepsFromMessages: setAgentStepsForSession,
+  })
 
   const {
     loadLogs,
@@ -3861,136 +3856,6 @@ export function App() {
     )
   }
 
-  const loadAIConversations = async (replace = true) => {
-    const lastConversation = replace ? undefined : aiConversationsRef.current[aiConversationsRef.current.length - 1]
-    const cursor = lastConversation?.updatedAt ? `?before=${encodeURIComponent(lastConversation.updatedAt)}&limit=30` : '?limit=30'
-    const response = await apiFetch(`/ai/chats${cursor}`)
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `加载 AI 对话失败：${response.status}`)
-    }
-    const data = (await response.json()) as AIChatConversationListResponse
-    if (replace) {
-      setAiConversations(data.conversations)
-    } else {
-      setAiConversations((current) => [...current, ...data.conversations])
-    }
-    setHasMoreConversations(data.conversations.length >= 30)
-    return data.conversations
-  }
-
-  const loadAIMessages = async (conversationId: string, sessionId = activeSessionIdRef.current) => {
-    if (!conversationId) {
-      setAiMessages([])
-      aiMessagesRef.current = []
-      return []
-    }
-    const response = await apiFetch(`/ai/chats/${conversationId}/messages`)
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `加载 AI 消息失败：${response.status}`)
-    }
-    const data = (await response.json()) as AIChatMessagesResponse
-    const messages = data.messages.filter((message) => message.conversationId === conversationId)
-    if (activeAIConversationIdRef.current !== conversationId) {
-      return messages
-    }
-    setAiMessages(messages)
-    aiMessagesRef.current = messages
-    const sessionSteps = messages
-      .map((message) => (message.kind === 'agent_step' && message.step ? ({ ...message.step, id: message.id } as AIAgentPlanStep) : null))
-      .filter((step): step is AIAgentPlanStep => Boolean(step))
-      .slice(-30)
-      .reverse()
-    if (sessionId) {
-      setAgentStepsForSession(sessionId, sessionSteps)
-    }
-    return messages
-  }
-
-  const isConversationEmpty = (conversationId = activeAIConversationIdRef.current) =>
-    Boolean(conversationId) && conversationId === activeAIConversationIdRef.current && aiMessagesRef.current.length === 0
-
-  const createAIConversation = async (title = '新对话', sessionId = activeSessionIdRef.current) => {
-    if (isConversationEmpty()) {
-      const existing = aiConversations.find((item) => item.id === activeAIConversationIdRef.current)
-      if (existing) {
-        if (sessionId) {
-          setLiveConversationId(sessionId, existing.id)
-          clearPreviewConversationId(sessionId)
-        }
-        return existing
-      }
-      const draftConversation = {
-        id: activeAIConversationIdRef.current,
-        title,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-      if (sessionId) {
-        setLiveConversationId(sessionId, draftConversation.id)
-        clearPreviewConversationId(sessionId)
-      }
-      return draftConversation
-    }
-    const body: AIChatConversationCreateRequest = { title }
-    const response = await apiFetch('/ai/chats', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `创建 AI 对话失败：${response.status}`)
-    }
-    const conversation = (await response.json()) as AIChatConversation
-    setAiConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)])
-    setActiveAIConversationId(conversation.id)
-    activeAIConversationIdRef.current = conversation.id
-    if (sessionId) {
-      setLiveConversationId(sessionId, conversation.id)
-      clearPreviewConversationId(sessionId)
-    }
-    setAiMessages([])
-    aiMessagesRef.current = []
-    setAiAssistantResponse(null)
-    resetAIStreamBuffers()
-    if (activeSessionIdRef.current) {
-      setAgentStepsForSession(activeSessionIdRef.current, [])
-      updateSessionAgentState(activeSessionIdRef.current, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
-    }
-    return conversation
-  }
-
-  const removeAIConversation = async (conversationId: string) => {
-    const response = await apiFetch(`/ai/chats/${conversationId}`, { method: 'DELETE' })
-    if (!response.ok) {
-      setAiAssistantError((await readResponseErrorDetail(response)) || `删除 AI 对话失败：${response.status}`)
-      return
-    }
-    removeConversationReferences(conversationId)
-    const nextConversations = aiConversations.filter((item) => item.id !== conversationId)
-    setAiConversations(nextConversations)
-    if (conversationId === activeAIConversationIdRef.current) {
-      setActiveAIConversationId('')
-      activeAIConversationIdRef.current = ''
-      setAiMessages([])
-      aiMessagesRef.current = []
-      resetAIStreamBuffers()
-      setAiAssistantResponse(null)
-      const sessionId = activeSessionIdRef.current
-      const nextDisplayedConversationId = sessionId ? getDisplayedConversationId(sessionId) : ''
-      if (sessionId && !nextDisplayedConversationId) {
-        setAgentStepsForSession(sessionId, [])
-        updateSessionAgentState(sessionId, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
-      }
-      if (nextDisplayedConversationId) {
-        await selectAIConversation(nextDisplayedConversationId, { sessionId, resetAgentState: false, bindToSession: false })
-      } else if (nextConversations.length > 0) {
-        await selectAIConversation(nextConversations[0].id, { sessionId, resetAgentState: false, bindToSession: false })
-      } else {
-        await createAIConversation('新对话', sessionId)
-      }
-    }
-  }
-
   const confirmDeleteAIConversation = (conversationId: string) => {
     const conversation = aiConversations.find((item) => item.id === conversationId)
     requestConfirm({
@@ -4000,7 +3865,10 @@ export function App() {
       detail: '对应的本地消息记录也会从数据库删除。',
       confirmText: '删除',
       danger: true,
-      onConfirm: () => removeAIConversation(conversationId),
+      onConfirm: () =>
+        removeAIConversation(conversationId, async (nextConversationId, sessionId) => {
+          await selectAIConversation(nextConversationId, { sessionId, resetAgentState: false, bindToSession: false })
+        }),
     })
   }
 

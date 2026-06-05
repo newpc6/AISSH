@@ -11,22 +11,18 @@ type UseAIMessageStoreArgs = {
   activeConversationIdRef: RefObject<string>
   aiMessageListRef: RefObject<HTMLDivElement | null>
   appendLog: (level: 'debug' | 'info' | 'warn' | 'error', source: string, message: string, details?: Record<string, unknown>) => void
+  apiFetch: (path: string, init?: RequestInit) => Promise<Response>
   loadAIConversations: () => void | Promise<void>
-  persistAIMessageRequest: (conversationId: string, message: AIChatMessageCreateRequest) => Promise<AIChatMessageDraft>
-  updatePersistedAIMessageRequest: (
-    conversationId: string,
-    messageId: string,
-    message: AIChatMessageUpdateRequest,
-  ) => Promise<AIChatMessageDraft>
+  readResponseErrorDetail: (response: Response) => Promise<string>
 }
 
 export function useAIMessageStore({
   activeConversationIdRef,
   aiMessageListRef,
   appendLog,
+  apiFetch,
   loadAIConversations,
-  persistAIMessageRequest,
-  updatePersistedAIMessageRequest,
+  readResponseErrorDetail,
 }: UseAIMessageStoreArgs) {
   const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
   const [aiStreamThinking, setAiStreamThinking] = useState('')
@@ -90,6 +86,37 @@ export function useAIMessageStore({
     createdAt: new Date().toISOString(),
     ...extras,
   })
+
+  const persistAIMessageRequest = async (
+    conversationId: string,
+    message: AIChatMessageCreateRequest,
+  ): Promise<AIChatMessageDraft> => {
+    const response = await apiFetch(`/ai/chats/${conversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    })
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `保存 AI 消息失败：${response.status}`)
+    }
+    return (await response.json()) as AIChatMessageDraft
+  }
+
+  const updatePersistedAIMessageRequest = async (
+    conversationId: string,
+    messageId: string,
+    message: AIChatMessageUpdateRequest,
+  ): Promise<AIChatMessageDraft> => {
+    const response = await apiFetch(`/ai/chats/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    })
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `更新 AI 消息失败：${response.status}`)
+    }
+    return (await response.json()) as AIChatMessageDraft
+  }
 
   const appendAIMessage = async (
     kind: AIChatMessageKind,
