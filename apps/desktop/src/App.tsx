@@ -1763,6 +1763,22 @@ export function App() {
   }, [activeViewId, activeSessionId, filePreviewTabs, sessions])
 
   useEffect(() => {
+    if (!activeViewId.startsWith('session:')) {
+      return
+    }
+    const sessionId = activeViewId.slice('session:'.length)
+    if (!sessionId || activeSessionId !== sessionId || !xtermRef.current) {
+      return
+    }
+    replaceTerminalWithCache(sessionId)
+    window.requestAnimationFrame(() => {
+      fitAddonRef.current?.fit()
+      syncTerminalSize(sessionId)
+      schedulePredictionGhostPositionUpdate()
+    })
+  }, [activeViewId, activeSessionId, sessions])
+
+  useEffect(() => {
     return () => {
       filePreviewTabsRef.current.forEach((tab) => {
         if (tab.objectUrl) {
