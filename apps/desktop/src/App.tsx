@@ -37,6 +37,7 @@ import { useAgentExecution } from './hooks/useAgentExecution'
 import { useAIMessageStore } from './hooks/useAIMessageStore'
 import { DEFAULT_SESSION_AGENT_STATE, useSessionAgentState } from './hooks/useSessionAgentState'
 import { useSessionAIConversationBinding } from './hooks/useSessionAIConversationBinding'
+import { useSessionStreams } from './hooks/useSessionStreams'
 import { useDesktopOverlays } from './hooks/useDesktopOverlays'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
@@ -83,7 +84,6 @@ import {
   type SessionOpenResponse,
   type SessionRecord,
   type SessionResizeRequest,
-  type TerminalEvent,
 } from '@ai-ssh/shared-contracts'
 
 import {
@@ -295,7 +295,6 @@ export function App() {
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const codeMirrorRef = useRef<CodeMirrorEditorHandle | null>(null)
-  const eventSourcesRef = useRef<Record<string, EventSource>>({})
   const commandBufferRef = useRef('')
   const activeSessionIdRef = useRef('')
   const sessionSettingsRef = useRef(defaultSettings)
@@ -831,41 +830,6 @@ export function App() {
     delete pendingAIPredictionCommandRef.current[sessionId]
     delete aiPredictionRequestRef.current[sessionId]
     delete terminalLineBufferRef.current[sessionId]
-  }
-
-  const closeSessionStream = (sessionId: string) => {
-    const source = eventSourcesRef.current[sessionId]
-    if (source) {
-      source.close()
-      delete eventSourcesRef.current[sessionId]
-    }
-    delete inputQueuesRef.current[sessionId]
-    window.clearTimeout(pendingResizeRef.current[sessionId])
-    delete pendingResizeRef.current[sessionId]
-  }
-
-  const markSessionDisconnected = (sessionId: string, message: string) => {
-    const session = sessionsRef.current.find((item) => item.id === sessionId)
-    closeSessionStream(sessionId)
-    if (!session || session.status === 'error' || session.status === 'closed') {
-      return
-    }
-
-    const nextSessions = sessionsRef.current.map((item) =>
-      item.id === sessionId ? { ...item, status: 'error' as const, lastError: message } : item,
-    )
-    sessionsRef.current = nextSessions
-    setSessions(nextSessions)
-    appendLog('warn', 'ui.session', 'session marked disconnected', {
-      sessionID: sessionId,
-      hostID: session.hostId,
-      message,
-    })
-    if (activeSessionIdRef.current === sessionId) {
-      clearAIPrediction()
-      setErrorMessage(message)
-      appendSessionTerminalOutput(sessionId, `\r\nERROR: ${message}\r\n`)
-    }
   }
 
   const apiFetch = async (path: string, init?: RequestInit) => {
@@ -1587,8 +1551,7 @@ export function App() {
       renderDisposable.dispose()
       selectionDisposable.dispose()
       window.cancelAnimationFrame(predictionPositionFrameRef.current ?? 0)
-      Object.values(eventSourcesRef.current).forEach((source) => source.close())
-      eventSourcesRef.current = {}
+      closeAllSessionStreams()
       terminal.dispose()
       xtermRef.current = null
       fitAddonRef.current = null
@@ -4455,117 +4418,6 @@ export function App() {
     return () => window.clearInterval(interval)
   }, [activeSession?.hostId, settings.metricsRefreshIntervalSeconds, settings.metricsHistoryWindowMinutes])
 
-  const openSessionStream = async (session: SessionRecord, markConnecting = false) => {
-    if (eventSourcesRef.current[session.id]) {
-      return
-    }
-    if (markConnecting) {
-      setSessions((current) =>
-        current.map((item) => (item.id === session.id ? { ...item, status: 'connecting' } : item)),
-      )
-    }
-
-    let streamUrl = resolveApiStreamUrl(`/sessions/${session.id}/events`)
-    if (isTauriRuntime) {
-      const token = desktopTokenRef.current || await invoke<string>('desktop_login_token').catch(() => '')
-      desktopTokenRef.current = token
-      if (token) {
-        streamUrl = appendQueryParam(streamUrl, 'desktopToken', token)
-      }
-    }
-    appendLog('debug', 'ui.sse', 'session stream connecting', { sessionID: session.id, url: streamUrl })
-    const source = new EventSource(streamUrl)
-    eventSourcesRef.current[session.id] = source
-
-    source.onopen = () => {
-      appendLog('debug', 'ui.sse', 'session stream opened', { sessionID: session.id })
-    }
-
-    source.onerror = () => {
-      if (eventSourcesRef.current[session.id] !== source) {
-        return
-      }
-      const messageText = '会话输出流已断开，请重连当前 SSH 会话'
-      appendLog('error', 'ui.sse', messageText, { sessionID: session.id, url: streamUrl })
-      source.close()
-      delete eventSourcesRef.current[session.id]
-      const waiter = agentWaitersRef.current[session.id]
-      if (waiter) {
-        finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
-      }
-      markSessionDisconnected(session.id, messageText)
-    }
-
-    source.addEventListener('terminal', (event) => {
-      const message = event as MessageEvent<string>
-      const payload = JSON.parse(message.data) as TerminalEvent
-
-      if (payload.type === 'output') {
-        updateAlternateScreenMode(session.id, payload.data ?? '')
-        appendSessionTerminalOutput(session.id, payload.data ?? '')
-      }
-
-      if (payload.type === 'status') {
-        const nextStatus: SessionRecord['status'] | '' =
-          payload.data === 'connected' ? 'connected' : payload.data === 'closed' ? 'closed' : payload.data === 'error' ? 'error' : ''
-        if (nextStatus) {
-          const nextSessions = sessionsRef.current.map((item) =>
-            item.id === session.id ? { ...item, status: nextStatus } : item,
-          )
-          sessionsRef.current = nextSessions
-          setSessions(nextSessions)
-        }
-      }
-
-      if (payload.type === 'cwd' && payload.data && trackTerminalPathRef.current) {
-        if (leftModeRef.current === 'files') {
-          void loadFiles(payload.data, session.hostId)
-        } else {
-          setTrackedFilePath(payload.data)
-        }
-      }
-
-      if (payload.type === 'prompt') {
-        handleAgentPrompt(session.id)
-      }
-
-      if (payload.type === 'command' && payload.data) {
-        recordCommand(session.id, payload.data)
-      }
-
-      if (payload.type === 'error') {
-        const messageText = payload.data ?? '会话发生错误'
-        const waiter = agentWaitersRef.current[session.id]
-        if (waiter) {
-          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
-        }
-        setErrorMessage(messageText)
-        const nextSessions = sessionsRef.current.map((item) =>
-          item.id === session.id ? { ...item, status: 'error' as const, lastError: messageText } : item,
-        )
-        sessionsRef.current = nextSessions
-        setSessions(nextSessions)
-        appendSessionTerminalOutput(session.id, `\r\nERROR: ${messageText}\r\n`)
-      }
-    })
-
-    source.addEventListener('close', () => {
-      source.close()
-      if (eventSourcesRef.current[session.id] === source) {
-        delete eventSourcesRef.current[session.id]
-      }
-      appendLog('debug', 'ui.sse', 'session stream closed', { sessionID: session.id })
-      const latestSession = sessionsRef.current.find((item) => item.id === session.id)
-      if (latestSession?.status === 'connected' || latestSession?.status === 'connecting') {
-        const waiter = agentWaitersRef.current[session.id]
-        if (waiter) {
-          finishAgentStep(waiter.stepId, waiter.sessionId, waiter.beforeContext, true, waiter.marker)
-        }
-        markSessionDisconnected(session.id, '会话输出流已关闭，请重连当前 SSH 会话')
-      }
-    })
-  }
-
   const activateSession = (session: SessionRecord) => {
     if (activeViewId === `session:${session.id}` && session.id === activeSessionId) {
       return
@@ -4951,7 +4803,6 @@ export function App() {
     clearAgentWaiter,
     executeAgentStep,
     finishAgentStep,
-    handleAgentPrompt,
   } = useAgentExecution({
     activeSessionIdRef,
     agentExitMarker,
@@ -4980,6 +4831,35 @@ export function App() {
     updateSessionAgentState,
     waitForSessionConnected,
     wrapAgentCommand,
+  })
+  const {
+    closeAllSessionStreams,
+    closeSessionStream,
+    eventSourcesRef,
+    markSessionDisconnected,
+    openSessionStream,
+  } = useSessionStreams({
+    activeSessionIdRef,
+    agentWaitersRef,
+    appendLog,
+    appendQueryParam,
+    appendSessionTerminalOutput,
+    clearAIPrediction,
+    desktopTokenRef,
+    finishAgentStep,
+    inputQueuesRef,
+    isTauriRuntime,
+    leftModeRef,
+    loadFiles,
+    pendingResizeRef,
+    recordCommand,
+    resolveApiStreamUrl,
+    sessionsRef,
+    setErrorMessage: (message) => setErrorMessage(message),
+    setSessions,
+    setTrackedFilePath,
+    trackTerminalPathRef,
+    updateAlternateScreenMode,
   })
 
   const applyPrediction = () => {
