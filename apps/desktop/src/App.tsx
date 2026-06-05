@@ -31,6 +31,7 @@ import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
 import { useAIUnifiedInput } from './hooks/useAIUnifiedInput'
+import { useAIMessageStore } from './hooks/useAIMessageStore'
 import { DEFAULT_SESSION_AGENT_STATE, useSessionAgentState } from './hooks/useSessionAgentState'
 import { useSessionAIConversationBinding } from './hooks/useSessionAIConversationBinding'
 import { useDesktopOverlays } from './hooks/useDesktopOverlays'
@@ -266,12 +267,9 @@ export function App() {
   const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
   const [aiAssistantResponse, setAiAssistantResponse] = useState<AIAssistResponse | null>(null)
   const [aiAssistantError, setAiAssistantError] = useState('')
-  const [aiStreamThinking, setAiStreamThinking] = useState('')
-  const [aiStreamContent, setAiStreamContent] = useState('')
   const [aiConversations, setAiConversations] = useState<AIChatConversation[]>([])
   const [hasMoreConversations, setHasMoreConversations] = useState(false)
   const [activeAIConversationId, setActiveAIConversationId] = useState('')
-  const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
   const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
   const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
   const [isAIInputCollapsed, setIsAIInputCollapsed] = useState(false)
@@ -315,16 +313,9 @@ export function App() {
   const commandHistoryRef = useRef<string[]>([])
   const terminalCachesRef = useRef<Record<string, TerminalCache>>({})
   const aiPredictionBySessionRef = useRef<Record<string, AIPredictionSessionState>>({})
-  const aiMessagesRef = useRef<AIChatMessageDraft[]>([])
   const aiConversationsRef = useRef<AIChatConversation[]>([])
   const activeAIConversationIdRef = useRef('')
-  const aiMessageConversationIdsRef = useRef<Record<string, string>>({})
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
-  const aiStreamThinkingRef = useRef('')
-  const aiStreamContentRef = useRef('')
-  const aiStreamThinkingMessageIdRef = useRef('')
-  const aiStreamContentMessageIdRef = useRef('')
-  const thinkingScrollFrameRef = useRef<number | undefined>(undefined)
   const leftModeRef = useRef<LeftMode>('servers')
   const trackTerminalPathRef = useRef(true)
   const inputQueuesRef = useRef<Record<string, Promise<void>>>({})
@@ -363,6 +354,35 @@ export function App() {
     setAgentStepsForSession,
     updateSessionAgentState,
   } = useSessionAgentState()
+  const persistAIMessageRequest = async (
+    conversationId: string,
+    message: AIChatMessageCreateRequest,
+  ): Promise<AIChatMessageDraft> => {
+    const response = await apiFetch(`/ai/chats/${conversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    })
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `保存 AI 消息失败：${response.status}`)
+    }
+    return (await response.json()) as AIChatMessageDraft
+  }
+  const updatePersistedAIMessageRequest = async (
+    conversationId: string,
+    messageId: string,
+    message: AIChatMessageUpdateRequest,
+  ): Promise<AIChatMessageDraft> => {
+    const response = await apiFetch(`/ai/chats/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    })
+    if (!response.ok) {
+      throw new Error((await readResponseErrorDetail(response)) || `更新 AI 消息失败：${response.status}`)
+    }
+    return (await response.json()) as AIChatMessageDraft
+  }
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
@@ -457,6 +477,34 @@ export function App() {
     }
     setLogs((current) => [...current.slice(-199), entry])
   }
+
+  const {
+    aiMessageConversationIdsRef,
+    aiMessages,
+    aiMessagesRef,
+    aiStreamContent,
+    aiStreamContentRef,
+    aiStreamThinking,
+    aiStreamThinkingRef,
+    appendAIMessage,
+    persistStreamingArtifacts,
+    replaceAndPersistAIMessage,
+    resetAIStreamBuffers,
+    setAiMessages,
+    setAiStreamContent,
+    setAiStreamThinking,
+    updateStreamingContentMessage,
+    updateStreamingThinkingMessage,
+  } = useAIMessageStore({
+    activeConversationIdRef: activeAIConversationIdRef,
+    aiMessageListRef,
+    appendLog,
+    loadAIConversations: () => {
+      void loadAIConversations()
+    },
+    persistAIMessageRequest,
+    updatePersistedAIMessageRequest,
+  })
 
   const setErrorMessage = (
     message: string,
@@ -1630,15 +1678,6 @@ export function App() {
     }
     element.scrollTop = element.scrollHeight
   }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, activeSessionId, agentStateBySession, isAIHistoryOpen])
-
-  useEffect(
-    () => () => {
-      if (thinkingScrollFrameRef.current) {
-        window.cancelAnimationFrame(thinkingScrollFrameRef.current)
-      }
-    },
-    [],
-  )
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -3822,203 +3861,6 @@ export function App() {
     )
   }
 
-  const makeLocalAIMessage = (
-    kind: AIChatMessageKind,
-    content: string,
-    extras: Partial<AIChatMessage> = {},
-    conversationId = activeAIConversationIdRef.current,
-  ): AIChatMessageDraft => ({
-    id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    conversationId,
-    kind,
-    content,
-    createdAt: new Date().toISOString(),
-    ...extras,
-  })
-
-  const persistAIMessage = async (
-    conversationId: string,
-    message: AIChatMessageCreateRequest,
-  ): Promise<AIChatMessageDraft> => {
-    const response = await apiFetch(`/ai/chats/${conversationId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message),
-    })
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `保存 AI 消息失败：${response.status}`)
-    }
-    return (await response.json()) as AIChatMessageDraft
-  }
-
-  const updatePersistedAIMessage = async (
-    conversationId: string,
-    messageId: string,
-    message: AIChatMessageUpdateRequest,
-  ): Promise<AIChatMessageDraft> => {
-    const response = await apiFetch(`/ai/chats/${conversationId}/messages/${messageId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message),
-    })
-    if (!response.ok) {
-      throw new Error((await readResponseErrorDetail(response)) || `更新 AI 消息失败：${response.status}`)
-    }
-    return (await response.json()) as AIChatMessageDraft
-  }
-
-  const appendAIMessage = async (
-    kind: AIChatMessageKind,
-    content: string,
-    extras: Partial<AIChatMessage> = {},
-    conversationId = activeAIConversationIdRef.current,
-  ) => {
-    if (!conversationId) {
-      const local = makeLocalAIMessage(kind, content, extras, conversationId)
-      aiMessageConversationIdsRef.current[local.id] = local.conversationId
-      setAiMessages((current) => [...current, local])
-      return local
-    }
-    const local = { ...makeLocalAIMessage(kind, content, extras, conversationId), pending: true }
-    aiMessageConversationIdsRef.current[local.id] = conversationId
-    setAiMessages((current) => [...current, local])
-    try {
-      const persisted = await persistAIMessage(conversationId, {
-        kind,
-        content,
-        response: extras.response,
-        step: extras.step,
-      })
-      delete aiMessageConversationIdsRef.current[local.id]
-      aiMessageConversationIdsRef.current[persisted.id] = persisted.conversationId
-      setAiMessages((current) => current.map((item) => (item.id === local.id ? persisted : item)))
-      void loadAIConversations()
-      return persisted
-    } catch (error) {
-      setAiMessages((current) => current.map((item) => (item.id === local.id ? { ...item, pending: false } : item)))
-      appendLog('warn', 'ui.ai', 'persist ai message failed', { error: error instanceof Error ? error.message : String(error) })
-      return local
-    }
-  }
-
-  const resetAIStreamBuffers = () => {
-    aiStreamThinkingRef.current = ''
-    aiStreamContentRef.current = ''
-    aiStreamThinkingMessageIdRef.current = ''
-    aiStreamContentMessageIdRef.current = ''
-    setAiStreamThinking('')
-    setAiStreamContent('')
-  }
-
-  const startStreamingThinkingMessage = (conversationId = activeAIConversationIdRef.current) => {
-    const message = makeLocalAIMessage('thinking', '', {}, conversationId)
-    aiMessageConversationIdsRef.current[message.id] = message.conversationId
-    aiStreamThinkingMessageIdRef.current = message.id
-    setAiMessages((current) => [...current, message])
-  }
-
-  const scrollStreamingThinkingToBottom = () => {
-    const messageId = aiStreamThinkingMessageIdRef.current
-    if (!messageId) {
-      return
-    }
-    if (thinkingScrollFrameRef.current) {
-      window.cancelAnimationFrame(thinkingScrollFrameRef.current)
-    }
-    thinkingScrollFrameRef.current = window.requestAnimationFrame(() => {
-      thinkingScrollFrameRef.current = undefined
-      const card = aiMessageListRef.current?.querySelector<HTMLElement>(`[data-ai-message-id="${messageId}"] .markdown-body`)
-      if (!card) {
-        return
-      }
-      card.scrollTop = card.scrollHeight
-    })
-  }
-
-  const updateStreamingThinkingMessage = (text: string, conversationId = activeAIConversationIdRef.current) => {
-    if (!text) {
-      return
-    }
-    if (!aiStreamThinkingMessageIdRef.current) {
-      startStreamingThinkingMessage(conversationId)
-    }
-    const messageId = aiStreamThinkingMessageIdRef.current
-    setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
-  }
-
-  useEffect(() => {
-    if (!aiStreamThinking) {
-      return
-    }
-    scrollStreamingThinkingToBottom()
-  }, [aiStreamThinking])
-
-  const startStreamingContentMessage = (conversationId = activeAIConversationIdRef.current) => {
-    const message = makeLocalAIMessage('content', '', {}, conversationId)
-    aiMessageConversationIdsRef.current[message.id] = message.conversationId
-    aiStreamContentMessageIdRef.current = message.id
-    setAiMessages((current) => [...current, message])
-  }
-
-  const updateStreamingContentMessage = (text: string, conversationId = activeAIConversationIdRef.current) => {
-    if (!text) {
-      return
-    }
-    if (!aiStreamContentMessageIdRef.current) {
-      startStreamingContentMessage(conversationId)
-    }
-    const messageId = aiStreamContentMessageIdRef.current
-    setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
-  }
-
-  const removeStreamingContentMessage = () => {
-    const messageId = aiStreamContentMessageIdRef.current
-    if (!messageId) {
-      return
-    }
-    setAiMessages((current) => current.filter((item) => item.id !== messageId))
-    aiStreamContentMessageIdRef.current = ''
-  }
-
-  const persistStreamingContentMessage = async (conversationId: string) => {
-    const content = aiStreamContentRef.current.trim()
-    const messageId = aiStreamContentMessageIdRef.current
-    if (!content || !messageId) {
-      return
-    }
-    try {
-      const persisted = await persistAIMessage(conversationId, { kind: 'content', content })
-      aiMessageConversationIdsRef.current[persisted.id] = persisted.conversationId
-      setAiMessages((current) => current.map((item) => (item.id === messageId ? persisted : item)))
-    } catch (error) {
-      appendLog('warn', 'ui.ai', 'persist streaming content message failed', { error: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  const persistStreamingThinkingMessage = async (conversationId: string) => {
-    const content = aiStreamThinkingRef.current.trim()
-    const messageId = aiStreamThinkingMessageIdRef.current
-    if (!content || !messageId) {
-      return
-    }
-    try {
-      const persisted = await persistAIMessage(conversationId, { kind: 'thinking', content })
-      aiMessageConversationIdsRef.current[persisted.id] = persisted.conversationId
-      setAiMessages((current) => current.map((item) => (item.id === messageId ? persisted : item)))
-    } catch (error) {
-      appendLog('warn', 'ui.ai', 'persist thinking message failed', { error: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  const persistStreamingArtifacts = async (conversationId: string, keepContent = false) => {
-    await persistStreamingThinkingMessage(conversationId)
-    if (keepContent) {
-      await persistStreamingContentMessage(conversationId)
-    } else {
-      removeStreamingContentMessage()
-    }
-  }
-
   const loadAIConversations = async (replace = true) => {
     const lastConversation = replace ? undefined : aiConversationsRef.current[aiConversationsRef.current.length - 1]
     const cursor = lastConversation?.updatedAt ? `?before=${encodeURIComponent(lastConversation.updatedAt)}&limit=30` : '?limit=30'
@@ -5292,30 +5134,6 @@ export function App() {
     setAgentStepsForSession(located.sessionId, (current) =>
       current.map((step) => (step.id === stepId ? { ...step, ...patch } : step)),
     )
-  }
-
-  const replaceAIMessage = (messageId: string, patch: Partial<AIChatMessageDraft>) => {
-    setAiMessages((current) => current.map((message) => (message.id === messageId ? { ...message, ...patch } : message)))
-  }
-
-  const replaceAndPersistAIMessage = (messageId: string, patch: Partial<AIChatMessageDraft>) => {
-    replaceAIMessage(messageId, patch)
-    const conversationId = aiMessageConversationIdsRef.current[messageId] || activeAIConversationIdRef.current
-    if (!conversationId || !messageId.startsWith('msg-')) {
-      return
-    }
-    void updatePersistedAIMessage(conversationId, messageId, {
-      content: patch.content,
-      response: patch.response,
-      step: patch.step,
-    })
-      .then((message) => replaceAIMessage(messageId, message))
-      .catch((error) =>
-        appendLog('warn', 'ui.ai', 'update ai message failed', {
-          messageID: messageId,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      )
   }
 
   const finishAgentStep = (stepId: string, sessionId: string, beforeContext: string, timedOut = false, marker = '') => {
