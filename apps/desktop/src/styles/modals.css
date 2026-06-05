@@ -461,7 +461,6 @@ code {
 .host-modal,
 .group-modal,
 .log-modal,
-.settings-modal,
 .feature-guide-modal,
 .confirm-modal,
 .metric-modal,
@@ -478,6 +477,13 @@ code {
 
 .settings-modal {
   width: min(760px, 100%);
+  max-height: 50vh;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #101821;
+  padding: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
 }
 
 .feature-guide-modal {
@@ -611,6 +617,34 @@ code {
   align-content: start;
   gap: 10px;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.skills-settings,
+.skills-settings-list,
+.skill-editor-card {
+  display: grid;
+  gap: 10px;
+}
+
+.skills-settings-list {
+  max-height: min(36vh, 480px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.skill-editor-card {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.skill-editor-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .ai-model-settings {

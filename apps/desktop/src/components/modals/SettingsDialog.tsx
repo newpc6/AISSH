@@ -1,5 +1,5 @@
 import type { ChangeEvent } from 'react'
-import type { AIModelProvider, AppSettings } from '@ai-ssh/shared-contracts'
+import type { AIModelProvider, AISkill, AppSettings } from '@ai-ssh/shared-contracts'
 import type { SettingsSection } from '../../types'
 import { useTranslation } from 'react-i18next'
 import { LanguageSwitcher } from '../common/LanguageSwitcher'
@@ -72,6 +72,7 @@ type SettingsDialogProps = {
   defaultAiProviderTimeoutSeconds: number
   defaultAiPredictionTriggerDelayMs: number
   defaultOllamaBaseUrl: string
+  aiSkills: AISkill[]
   onClose: () => void
   onSettingsSectionChange: (section: SettingsSection) => void
   onSettingsChange: (updater: (current: AppSettings) => AppSettings) => void
@@ -81,6 +82,9 @@ type SettingsDialogProps = {
   onChangePassword: () => void
   onClearPrediction: () => void
   onAddAIModelConfig: (provider: AIModelProvider) => void
+  onAddAISkill: () => void
+  onUpdateAISkill: (id: string, patch: Partial<Pick<AISkill, 'name' | 'prompt'>>) => void
+  onRemoveAISkill: (id: string) => void
   onUpdateAIModelConfig: (id: string, patch: Record<string, unknown>) => void
   onRemoveAIModelConfig: (id: string) => void
   onSave: () => void
@@ -117,6 +121,7 @@ export function SettingsDialog({
   defaultAiProviderTimeoutSeconds,
   defaultAiPredictionTriggerDelayMs,
   defaultOllamaBaseUrl,
+  aiSkills,
   onClose,
   onSettingsSectionChange,
   onSettingsChange,
@@ -126,6 +131,9 @@ export function SettingsDialog({
   onChangePassword,
   onClearPrediction,
   onAddAIModelConfig,
+  onAddAISkill,
+  onUpdateAISkill,
+  onRemoveAISkill,
   onUpdateAIModelConfig,
   onRemoveAIModelConfig,
   onSave,
@@ -162,6 +170,7 @@ export function SettingsDialog({
               ['security', t('settings.sections.security')],
               ['metrics', t('settings.sections.metrics')],
               ['ai', t('settings.sections.ai')],
+              ['skills', t('settings.sections.skills')],
             ].map(([key, label]) => (
               <button
                 className={settingsSection === key ? 'active' : ''}
@@ -532,6 +541,44 @@ export function SettingsDialog({
                   <small>{t('settings.ai.systemPromptHint')}</small>
                 </label>
               </>
+            ) : null}
+
+            {settingsSection === 'skills' ? (
+              <div className="skills-settings">
+                <div className="ai-model-settings-head">
+                  <span>{t('settings.skills.title')}</span>
+                  <button type="button" title={t('settings.skills.add')} onClick={onAddAISkill}>{t('settings.skills.add')}</button>
+                </div>
+                <p className="ai-model-help">{t('settings.skills.help')}</p>
+                {aiSkills.length === 0 ? <p className="hint-text">{t('settings.skills.empty')}</p> : null}
+                <div className="skills-settings-list">
+                  {aiSkills.map((skill) => (
+                    <article className="skill-editor-card" key={skill.id}>
+                      <label>
+                        <span>{t('settings.skills.name')}</span>
+                        <input
+                          value={skill.name}
+                          placeholder={t('settings.skills.namePlaceholder')}
+                          onChange={(event) => onUpdateAISkill(skill.id, { name: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>{t('settings.skills.prompt')}</span>
+                        <textarea
+                          value={skill.prompt}
+                          placeholder={t('settings.skills.promptPlaceholder')}
+                          onChange={(event) => onUpdateAISkill(skill.id, { prompt: event.target.value })}
+                        />
+                      </label>
+                      <div className="skill-editor-actions">
+                        <button type="button" title={t('settings.skills.remove')} onClick={() => onRemoveAISkill(skill.id)}>
+                          {t('settings.skills.remove')}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </div>
         </div>

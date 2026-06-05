@@ -130,6 +130,67 @@ func TestMergeCoreConfigPayloadMergesAIModelList(t *testing.T) {
 	}
 }
 
+func TestAISkillEndpointsCRUD(t *testing.T) {
+	t.Setenv("AI_SSH_WEB_AUTH", "0")
+	t.Setenv("AI_SSH_HOSTS_PATH", filepath.Join(t.TempDir(), "hosts.json"))
+	t.Setenv("AI_SSH_AI_CHAT_STORE_PATH", filepath.Join(os.TempDir(), "ai-ssh-skill-test-"+strings.ReplaceAll(time.Now().UTC().Format(time.RFC3339Nano), ":", "-")+".sqlite3"))
+	srv := newServer("18555", newSessionManagerWithStores(
+		&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")},
+		newMemoryCredentialStore(),
+		newAppLogger(),
+	))
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/ai/skills", bytes.NewBufferString(`{
+		"name":"Linux inspection",
+		"prompt":"Prefer read-only inspection commands first."
+	}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(createRecorder, createReq)
+	if createRecorder.Code != http.StatusOK {
+		t.Fatalf("expected create skill 200, got %d body=%s", createRecorder.Code, createRecorder.Body.String())
+	}
+
+	var created aiSkill
+	if err := json.Unmarshal(createRecorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created skill: %v", err)
+	}
+	if created.ID == "" || created.Name != "Linux inspection" {
+		t.Fatalf("unexpected created skill: %#v", created)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/ai/skills", nil)
+	listRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(listRecorder, listReq)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("expected list skills 200, got %d", listRecorder.Code)
+	}
+	if !strings.Contains(listRecorder.Body.String(), "Linux inspection") {
+		t.Fatalf("expected created skill in list, got %s", listRecorder.Body.String())
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/ai/skills/"+created.ID, bytes.NewBufferString(`{
+		"name":"GPU check",
+		"prompt":"Inspect nvidia-smi before changes."
+	}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(updateRecorder, updateReq)
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected update skill 200, got %d body=%s", updateRecorder.Code, updateRecorder.Body.String())
+	}
+	if !strings.Contains(updateRecorder.Body.String(), "GPU check") {
+		t.Fatalf("expected updated skill body, got %s", updateRecorder.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/ai/skills/"+created.ID, nil)
+	deleteRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(deleteRecorder, deleteReq)
+	if deleteRecorder.Code != http.StatusOK {
+		t.Fatalf("expected delete skill 200, got %d body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+}
+
 func TestWebAuthProtectsAPIAndAllowsLogin(t *testing.T) {
 	t.Setenv("AI_SSH_WEB_AUTH", "1")
 	t.Setenv("AI_SSH_WEB_USER", "admin")

@@ -882,3 +882,35 @@
   background: rgba(79, 140, 255, 0.2);
 }
 
+.ai-skill-picker {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ai-skill-picker-label {
+  color: #8ca0b8;
+  font-size: 12px;
+}
+
+.ai-skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-skill-tag {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.ai-skill-tag.selected {
+  border-color: rgba(79, 140, 255, 0.45);
+  background: rgba(79, 140, 255, 0.16);
+  color: #dbeafe;
+}

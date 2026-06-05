@@ -53,6 +53,8 @@ import { useVisibleLogs } from './hooks/useVisibleLogs'
 import { useWorkspaceInteractions } from './hooks/useWorkspaceInteractions'
 import { useWorkspaceViewState } from './hooks/useWorkspaceViewState'
 import {
+  type AISkill,
+  type AISkillListResponse,
   type AIPredictionRequest,
   type AIAssistRequest,
   type AIAssistResponse,
@@ -262,6 +264,8 @@ export function App() {
   const [predictionPanelHeight, setPredictionPanelHeight] = useState(DEFAULT_PREDICTION_PANEL_HEIGHT)
   const [expandedPredictionThinkingSessionId, setExpandedPredictionThinkingSessionId] = useState('')
   const [aiUnifiedPrompt, setAiUnifiedPrompt] = useState('')
+  const [aiSkills, setAiSkills] = useState<AISkill[]>([])
+  const [selectedAISkillIds, setSelectedAISkillIds] = useState<string[]>([])
   const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
   const [aiAssistantResponse, setAiAssistantResponse] = useState<AIAssistResponse | null>(null)
   const [aiAssistantError, setAiAssistantError] = useState('')
@@ -1460,6 +1464,14 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    void loadAISkills().catch((error) => {
+      appendLog('warn', 'ui.aiSkills', 'load ai skills failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
+  }, [])
+
+  useEffect(() => {
     if (!isTauriRuntime) {
       return
     }
@@ -1925,6 +1937,12 @@ export function App() {
   const activeAIModelConfig = getActiveAIModelConfig(settings)
   const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
   const visibleLogs = useVisibleLogs(logs, logLevel, logSearch)
+  const selectedAISkills = useMemo(
+    () => selectedAISkillIds
+      .map((id) => aiSkills.find((skill) => skill.id === id) ?? null)
+      .filter((skill): skill is AISkill => Boolean(skill)),
+    [aiSkills, selectedAISkillIds],
+  )
   useEffect(() => {
     previousMetricsRef.current = null
     setMetricHistory([])
@@ -1955,6 +1973,66 @@ export function App() {
     const groups = normalizeHostGroups(data.groups, hosts)
     setHostGroups(groups)
     return groups
+  }
+
+  const loadAISkills = async () => {
+    const response = await apiFetch('/ai/skills')
+    if (!response.ok) {
+      throw new Error(`加载 AI skill 失败：${response.status}`)
+    }
+    const data = (await response.json()) as AISkillListResponse
+    const skills = Array.isArray(data.skills) ? data.skills : []
+    setAiSkills(skills)
+    setSelectedAISkillIds((current) => current.filter((id) => skills.some((skill) => skill.id === id)))
+    return skills
+  }
+
+  const createAISkill = async () => {
+    const response = await apiFetch('/ai/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: t('settings.skills.defaultName', { count: aiSkills.length + 1 }),
+        prompt: '',
+      }),
+    })
+    if (!response.ok) {
+      const detail = await readResponseErrorDetail(response)
+      throw new Error(detail || `创建 AI skill 失败：${response.status}`)
+    }
+    const created = (await response.json()) as AISkill
+    setAiSkills((current) => [created, ...current])
+  }
+
+  const updateAISkill = async (id: string, patch: Partial<Pick<AISkill, 'name' | 'prompt'>>) => {
+    const target = aiSkills.find((skill) => skill.id === id)
+    if (!target) return
+    const response = await apiFetch(`/ai/skills/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: patch.name ?? target.name,
+        prompt: patch.prompt ?? target.prompt,
+      }),
+    })
+    if (!response.ok) {
+      const detail = await readResponseErrorDetail(response)
+      throw new Error(detail || `保存 AI skill 失败：${response.status}`)
+    }
+    const updated = (await response.json()) as AISkill
+    setAiSkills((current) => current.map((skill) => (skill.id === id ? updated : skill)))
+  }
+
+  const removeAISkill = async (id: string) => {
+    const response = await apiFetch(`/ai/skills/${id}`, {
+      method: 'DELETE',
+    })
+    if (!response.ok) {
+      const detail = await readResponseErrorDetail(response)
+      throw new Error(detail || `删除 AI skill 失败：${response.status}`)
+    }
+    setAiSkills((current) => current.filter((skill) => skill.id !== id))
+    setSelectedAISkillIds((current) => current.filter((skillId) => skillId !== id))
   }
 
   const selectPrivateKeyFile = async (file: File | null) => {
@@ -2846,6 +2924,13 @@ export function App() {
 
   const saveAllSettings = async () => {
     saveSettings()
+    try {
+      await loadAISkills()
+    } catch (error) {
+      appendLog('warn', 'ui.aiSkills', 'reload ai skills after save failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
     if (authInitialized) {
       const saved = await saveAuthSettings()
       if (saved) {
@@ -3968,6 +4053,7 @@ ${recentContext}` : '',
       agentMode: requestOptions.agentMode ?? getSessionAgentState(sessionId).mode,
       agentGoal: requestOptions.agentGoal ?? resolveAgentGoal(prompt, sessionId),
       agentSteps,
+      selectedSkills: selectedAISkills,
       ...requestOptions,
     }
     const response = await apiFetch(AI_ASSIST_STREAM_API_PATH, {
@@ -5585,6 +5671,7 @@ ${recentContext}` : '',
                 aiMessages={aiMessages}
                 aiUnifiedInputPlaceholder={aiUnifiedInputPlaceholder}
                 aiUnifiedInputValue={aiUnifiedInputValue}
+                aiSkills={aiSkills}
                 batchActive={batchActive}
                 batchCardsRef={batchCardsRef}
                 batchHostIndex={batchHostIndex}
@@ -5599,6 +5686,7 @@ ${recentContext}` : '',
                 normalizedAgentMessage={normalizedAgentMessage}
                 renderAIMessage={renderAIMessage}
                 renderMarkdown={renderMarkdown}
+                selectedAISkillIds={selectedAISkillIds}
                 settingsAiEnabled={settings.aiEnabled}
                 shouldRenderAgentMessageCard={shouldRenderAgentMessageCard}
                 onClearAiInput={() => { updateAiUnifiedInputValue(''); setAiAssistantError('') }}
@@ -5629,6 +5717,13 @@ ${recentContext}` : '',
                     resetAgentState: false,
                     bindToSession: false,
                   })
+                }}
+                onToggleAISkill={(skillId) => {
+                  setSelectedAISkillIds((current) => (
+                    current.includes(skillId)
+                      ? current.filter((id) => id !== skillId)
+                      : [...current, skillId]
+                  ))
                 }}
                 onSetAgentMode={(mode) => {
                   if (!activeAgentSessionId) {
@@ -5740,6 +5835,7 @@ ${recentContext}` : '',
         defaultAiTerminalContextLimit={defaultSettings.aiTerminalContextLimit}
         defaultAgentCommandTimeoutSeconds={defaultSettings.agentCommandTimeoutSeconds}
         defaultHealthCheckIntervalSeconds={DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS}
+        aiSkills={aiSkills}
         defaultOllamaBaseUrl={DEFAULT_OLLAMA_BASE_URL}
         defaultRightPanelWidth={DEFAULT_RIGHT_PANEL_WIDTH}
         defaultRightServerInfoHeight={DEFAULT_RIGHT_SERVER_INFO_HEIGHT}
@@ -5751,15 +5847,18 @@ ${recentContext}` : '',
         minRightServerInfoHeight={MIN_RIGHT_SERVER_INFO_HEIGHT}
         normalizeSettings={normalizeAppSettings}
         onAddAIModelConfig={addAIModelConfig}
+        onAddAISkill={() => { void createAISkill() }}
         onChangePassword={changePassword}
         onChangePasswordFormChange={(updater) => setChangePasswordForm((current) => updater(current))}
         onClearPrediction={clearAIPrediction}
         onClose={() => setIsSettingsDialogOpen(false)}
         onDesktopLoginRequiredChange={setDesktopLoginRequired}
+        onRemoveAISkill={(id) => { void removeAISkill(id) }}
         onRemoveAIModelConfig={removeAIModelConfig}
         onSave={() => { void saveAllSettings() }}
         onSettingsChange={(updater) => setSettings((current) => updater(current))}
         onSettingsSectionChange={setSettingsSection}
+        onUpdateAISkill={(id, patch) => { void updateAISkill(id, patch) }}
         onUpdateAIModelConfig={updateAIModelConfig}
         onWebAccessEnabledChange={setWebAccessEnabled}
         open={isSettingsDialogOpen}

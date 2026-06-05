@@ -22,12 +22,19 @@ type aiChatStore struct {
 }
 
 func newAIChatStore(logger *appLogger) *aiChatStore {
-	path := filepath.Join(resolveHostStoreBaseDir(), "data", "ai-chat.sqlite3")
+	path := resolveAIChatStorePath()
 	store := &aiChatStore{path: path, logger: logger}
 	if err := store.open(); err != nil && logger != nil {
 		logger.error("ai.chat", "open ai chat store failed", map[string]any{"path": path, "error": err.Error()})
 	}
 	return store
+}
+
+func resolveAIChatStorePath() string {
+	if path := os.Getenv("AI_SSH_AI_CHAT_STORE_PATH"); path != "" {
+		return path
+	}
+	return filepath.Join(resolveHostStoreBaseDir(), "data", "ai-chat.sqlite3")
 }
 
 func (s *aiChatStore) open() error {

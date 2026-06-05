@@ -1288,6 +1288,15 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 		step.Output = redactSensitiveText(trimOutputSmart(step.Output, 2000, 6000))
 		request.AgentSteps[index] = step
 	}
+	if len(request.SelectedSkills) > 20 {
+		request.SelectedSkills = request.SelectedSkills[:20]
+	}
+	for index, skill := range request.SelectedSkills {
+		skill.ID = strings.TrimSpace(skill.ID)
+		skill.Name = trimToLastRunes(strings.TrimSpace(skill.Name), 120)
+		skill.Prompt = redactSensitiveText(trimToLastRunes(strings.TrimSpace(skill.Prompt), aiAssistPromptLimit))
+		request.SelectedSkills[index] = skill
+	}
 	request.AgentGoal = trimToLastRunes(strings.TrimSpace(request.AgentGoal), aiAssistPromptLimit)
 	if request.AgentMode == "" {
 		request.AgentMode = "review"
@@ -1457,6 +1466,15 @@ func buildAssistSystemPrompt(request aiAssistRequest) string {
 	}
 	if customPrompt != "" {
 		base += "\n用户自定义系统提示词：\n" + customPrompt
+	}
+	if len(request.SelectedSkills) > 0 {
+		base += "\n已启用的技能提示："
+		for _, skill := range request.SelectedSkills {
+			if skill.Name == "" || skill.Prompt == "" {
+				continue
+			}
+			base += "\n- " + skill.Name + "：\n" + skill.Prompt
+		}
 	}
 	return base
 }

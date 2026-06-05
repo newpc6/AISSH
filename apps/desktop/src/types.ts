@@ -14,7 +14,7 @@ export type LeftMode = 'servers' | 'files'
 export type RightTool = 'ai' | 'history' | 'favorites'
 export type HostDialogMode = 'create' | 'edit'
 export type TopMenu = 'file' | 'edit' | 'session' | 'transfer' | 'tools' | 'settings' | ''
-export type SettingsSection = 'general' | 'security' | 'metrics' | 'ai'
+export type SettingsSection = 'general' | 'security' | 'metrics' | 'ai' | 'skills'
 
 export type AIPredictionSessionState = {
   predictions: string[]

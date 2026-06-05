@@ -77,7 +77,8 @@
       "general": "General",
       "security": "Security",
       "metrics": "Server Metrics",
-      "ai": "AI"
+      "ai": "AI",
+      "skills": "Skills"
     },
     "general": {
       "language": "Language",
@@ -163,6 +164,18 @@
       "systemPrompt": "System Prompt",
       "overrideSystemPrompt": "Override default system prompt (the prompt above will fully replace the built-in prompt instead of appending to it)",
       "systemPromptHint": "Used for unified AI chat and Agent tasks, and sent to the Go core with each request."
+    },
+    "skills": {
+      "title": "AI Skills",
+      "add": "Add Skill",
+      "help": "Save reusable work instructions here. During AI chat you can check one or more skills to guide how the assistant should work.",
+      "empty": "No skills yet.",
+      "name": "Skill Name",
+      "prompt": "Skill Prompt",
+      "remove": "Remove Skill",
+      "namePlaceholder": "For example: Safe Linux inspection",
+      "promptPlaceholder": "For example: Prefer read-only commands first, explain findings clearly, and avoid service restarts unless explicitly requested.",
+      "defaultName": "Skill {{count}}"
     }
   },
   "files": {
@@ -464,6 +477,9 @@
     "input": {
       "defaultPlaceholder": "Tell AI what you want to do, for example: explain this error, summarize logs, generate commands to install nginx, or help me complete a server operation.",
       "batchPlaceholder": "Batch task: describe the task in natural language, such as updating apt or checking disk space, then click Send on the right to start."
+    },
+    "skills": {
+      "label": "Skills"
     },
     "batch": {
       "modeSummary": "Batch mode - {{count}} selected",

@@ -74,6 +74,21 @@ func TestBuildAssistSystemPromptUsesCustomPromptAsUnifiedPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildAssistSystemPromptIncludesSelectedSkills(t *testing.T) {
+	prompt := buildAssistSystemPrompt(aiAssistRequest{
+		SelectedSkills: []aiSkill{
+			{Name: "Linux inspection", Prompt: "Prefer read-only inspection commands first."},
+			{Name: "GPU check", Prompt: "When GPU is involved, inspect nvidia-smi before any changes."},
+		},
+	})
+	if !strings.Contains(prompt, "已启用的技能提示") {
+		t.Fatalf("expected selected skills section in prompt")
+	}
+	if !strings.Contains(prompt, "Linux inspection") || !strings.Contains(prompt, "GPU check") {
+		t.Fatalf("expected skill names in prompt, got %q", prompt)
+	}
+}
+
 func TestAssistThinkingCanBeDisabled(t *testing.T) {
 	disabled := false
 	request, err := normalizeAIAssistRequest(aiAssistRequest{

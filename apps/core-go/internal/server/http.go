@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 	logger := manager.logger
 	authenticator := newWebAuthenticator(logger)
 	aiChats := newAIChatStore(logger)
+	aiSkills := newAISkillStore(logger)
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -425,6 +427,68 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/api/ai/skills", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			skills, err := aiSkills.listSkills()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string][]aiSkill{"skills": skills})
+		case http.MethodPost:
+			var request aiSkill
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			skill, err := aiSkills.createSkill(request.Name, request.Prompt)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, skill)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/ai/skills/", func(w http.ResponseWriter, r *http.Request) {
+		skillID := strings.TrimPrefix(r.URL.Path, "/api/ai/skills/")
+		if strings.TrimSpace(skillID) == "" {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodPut:
+			var request aiSkill
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			skill, err := aiSkills.updateSkill(skillID, request.Name, request.Prompt)
+			if err != nil {
+				status := http.StatusBadRequest
+				if err == sql.ErrNoRows {
+					status = http.StatusNotFound
+				}
+				http.Error(w, err.Error(), status)
+				return
+			}
+			writeJSON(w, skill)
+		case http.MethodDelete:
+			if err := aiSkills.deleteSkill(skillID); err != nil {
+				status := http.StatusBadRequest
+				if err == sql.ErrNoRows {
+					status = http.StatusNotFound
+				}
+				http.Error(w, err.Error(), status)
+				return
+			}
+			writeJSON(w, map[string]string{"status": "ok"})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	})
 	mux.HandleFunc("/api/hosts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

@@ -75,6 +75,24 @@ export interface AIModelConfig {
   thinkingEnabled: boolean
 }
 
+export interface AISkill {
+  id: string
+  name: string
+  prompt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AISkillListResponse {
+  skills: AISkill[]
+}
+
+export interface AISkillUpsertRequest {
+  id?: string
+  name: string
+  prompt: string
+}
+
 export interface AppSettings {
   healthCheckIntervalSeconds: number
   metricsRefreshIntervalSeconds: number
@@ -308,6 +326,7 @@ export interface AIAssistRequest {
   agentMode?: AIAgentMode
   agentGoal?: string
   agentSteps?: AIAgentStep[]
+  selectedSkills?: AISkill[]
 }
 
 export interface AIAssistResponse {

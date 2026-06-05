@@ -155,6 +155,7 @@ type aiAssistRequest struct {
 	AgentMode            string        `json:"agentMode,omitempty"`
 	AgentGoal            string        `json:"agentGoal,omitempty"`
 	AgentSteps           []aiAgentStep `json:"agentSteps,omitempty"`
+	SelectedSkills       []aiSkill     `json:"selectedSkills,omitempty"`
 }
 
 type aiAgentStep struct {

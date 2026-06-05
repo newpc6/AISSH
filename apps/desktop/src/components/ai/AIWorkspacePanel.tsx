@@ -1,6 +1,6 @@
 import type { RefObject, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { AIAgentMode, AIChatConversation } from '@ai-ssh/shared-contracts'
+import type { AIAgentMode, AIChatConversation, AISkill } from '@ai-ssh/shared-contracts'
 import type { AIChatMessageDraft, BatchHostResult, LoadState } from '../../types'
 import { formatLocalizedDateTime } from '../../utils'
 
@@ -28,6 +28,7 @@ type AIWorkspacePanelProps = {
   aiAssistantError: string
   aiUnifiedInputPlaceholder: string
   aiUnifiedInputValue: string
+  aiSkills: AISkill[]
   batchMode: boolean
   batchSelectedHosts: BatchSelectedHost[]
   batchActive: boolean
@@ -37,6 +38,7 @@ type AIWorkspacePanelProps = {
   batchHostIndex: number
   activeAIModelLabel: string
   activeAIModelTitle: string
+  selectedAISkillIds: string[]
   aiMessageListRef: RefObject<HTMLDivElement | null>
   onAiMessageListScroll: () => void
   batchCardsRef: RefObject<HTMLDivElement | null>
@@ -44,6 +46,7 @@ type AIWorkspacePanelProps = {
   renderMarkdown: (content: string, fallback?: string) => ReactNode
   onCreateConversation: () => void
   onSelectConversation: (conversationId: string) => void
+  onToggleAISkill: (skillId: string) => void
   onReturnToLiveConversation: () => void
   onDeleteConversation: (conversationId: string) => void
   onLoadMoreConversations: () => void
@@ -80,6 +83,7 @@ export function AIWorkspacePanel({
   aiAssistantError,
   aiUnifiedInputPlaceholder,
   aiUnifiedInputValue,
+  aiSkills,
   batchMode,
   batchSelectedHosts,
   batchActive,
@@ -89,6 +93,7 @@ export function AIWorkspacePanel({
   batchHostIndex,
   activeAIModelLabel,
   activeAIModelTitle,
+  selectedAISkillIds,
   aiMessageListRef,
   onAiMessageListScroll,
   batchCardsRef,
@@ -96,6 +101,7 @@ export function AIWorkspacePanel({
   renderMarkdown,
   onCreateConversation,
   onSelectConversation,
+  onToggleAISkill,
   onReturnToLiveConversation,
   onDeleteConversation,
   onLoadMoreConversations,
@@ -216,6 +222,28 @@ export function AIWorkspacePanel({
               }
             }}
           />
+        ) : null}
+
+        {!isAIInputCollapsed && aiSkills.length > 0 ? (
+          <div className="ai-skill-picker">
+            <span className="ai-skill-picker-label">{t('aiWorkspace.skills.label')}</span>
+            <div className="ai-skill-tags">
+              {aiSkills.map((skill) => {
+                const selected = selectedAISkillIds.includes(skill.id)
+                return (
+                  <button
+                    key={skill.id}
+                    type="button"
+                    className={`ai-skill-tag${selected ? ' selected' : ''}`}
+                    title={skill.prompt || skill.name}
+                    onClick={() => onToggleAISkill(skill.id)}
+                  >
+                    {skill.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         ) : null}
 
         {!isAIInputCollapsed ? (
