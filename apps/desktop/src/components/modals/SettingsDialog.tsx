@@ -454,6 +454,14 @@ export function SettingsDialog({
                     onChange={(event) => onSettingsChange((current) => ({ ...current, aiSystemPrompt: event.target.value }))}
                     placeholder={defaultAiSystemPrompt}
                   />
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={settings.aiSystemPromptOverride}
+                      onChange={(event) => onSettingsChange((current) => ({ ...current, aiSystemPromptOverride: event.target.checked }))}
+                    />
+                    <span>覆盖默认系统提示词（上面填写的提示词将完全替代内置提示词，不再追加）</span>
+                  </label>
                   <small>用于统一 AI 对话和 Agent 任务，会随请求发送给 Go core。</small>
                 </label>
               </>

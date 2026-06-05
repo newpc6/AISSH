@@ -948,6 +948,14 @@ func redactSensitiveText(value string) string {
 }
 
 func buildAssistSystemPrompt(request aiAssistRequest) string {
+	if request.SystemPromptOverride && request.SystemPrompt != "" {
+		prompt := request.SystemPrompt
+		if !aiAgentThinkingEnabled(request) {
+			prompt += "\n/no_think\n不要输出思考过程，不要进行长时间深度推理；直接按已有上下文给出严格 JSON 结果。"
+		}
+		return prompt
+	}
+
 	base := `你是 AI SSH 的统一运维助手。所有回答必须使用中文。你会看到终端上下文、当前对话上下文、历史命令、当前目录、主机信息、用户选中文本、用户目标和 Agent 已执行步骤。
 
 你只有一个统一入口，必须自行判断用户意图：

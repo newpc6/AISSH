@@ -140,6 +140,7 @@ type aiAssistRequest struct {
 	AgentThinkingEnabled *bool         `json:"agentThinkingEnabled,omitempty"`
 	TimeoutSeconds       int           `json:"timeoutSeconds,omitempty"`
 	SystemPrompt         string        `json:"systemPrompt,omitempty"`
+	SystemPromptOverride bool          `json:"systemPromptOverride,omitempty"`
 	Prompt               string        `json:"prompt"`
 	TerminalContext      string        `json:"terminalContext,omitempty"`
 	SelectedText         string        `json:"selectedText,omitempty"`
