@@ -36,6 +36,7 @@ import { useAIConversationStrategy } from './hooks/useAIConversationStrategy'
 import { useAgentExecution } from './hooks/useAgentExecution'
 import { useAIMessageStore } from './hooks/useAIMessageStore'
 import { DEFAULT_SESSION_AGENT_STATE, useSessionAgentState } from './hooks/useSessionAgentState'
+import { useSessionLifecycle } from './hooks/useSessionLifecycle'
 import { useSessionAIConversationBinding } from './hooks/useSessionAIConversationBinding'
 import { useSessionStreams } from './hooks/useSessionStreams'
 import { useDesktopOverlays } from './hooks/useDesktopOverlays'
@@ -80,7 +81,6 @@ import {
   type SystemInfo,
   type SessionCwdResponse,
   type HostUpsertRequest,
-  type SessionOpenRequest,
   type SessionOpenResponse,
   type SessionRecord,
   type SessionResizeRequest,
@@ -102,7 +102,6 @@ import {
   type MetricSample,
   type PredictionGhostPosition,
   type RightTool,
-  type SessionReconnectResponse,
   type SettingsSection,
   type TerminalCache,
   type TerminalSelectionAction,
@@ -4418,136 +4417,6 @@ export function App() {
     return () => window.clearInterval(interval)
   }, [activeSession?.hostId, settings.metricsRefreshIntervalSeconds, settings.metricsHistoryWindowMinutes])
 
-  const activateSession = (session: SessionRecord) => {
-    if (activeViewId === `session:${session.id}` && session.id === activeSessionId) {
-      return
-    }
-
-    setActiveSession(session.id)
-    replaceTerminalWithCache(session.id)
-    if (session.status === 'connected' || session.status === 'connecting') {
-      openSessionStream(session)
-    }
-    fitAddonRef.current?.fit()
-    syncTerminalSize(session.id)
-    schedulePredictionGhostPositionUpdate()
-  }
-
-  const createSession = async (hostId = selectedHostId) => {
-    if (!hostId) {
-      return
-    }
-
-    commandBufferRef.current = ''
-    clearAIPrediction()
-    setSelectedHostId(hostId)
-    xtermRef.current?.clear()
-
-    const payload: SessionOpenRequest = { hostId }
-
-    try {
-      const response = await apiFetch('/sessions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        throw new Error(`创建会话失败：${response.status}`)
-      }
-
-      const data = (await response.json()) as SessionOpenResponse
-      const initialOutput = `正在为主机 ${hostId} 创建会话...\r\n\r\nSession: ${data.session.id}\r\nHost: ${data.session.hostName}\r\n正在连接会话输出流...\r\n`
-      setTerminalCaches((current) => {
-        const next = {
-          ...current,
-          [data.session.id]: appendTerminalCache(emptyTerminalCache(), initialOutput, sessionSettingsRef.current.terminalRetainedLines),
-        }
-        terminalCachesRef.current = next
-        return next
-      })
-      setSessions((current) => [data.session, ...current])
-      setActiveSession(data.session.id)
-      xtermRef.current?.clear()
-      xtermRef.current?.write(initialOutput)
-      openSessionStream(data.session, true)
-      fitAddonRef.current?.fit()
-      syncTerminalSize(data.session.id)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '创建会话失败'
-      setErrorMessage(message)
-      xtermRef.current?.writeln('')
-      xtermRef.current?.writeln(`ERROR: ${message}`)
-    }
-  }
-
-  const closeSessionNow = async (session: SessionRecord) => {
-    closeSessionStream(session.id)
-    await apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
-    const remainingSessions = sessions.filter((item) => item.id !== session.id)
-    setSessions(remainingSessions)
-    removeTerminalCache(session.id)
-    if (activeSessionId === session.id) {
-      const next = remainingSessions[0]
-      setActiveSession(next?.id ?? '')
-      if (next) {
-        replaceTerminalWithCache(next.id)
-        if (next.status === 'connected' || next.status === 'connecting') {
-          openSessionStream(next)
-        }
-        fitAddonRef.current?.fit()
-        syncTerminalSize(next.id)
-      } else {
-        commandBufferRef.current = ''
-        clearAIPrediction()
-        setServerMetrics(null)
-        setSystemInfo(null)
-        setMetricHistory([])
-        previousMetricsRef.current = null
-        setFileEntries([])
-        xtermRef.current?.clear()
-      }
-    }
-  }
-
-  const closeSessionsNow = async (targetSessions: SessionRecord[]) => {
-    if (targetSessions.length === 0) {
-      return
-    }
-    await Promise.all(targetSessions.map((session) => {
-      closeSessionStream(session.id)
-      return apiFetch(`/sessions/${session.id}/close`, { method: 'POST' })
-    }))
-    const closeIds = new Set(targetSessions.map((session) => session.id))
-    const remainingSessions = sessionsRef.current.filter((item) => !closeIds.has(item.id))
-    sessionsRef.current = remainingSessions
-    setSessions(remainingSessions)
-    targetSessions.forEach((session) => removeTerminalCache(session.id))
-    if (closeIds.has(activeSessionIdRef.current)) {
-      const next = remainingSessions[0]
-      setActiveSession(next?.id ?? '')
-      if (next) {
-        replaceTerminalWithCache(next.id)
-        if (next.status === 'connected' || next.status === 'connecting') {
-          openSessionStream(next)
-        }
-        fitAddonRef.current?.fit()
-        syncTerminalSize(next.id)
-      } else {
-        commandBufferRef.current = ''
-        clearAIPrediction()
-        setServerMetrics(null)
-        setSystemInfo(null)
-        setMetricHistory([])
-        previousMetricsRef.current = null
-        setFileEntries([])
-        xtermRef.current?.clear()
-      }
-    }
-  }
-
   const closeSession = async (session: SessionRecord) => {
     requestConfirm({
       section: 'SSH 会话',
@@ -4559,33 +4428,9 @@ export function App() {
     })
   }
 
-  const closeOtherSessions = async (session: SessionRecord) => {
-    const targets = sessionsRef.current.filter((item) => item.id !== session.id)
-    await closeSessionsNow(targets)
-    setActiveSession(session.id)
-    replaceTerminalWithCache(session.id)
-  }
-
-  const closeSessionsToRight = async (session: SessionRecord) => {
-    const sessionList = sessionsRef.current
-    const index = sessionList.findIndex((item) => item.id === session.id)
-    if (index < 0) {
-      return
-    }
-    await closeSessionsNow(sessionList.slice(index + 1))
-  }
-
-  const closeAllSessions = async () => {
-    await closeSessionsNow(sessionsRef.current)
-  }
-
-  const copySessionSSHInfo = async (session: SessionRecord) => {
-    const host = hostsRef.current.find((item) => item.id === session.hostId)
-    const text = host
-      ? `ssh -p ${host.port} ${host.username}@${host.address}`
-      : session.hostName
+  const copySessionSSHInfoWithFeedback = async (session: SessionRecord) => {
     try {
-      await navigator.clipboard.writeText(text)
+      const text = await copySessionSSHInfo(session)
       updateSessionAgentState(session.id, { message: `已复制 SSH 信息：${text}` })
     } catch (error) {
       const message = error instanceof Error ? error.message : '复制 SSH 信息失败'
@@ -4595,83 +4440,6 @@ export function App() {
         path: 'clipboard',
         source: '浏览器剪贴板',
       })
-    }
-  }
-
-  const reconnectSession = async (session: SessionRecord) => {
-    closeSessionStream(session.id)
-    const reconnectOutput = `\r\n正在重新连接 ${session.hostName}...\r\n`
-    const previousCache = appendTerminalCache(
-      terminalCachesRef.current[session.id] ?? emptyTerminalCache(),
-      reconnectOutput,
-      sessionSettingsRef.current.terminalRetainedLines,
-    )
-    setTerminalCaches((current) => {
-      const next = { ...current, [session.id]: previousCache }
-      terminalCachesRef.current = next
-      return next
-    })
-    const connectingSessions = sessionsRef.current.map((item) =>
-      item.id === session.id ? { ...item, status: 'connecting' as const, lastError: '' } : item,
-    )
-    sessionsRef.current = connectingSessions
-    setSessions(connectingSessions)
-
-    try {
-      let response = await apiFetch(`/sessions/${session.id}/reconnect`, {
-        method: 'POST',
-      })
-      if (response.status === 404) {
-        appendLog('warn', 'ui.session', 'session missing in core, creating replacement session', {
-          sessionID: session.id,
-          hostID: session.hostId,
-        })
-        response = await apiFetch('/sessions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ hostId: session.hostId } satisfies SessionOpenRequest),
-        })
-      }
-      if (!response.ok) {
-        const detail = await response.text()
-        throw new Error(detail.trim() || `重连失败：${response.status}`)
-      }
-
-      const data = (await response.json()) as SessionReconnectResponse | SessionOpenResponse
-      const nextSession = data.session
-      const connectedOutput = `Session: ${nextSession.id}\r\n正在连接会话输出流...\r\n`
-      const nextCache = appendTerminalCache(
-        terminalCachesRef.current[session.id] ?? previousCache,
-        connectedOutput,
-        sessionSettingsRef.current.terminalRetainedLines,
-      )
-      setTerminalCaches((current) => {
-        const next = { ...current }
-        delete next[session.id]
-        next[nextSession.id] = nextCache
-        terminalCachesRef.current = next
-        return next
-      })
-      const nextSessions = sessionsRef.current.map((item) => (item.id === session.id ? nextSession : item))
-      sessionsRef.current = nextSessions
-      setSessions(nextSessions)
-      setActiveSession(nextSession.id)
-      commandBufferRef.current = nextCache.commandDraft
-      replaceTerminalWithCache(nextSession.id)
-      openSessionStream(nextSession, true)
-      fitAddonRef.current?.fit()
-      syncTerminalSize(nextSession.id)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '重连失败'
-      setErrorMessage(message)
-      appendSessionTerminalOutput(session.id, `\r\nERROR: ${message}\r\n`)
-      const nextSessions = sessionsRef.current.map((item) =>
-        item.id === session.id ? { ...item, status: 'error' as const, lastError: message } : item,
-      )
-      sessionsRef.current = nextSessions
-      setSessions(nextSessions)
     }
   }
 
@@ -4860,6 +4628,49 @@ export function App() {
     setTrackedFilePath,
     trackTerminalPathRef,
     updateAlternateScreenMode,
+  })
+  const {
+    activateSession,
+    closeAllSessions,
+    closeOtherSessions,
+    closeSessionNow,
+    closeSessionsToRight,
+    copySessionSSHInfo,
+    createSession,
+    reconnectSession,
+  } = useSessionLifecycle({
+    activeSessionId,
+    activeViewId,
+    apiFetch,
+    appendLog,
+    appendSessionTerminalOutput,
+    appendTerminalCache,
+    clearAIPrediction,
+    closeSessionStream,
+    commandBufferRef,
+    emptyTerminalCache,
+    fitAddonRef,
+    hostsRef,
+    openSessionStream,
+    previousMetricsRef,
+    removeTerminalCache,
+    replaceTerminalWithCache,
+    schedulePredictionGhostPositionUpdate,
+    selectedHostId,
+    sessionRetainedLines: () => sessionSettingsRef.current.terminalRetainedLines,
+    sessionsRef,
+    setActiveSession,
+    setErrorMessage,
+    setFileEntries,
+    setMetricHistory,
+    setSelectedHostId,
+    setServerMetrics,
+    setSessions,
+    setSystemInfo,
+    setTerminalCaches,
+    syncTerminalSize,
+    terminalCachesRef,
+    xtermRef,
   })
 
   const applyPrediction = () => {
@@ -5549,7 +5360,7 @@ export function App() {
             onCloseOtherSessions={closeOtherSessions}
             onCloseSession={closeSession}
             onCloseSessionsToRight={closeSessionsToRight}
-            onCopySessionSSHInfo={copySessionSSHInfo}
+            onCopySessionSSHInfo={copySessionSSHInfoWithFeedback}
             onCreateSession={() => createSession()}
             onSessionTabMenuChange={setSessionTabMenu}
           />
