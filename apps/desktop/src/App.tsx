@@ -31,6 +31,7 @@ import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
 import { useAIUnifiedInput } from './hooks/useAIUnifiedInput'
+import { DEFAULT_SESSION_AGENT_STATE, useSessionAgentState } from './hooks/useSessionAgentState'
 import { useSessionAIConversationBinding } from './hooks/useSessionAIConversationBinding'
 import { useDesktopOverlays } from './hooks/useDesktopOverlays'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
@@ -104,7 +105,6 @@ import {
   type MetricSample,
   type PredictionGhostPosition,
   type RightTool,
-  type SessionAgentState,
   type SessionReconnectResponse,
   type SettingsSection,
   type TerminalCache,
@@ -199,15 +199,6 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
   streamingContent: '',
 }
 
-const DEFAULT_SESSION_AGENT_STATE: SessionAgentState = {
-  mode: 'review',
-  state: 'idle',
-  message: '',
-  goal: '',
-  running: false,
-  pendingStepId: '',
-}
-
 export function App() {
   const [_health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
@@ -286,8 +277,6 @@ export function App() {
   const [isAIInputCollapsed, setIsAIInputCollapsed] = useState(false)
   const [isAIInputExpanded, setIsAIInputExpanded] = useState(false)
   const [terminalSelectionAction, setTerminalSelectionAction] = useState<TerminalSelectionAction | null>(null)
-  const [agentStateBySession, setAgentStateBySession] = useState<Record<string, SessionAgentState>>({})
-  const [agentStepsBySession, setAgentStepsBySession] = useState<Record<string, AIAgentPlanStep[]>>({})
   const [rightServerInfoPanelHeight, setRightServerInfoPanelHeight] = useState(DEFAULT_RIGHT_SERVER_INFO_HEIGHT)
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH)
   const [predictionGhostPosition, setPredictionGhostPosition] = useState<PredictionGhostPosition | null>(null)
@@ -347,8 +336,6 @@ export function App() {
   const aiPredictionIgnoredRequestRef = useRef<Record<string, number>>({})
   const aiPredictionCursorRef = useRef<Record<string, number>>({})
   const aiPredictionCycleStartedRef = useRef<Record<string, boolean>>({})
-  const agentStateBySessionRef = useRef<Record<string, SessionAgentState>>({})
-  const agentStepsBySessionRef = useRef<Record<string, AIAgentPlanStep[]>>({})
   const agentWaitersRef = useRef<Record<string, AgentCommandWaiter>>({})
   const terminalLineBufferRef = useRef<Record<string, string>>({})
   const batchAbortRef = useRef(false)
@@ -368,6 +355,14 @@ export function App() {
     setLiveConversationId,
     setPreviewConversationId,
   } = useSessionAIConversationBinding()
+  const {
+    agentStateBySession,
+    findAgentStepById,
+    getAgentStepsForSession,
+    getSessionAgentState,
+    setAgentStepsForSession,
+    updateSessionAgentState,
+  } = useSessionAgentState()
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
@@ -531,55 +526,6 @@ export function App() {
 
   const getAIPredictionForSession = (sessionId: string) =>
     aiPredictionBySessionRef.current[sessionId] ?? EMPTY_AI_PREDICTION_STATE
-
-  const getSessionAgentState = (sessionId: string) =>
-    agentStateBySessionRef.current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
-
-  const updateSessionAgentState = (
-    sessionId: string,
-    updater: Partial<SessionAgentState> | ((current: SessionAgentState) => SessionAgentState),
-  ) => {
-    if (!sessionId) {
-      return
-    }
-    const current = agentStateBySessionRef.current
-    const previous = current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
-    const nextState =
-      typeof updater === 'function'
-        ? updater(previous)
-        : { ...previous, ...updater }
-    const next = { ...current, [sessionId]: nextState }
-    agentStateBySessionRef.current = next
-    setAgentStateBySession(next)
-  }
-
-  const getAgentStepsForSession = (sessionId: string) =>
-    agentStepsBySessionRef.current[sessionId] ?? []
-
-  const setAgentStepsForSession = (
-    sessionId: string,
-    updater: AIAgentPlanStep[] | ((current: AIAgentPlanStep[]) => AIAgentPlanStep[]),
-  ) => {
-    if (!sessionId) {
-      return
-    }
-    const current = agentStepsBySessionRef.current
-    const previous = current[sessionId] ?? []
-    const nextSteps = typeof updater === 'function' ? updater(previous) : updater
-    const next = { ...current, [sessionId]: nextSteps }
-    agentStepsBySessionRef.current = next
-    setAgentStepsBySession(next)
-  }
-
-  const findAgentStepById = (stepId: string) => {
-    for (const [sessionId, steps] of Object.entries(agentStepsBySessionRef.current)) {
-      const step = steps.find((item) => item.id === stepId)
-      if (step) {
-        return { sessionId, step }
-      }
-    }
-    return null
-  }
 
   const clearAgentWaiter = (sessionId?: string) => {
     if (sessionId) {
@@ -1784,14 +1730,6 @@ export function App() {
   useEffect(() => {
     commandHistoryRef.current = commandHistory
   }, [commandHistory])
-
-  useEffect(() => {
-    agentStateBySessionRef.current = agentStateBySession
-  }, [agentStateBySession])
-
-  useEffect(() => {
-    agentStepsBySessionRef.current = agentStepsBySession
-  }, [agentStepsBySession])
 
   useEffect(() => {
     batchHostResultsRef.current = batchHostResults
