@@ -75,19 +75,36 @@
   right: 10px;
   bottom: 58px;
   z-index: 3;
-  max-width: min(210px, calc(100% - 20px));
-  height: 24px;
-  padding: 0 9px;
+  max-width: min(320px, calc(100% - 20px));
+  min-height: 24px;
+  padding: 2px 9px;
   border: 1px solid rgba(79, 140, 255, 0.28);
   border-radius: 999px;
   background: rgba(8, 12, 18, 0.88);
   color: #bfdbfe;
   font-size: 11px;
-  line-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ai-model-corner-badge > span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  pointer-events: none;
+}
+
+.ai-model-session-tag {
+  min-width: 0;
+  max-width: 150px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(148, 163, 184, 0.28);
+  color: #8ca0b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ai-model-corner-badge.unconfigured {
@@ -317,17 +334,6 @@
 .ai-stream-card .markdown-body {
   max-height: 180px;
   overflow: auto;
-}
-
-.ai-session-banner {
-  padding: 10px 14px 0;
-}
-
-.ai-session-banner strong {
-  display: block;
-  color: #cbd5e1;
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .ai-conversation-shell {

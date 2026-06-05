@@ -104,9 +104,6 @@ export function AIWorkspacePanel({
 }: AIWorkspacePanelProps) {
   return (
     <div className={`ai-box unified-ai-box ${isAIHistoryOpen ? 'history-open' : ''}`}>
-      <div className="ai-session-banner">
-        <strong>{activeSessionName || '未选择 SSH 会话'}</strong>
-      </div>
       <div className="ai-conversation-shell">
         {isAIHistoryOpen ? (
           <aside className="ai-chat-sidebar">
@@ -324,8 +321,12 @@ export function AIWorkspacePanel({
         </div>
       ) : null}
 
-      <div className={`ai-model-corner-badge${isAIProviderConfigured ? '' : ' unconfigured'}`} title={activeAIModelTitle}>
-        {activeAIModelLabel}
+      <div
+        className={`ai-model-corner-badge${isAIProviderConfigured ? '' : ' unconfigured'}`}
+        title={activeSessionName ? `${activeAIModelTitle} | ${activeSessionName}` : activeAIModelTitle}
+      >
+        <span>{activeAIModelLabel}</span>
+        {activeSessionName ? <span className="ai-model-session-tag">{activeSessionName}</span> : null}
       </div>
     </div>
   )
