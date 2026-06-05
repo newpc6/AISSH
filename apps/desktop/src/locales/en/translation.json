@@ -182,5 +182,183 @@
     "settings": "Settings",
     "copy": "Copy",
     "paste": "Paste"
+  },
+  "featureGuide": {
+    "title": "Feature Guide",
+    "help": "Help",
+    "close": "Close feature guide",
+    "gotIt": "Got it",
+    "serverManagement": {
+      "title": "Server Management",
+      "summary": "Centralized maintenance of SSH servers, groups, authentication methods, and import/export.",
+      "serverList": {
+        "name": "Server List",
+        "description": "Display servers by group, support searching by name, address, and port.",
+        "usage": "Select a server in the left SSH panel, double-click or click to create a new session."
+      },
+      "groupManagement": {
+        "name": "Group Management",
+        "description": "Create groups for servers to distinguish environments, businesses, or customers.",
+        "usage": "Open group management from session menu or left toolbar, adjust and save."
+      },
+      "importExport": {
+        "name": "Import/Export",
+        "description": "Export server list or complete software configuration, can also export with encrypted credentials.",
+        "usage": "Select import or export from file menu, desktop version will prefer using files."
+      },
+      "serverReorder": {
+        "name": "Server Reorder",
+        "description": "Support moving up/down to adjust server display order in the list.",
+        "usage": "Click the top-right menu of server card, select move up or move down."
+      }
+    },
+    "terminalSession": {
+      "title": "Terminal Session",
+      "summary": "Manage multiple SSH sessions, retain terminal output, and track remote paths.",
+      "multiSession": {
+        "name": "Multi-Session Tabs",
+        "description": "Each server can open independent session tabs.",
+        "usage": "Create session from left server list, switch or close in middle tab bar."
+      },
+      "commandHistory": {
+        "name": "Command History",
+        "description": "Record reusable commands, support copy, execute, and favorite.",
+        "usage": "Switch to history or favorites on the right, click command to fill or execute."
+      },
+      "terminalContext": {
+        "name": "Terminal Context",
+        "description": "AI reads recent terminal output, current command, and directory as context.",
+        "usage": "Adjust terminal context character count and retained lines in settings."
+      }
+    },
+    "aiAssistant": {
+      "title": "AI Assistant",
+      "summary": "Unified Q&A, error explanation, command generation, and Agent execution entry.",
+      "modelConfig": {
+        "name": "Model Configuration",
+        "description": "Support multiple OpenAI compatible models and Ollama models, and select current active item.",
+        "usage": "Add model in Settings > AI; Ollama address fill to /v1, e.g., http://host:11434/v1."
+      },
+      "unifiedInput": {
+        "name": "Unified AI Input",
+        "description": "Directly input questions, goals, or let AI generate commands based on terminal content.",
+        "usage": "Input requirements in right AI panel, Ctrl+Enter or send button to submit."
+      },
+      "agentMode": {
+        "name": "Agent Mode",
+        "description": "Review mode requires manual command execution, auto mode automatically advances low-risk commands, full-auto mode directly executes all commands.",
+        "usage": "Select review, auto, or full-auto below AI input box; full-auto mode won't intercept high-risk commands."
+      },
+      "thinkingControl": {
+        "name": "Thinking Control",
+        "description": "Can disable Agent thinking to reduce Qwen/Ollama long-time reasoning.",
+        "usage": "Disable 'Enable Agent Thinking' in Settings > AI."
+      },
+      "commandPrediction": {
+        "name": "Command Prediction",
+        "description": "Predict next possible command based on terminal context.",
+        "usage": "View prediction in terminal area, enable prediction thinking to observe model reasoning fragments."
+      },
+      "customPrompt": {
+        "name": "Custom Prompt",
+        "description": "Support completely overriding default system prompt, customize AI behavior rules.",
+        "usage": "Fill custom prompt in Settings > AI, check override option."
+      },
+      "longTaskOptimization": {
+        "name": "Long Task Optimization",
+        "description": "Increase token/context/steps limits, intelligent command timeout and output truncation.",
+        "usage": "Suitable for installation, deployment and other long tasks, Agent can automatically execute multi-step operations."
+      }
+    },
+    "batchTask": {
+      "title": "Batch Task",
+      "summary": "Select multiple servers, let AI execute the same natural language task in sequence.",
+      "batchSelection": {
+        "name": "Batch Selection",
+        "description": "Enable batch mode on the left and check target servers.",
+        "usage": "Right AI area will show selected server tags, click x on tag to uncheck."
+      },
+      "sequentialExecution": {
+        "name": "Sequential Execution",
+        "description": "Batch task will connect servers in checked order and advance Agent.",
+        "usage": "Input task description and click lightning button, execution card will show each status."
+      },
+      "finalSummary": {
+        "name": "Final Summary",
+        "description": "After batch completion, will summarize success, failure, and each execution summary.",
+        "usage": "View batch task records and final summary in AI conversation history."
+      }
+    },
+    "fileTransfer": {
+      "title": "File & Transfer",
+      "summary": "Browse remote directories, preview, edit, and transfer files.",
+      "filePanel": {
+        "name": "File Panel",
+        "description": "View current server directory, sort and search files.",
+        "usage": "Open file panel from top transfer menu, can also follow terminal current directory."
+      },
+      "previewEdit": {
+        "name": "Preview & Edit",
+        "description": "Text files can be directly previewed and edited, images and videos can be previewed.",
+        "usage": "Open file in file list, edit and save to remote server."
+      },
+      "uploadDownload": {
+        "name": "Upload & Download",
+        "description": "Support uploading local files to remote directory and downloading remote files.",
+        "usage": "Use transfer menu or file panel buttons to initiate transfer."
+      }
+    },
+    "logSecurity": {
+      "title": "Log & Security",
+      "summary": "View runtime logs, adjust login policies, and troubleshoot AI/provider issues.",
+      "runtimeLog": {
+        "name": "Runtime Log",
+        "description": "View runtime records of core, AI, authentication, and UI.",
+        "usage": "Search source=ai or interface path in Tools > Logs to troubleshoot issues."
+      },
+      "webLogin": {
+        "name": "Web Login",
+        "description": "Can require Web access login, can also require desktop startup login.",
+        "usage": "Adjust login policy or change password in Settings > Security."
+      },
+      "errorNotification": {
+        "name": "Error Notification",
+        "description": "Bottom-right error card will show source, interface, and detailed information.",
+        "usage": "When encountering AI or SSH errors, first check details, then check complete context in logs."
+      }
+    },
+    "keyboardShortcuts": {
+      "title": "Keyboard Shortcuts",
+      "summary": "Shortcut key list to improve operation efficiency.",
+      "global": {
+        "name": "Global Shortcuts",
+        "description": "Ctrl+N new session, Ctrl+W close session, Ctrl+Tab switch session, Ctrl+, open settings.",
+        "usage": "Global shortcuts can be used in any interface."
+      },
+      "terminal": {
+        "name": "Terminal Shortcuts",
+        "description": "Ctrl+C copy, Ctrl+V paste, Ctrl+L clear screen, Tab accept prediction.",
+        "usage": "Use in terminal area, Tab key can accept AI predicted command."
+      },
+      "ai": {
+        "name": "AI Shortcuts",
+        "description": "Ctrl+Space trigger prediction, Enter send message, Escape clear input.",
+        "usage": "Use shortcuts in AI input box to improve efficiency."
+      }
+    },
+    "multiLanguage": {
+      "title": "Multi-Language Support",
+      "summary": "Support Chinese/English switching, convenient for international users.",
+      "languageSwitch": {
+        "name": "Language Switch",
+        "description": "Switch interface language in settings, support Chinese and English.",
+        "usage": "Settings > General > Language, select Chinese or English."
+      },
+      "autoSave": {
+        "name": "Auto Save",
+        "description": "Language preference will be automatically saved locally, automatically applied on next startup.",
+        "usage": "No need to manually save after switching language, system will automatically remember your choice."
+      }
+    }
   }
 }
