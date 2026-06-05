@@ -319,6 +319,7 @@ export function App() {
   const aiPredictionCursorRef = useRef<Record<string, number>>({})
   const aiPredictionCycleStartedRef = useRef<Record<string, boolean>>({})
   const terminalLineBufferRef = useRef<Record<string, string>>({})
+  const aiMessageListPinnedToBottomRef = useRef(true)
   const batchAbortRef = useRef(false)
   const batchHostResultsRef = useRef<BatchHostResult[]>([])
   const batchConversationIdRef = useRef('')
@@ -1640,13 +1641,29 @@ export function App() {
     activeAIConversationIdRef.current = activeAIConversationId
   }, [activeAIConversationId])
 
+  const handleAIMessageListScroll = () => {
+    const element = aiMessageListRef.current
+    if (!element) {
+      return
+    }
+    const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+    aiMessageListPinnedToBottomRef.current = distanceToBottom <= 24
+  }
+
   useEffect(() => {
     const element = aiMessageListRef.current
     if (!element) {
       return
     }
+    if (!aiMessageListPinnedToBottomRef.current) {
+      return
+    }
     element.scrollTop = element.scrollHeight
   }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, activeSessionId, agentStateBySession, isAIHistoryOpen])
+
+  useEffect(() => {
+    aiMessageListPinnedToBottomRef.current = true
+  }, [activeSessionId, activeAIConversationId, isAIHistoryOpen])
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -5493,6 +5510,7 @@ export function App() {
                 aiAssistantState={aiAssistantState}
                 aiConversations={aiConversations}
                 aiMessageListRef={aiMessageListRef}
+                onAiMessageListScroll={handleAIMessageListScroll}
                 aiMessages={aiMessages}
                 aiUnifiedInputPlaceholder={aiUnifiedInputPlaceholder}
                 aiUnifiedInputValue={aiUnifiedInputValue}

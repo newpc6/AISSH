@@ -36,6 +36,7 @@ type AIWorkspacePanelProps = {
   activeAIModelLabel: string
   activeAIModelTitle: string
   aiMessageListRef: RefObject<HTMLDivElement | null>
+  onAiMessageListScroll: () => void
   batchCardsRef: RefObject<HTMLDivElement | null>
   renderAIMessage: (message: AIChatMessageDraft) => ReactNode
   renderMarkdown: (content: string, fallback?: string) => ReactNode
@@ -87,6 +88,7 @@ export function AIWorkspacePanel({
   activeAIModelLabel,
   activeAIModelTitle,
   aiMessageListRef,
+  onAiMessageListScroll,
   batchCardsRef,
   renderAIMessage,
   renderMarkdown,
@@ -152,7 +154,7 @@ export function AIWorkspacePanel({
             </div>
           </aside>
         ) : null}
-        <div className="ai-message-list" ref={aiMessageListRef}>
+        <div className="ai-message-list" ref={aiMessageListRef} onScroll={onAiMessageListScroll}>
           {isPreviewingHistory && liveAIConversationId ? (
             <div className="ai-history-preview-banner">
               <span>当前正在查看历史对话，实时任务仍会继续写入当前 SSH 的任务对话。</span>
