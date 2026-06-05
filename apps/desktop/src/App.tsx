@@ -32,6 +32,7 @@ import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
 import { useAIUnifiedInput } from './hooks/useAIUnifiedInput'
 import { useAIConversationData } from './hooks/useAIConversationData'
+import { useAIConversationStrategy } from './hooks/useAIConversationStrategy'
 import { useAIMessageStore } from './hooks/useAIMessageStore'
 import { DEFAULT_SESSION_AGENT_STATE, useSessionAgentState } from './hooks/useSessionAgentState'
 import { useSessionAIConversationBinding } from './hooks/useSessionAIConversationBinding'
@@ -986,6 +987,32 @@ export function App() {
     removeConversationReferences,
     setSessionStepsFromMessages: setAgentStepsForSession,
   })
+  const {
+    currentConversationContext,
+    ensureAIConversation,
+    resolveAgentGoal,
+    selectAIConversation,
+  } = useAIConversationStrategy({
+    activeConversationIdRef: activeAIConversationIdRef,
+    activeSessionIdRef,
+    aiMessagesRef,
+    aiUnifiedPrompt,
+    aiAssistantResponse,
+    clearPreviewConversationId,
+    createAIConversation,
+    getLiveConversationId,
+    getSessionAgentState,
+    loadAIMessages,
+    normalizeConversationContextLimit: () => normalizeAppSettings(sessionSettingsRef.current).aiConversationContextLimit,
+    setActiveConversationId: (conversationId) => {
+      setActiveAIConversationId(conversationId)
+      activeAIConversationIdRef.current = conversationId
+    },
+    setAiAssistantResponse: () => setAiAssistantResponse(null),
+    setLiveConversationId,
+    resetAIStreamBuffers,
+    resetSessionAgentState,
+  })
 
   const {
     loadLogs,
@@ -1722,7 +1749,7 @@ export function App() {
     if (activeAIConversationIdRef.current === displayedConversationId) {
       return
     }
-    void selectAIConversation(displayedConversationId, { sessionId: activeSessionId, resetAgentState: false, bindToSession: false })
+    void selectAIConversationWithBinding(displayedConversationId, { sessionId: activeSessionId, resetAgentState: false, bindToSession: false })
   }, [activeSessionId, liveConversationIdBySession, previewConversationIdBySession])
 
   useEffect(() => {
@@ -3846,15 +3873,10 @@ export function App() {
     }
   }
 
-  const resolveAgentGoal = (fallback = '', sessionId = activeSessionIdRef.current) => {
-    return (
-      (sessionId ? getSessionAgentState(sessionId).goal.trim() : '') ||
-      aiUnifiedPrompt.trim() ||
-      aiAssistantResponse?.answer?.trim() ||
-      aiAssistantResponse?.summary?.trim() ||
-      fallback.trim()
-    )
-  }
+  const selectAIConversationWithBinding = (
+    conversationId: string,
+    options: { sessionId?: string; resetAgentState?: boolean; bindToSession?: boolean } = {},
+  ) => selectAIConversation(conversationId, options, setPreviewConversationId)
 
   const confirmDeleteAIConversation = (conversationId: string) => {
     const conversation = aiConversations.find((item) => item.id === conversationId)
@@ -3867,74 +3889,9 @@ export function App() {
       danger: true,
       onConfirm: () =>
         removeAIConversation(conversationId, async (nextConversationId, sessionId) => {
-          await selectAIConversation(nextConversationId, { sessionId, resetAgentState: false, bindToSession: false })
+          await selectAIConversationWithBinding(nextConversationId, { sessionId, resetAgentState: false, bindToSession: false })
         }),
     })
-  }
-
-  const ensureAIConversation = async (title = '新对话', sessionId = activeSessionIdRef.current) => {
-    const liveConversationId = sessionId ? getLiveConversationId(sessionId) : ''
-    if (liveConversationId) {
-      if (activeAIConversationIdRef.current !== liveConversationId) {
-        setActiveAIConversationId(liveConversationId)
-        activeAIConversationIdRef.current = liveConversationId
-      }
-      clearPreviewConversationId(sessionId)
-      return liveConversationId
-    }
-    if (activeAIConversationIdRef.current && sessionId) {
-      setLiveConversationId(sessionId, activeAIConversationIdRef.current)
-      clearPreviewConversationId(sessionId)
-      return activeAIConversationIdRef.current
-    }
-    const conversation = await createAIConversation(title, sessionId)
-    return conversation.id
-  }
-
-  const selectAIConversation = async (
-    conversationId: string,
-    options: { sessionId?: string; resetAgentState?: boolean; bindToSession?: boolean } = {},
-  ) => {
-    const sessionId = options.sessionId ?? activeSessionIdRef.current
-    setActiveAIConversationId(conversationId)
-    activeAIConversationIdRef.current = conversationId
-    if (sessionId) {
-      if (options.bindToSession === false) {
-        setPreviewConversationId(sessionId, conversationId)
-      } else {
-        setLiveConversationId(sessionId, conversationId)
-        clearPreviewConversationId(sessionId)
-      }
-    }
-    setAiAssistantResponse(null)
-    resetAIStreamBuffers()
-    if (options.resetAgentState !== false && sessionId) {
-      setAgentStepsForSession(sessionId, [])
-      updateSessionAgentState(sessionId, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
-    }
-    await loadAIMessages(conversationId, sessionId)
-  }
-
-  const currentConversationContext = (conversationId = activeAIConversationIdRef.current) => {
-    const limit = normalizeAppSettings(sessionSettingsRef.current).aiConversationContextLimit
-    return aiMessagesRef.current
-      .filter(
-        (message) =>
-          message.conversationId === conversationId &&
-          !message.pending &&
-          ['user', 'assistant', 'command', 'agent_step', 'agent_result'].includes(message.kind),
-      )
-      .slice(-limit)
-      .map((message) => {
-        const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
-        if (message.kind === 'agent_step' && message.step) {
-          const output = message.step.output ? `\n输出摘要: ${message.step.output.slice(-2000)}` : ''
-          const exitCode = typeof message.step.exitCode === 'number' ? `\n退出码: ${message.step.exitCode}` : ''
-          return `${label}: ${message.step.command || message.content}\n状态: ${message.step.status}${exitCode}${output}`
-        }
-        return `${label}: ${message.content}`
-      })
-      .join('\n')
   }
 
   const requestAIAssistStream = async (
@@ -5996,7 +5953,7 @@ export function App() {
                     return
                   }
                   clearPreviewConversationId(activeAgentSessionId)
-                  void selectAIConversation(liveAIConversationId, {
+                  void selectAIConversationWithBinding(liveAIConversationId, {
                     sessionId: activeAgentSessionId,
                     resetAgentState: false,
                     bindToSession: false,
@@ -6004,10 +5961,10 @@ export function App() {
                 }}
                 onSelectConversation={(conversationId) => {
                   if (!activeAgentSessionId) {
-                    void selectAIConversation(conversationId, { resetAgentState: false, bindToSession: false })
+                    void selectAIConversationWithBinding(conversationId, { resetAgentState: false, bindToSession: false })
                     return
                   }
-                  void selectAIConversation(conversationId, {
+                  void selectAIConversationWithBinding(conversationId, {
                     sessionId: activeAgentSessionId,
                     resetAgentState: false,
                     bindToSession: false,
