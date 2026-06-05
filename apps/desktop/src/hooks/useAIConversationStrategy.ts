@@ -107,7 +107,7 @@ export function useAIConversationStrategy({
   }
 
   const recentConversationContext = (conversationId = activeConversationIdRef.current || '', recentCount = 8) => {
-    return aiMessagesRef.current
+    const recent = aiMessagesRef.current
       .filter(
         (message) =>
           message.conversationId === conversationId &&
@@ -116,15 +116,23 @@ export function useAIConversationStrategy({
       )
       .slice(-Math.max(1, recentCount))
       .map((message) => {
-        const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
+        const label = message.kind === 'user' ? '???' : message.kind === 'command' ? 'AI???' : message.kind === 'agent_step' ? '??????' : 'AI'
         if (message.kind === 'agent_step' && message.step) {
-          const output = message.step.output ? `\n输出摘要: ${message.step.output.slice(-1200)}` : ''
-          const exitCode = typeof message.step.exitCode === 'number' ? `\n退出码: ${message.step.exitCode}` : ''
-          return `${label}: ${message.step.command || message.content}\n状态: ${message.step.status}${exitCode}${output}`
+          const output = message.step.output ? `
+??????: ${message.step.output.slice(-1200)}` : ''
+          const exitCode = typeof message.step.exitCode === 'number' ? `
+?????: ${message.step.exitCode}` : ''
+          return `${label}: ${message.step.command || message.content}
+???? ${message.step.status}${exitCode}${output}`
         }
         return `${label}: ${message.content}`
       })
       .join('\n')
+    const summary = currentConversationContext(conversationId)
+    if (!summary) {
+      return recent
+    }
+    return recent.startsWith(summary) ? recent.slice(summary.length).trimStart() : recent
   }
 
   const resolveAgentGoal = (fallback = '', sessionId = activeSessionIdRef.current || '') => {

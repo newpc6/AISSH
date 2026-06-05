@@ -3670,7 +3670,7 @@ export function App() {
       hostAddress: host.address,
       username: host.username,
     }
-    const requestCommand = payload.commandHistory[0] ?? ''
+    const requestCommand = history[0] ?? ''
     const hasNewerPredictionCommand = () => {
       const nextCommand = pendingAIPredictionCommandRef.current[sessionId]
       return Boolean(nextCommand && nextCommand !== requestCommand)
