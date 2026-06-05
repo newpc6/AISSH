@@ -4998,7 +4998,12 @@ ${recentContext}` : '',
       return (
         <article className="ai-message-card ai-status-line" key={message.id}>
           {renderAIMessageHeader(message.id, '状态', message.createdAt)}
-          {!collapsed ? renderMarkdown(message.content) : null}
+          {!collapsed ? (
+            <div className="ai-status-content loading">
+              <span aria-hidden="true" className="file-loading-spinner" />
+              {renderMarkdown(message.content)}
+            </div>
+          ) : null}
         </article>
       )
     }

@@ -180,7 +180,10 @@ export function AIWorkspacePanel({
               <header className="ai-message-header">
                 <strong>{agentState === 'error' ? '错误' : '状态'}</strong>
               </header>
-              {renderMarkdown(normalizedAgentMessage)}
+              <div className={`ai-status-content ${agentState === 'loading' ? 'loading' : ''}`}>
+                {agentState === 'loading' ? <span aria-hidden="true" className="file-loading-spinner" /> : null}
+                {renderMarkdown(normalizedAgentMessage)}
+              </div>
             </article>
           ) : null}
         </div>

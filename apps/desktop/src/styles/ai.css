@@ -526,6 +526,22 @@
   margin: 0;
 }
 
+.ai-status-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ai-status-content .file-loading-spinner {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.ai-status-content .markdown-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .ai-stream-card summary {
   display: flex;
   align-items: center;
