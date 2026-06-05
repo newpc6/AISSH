@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react'
 import type { AIModelProvider, AppSettings } from '@ai-ssh/shared-contracts'
 import type { SettingsSection } from '../../types'
+import { LanguageSwitcher } from '../common/LanguageSwitcher'
 
 const AI_PROVIDER_OPTIONS: Array<{ value: AIModelProvider; label: string }> = [
   { value: 'openai-compatible', label: 'OpenAI 兼容' },
@@ -176,6 +177,7 @@ export function SettingsDialog({
           <div className="settings-content">
             {settingsSection === 'general' ? (
               <>
+                <LanguageSwitcher />
                 <label>
                   <span>健康检查间隔（秒）</span>
                   <input

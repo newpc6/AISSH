@@ -947,3 +947,30 @@ code {
   cursor: not-allowed;
 }
 
+.language-switcher {
+  margin-bottom: 12px;
+}
+
+.language-switcher label {
+  display: grid;
+  gap: 6px;
+}
+
+.language-switcher select {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 12, 18, 0.72);
+  color: #edf2f7;
+  padding: 0 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+.language-switcher select:focus {
+  border-color: rgba(79, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+
+
