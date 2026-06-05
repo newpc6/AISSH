@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Terminal } from '@xterm/xterm'
@@ -197,6 +198,7 @@ const EMPTY_AI_PREDICTION_STATE: AIPredictionSessionState = {
 }
 
 export function App() {
+  const { t } = useTranslation()
   const [_health, setHealth] = useState<HealthResponse | null>(null)
   const [healthState, setHealthState] = useState<LoadState>('idle')
   const [authState, setAuthState] = useState<LoadState>('loading')
@@ -1713,7 +1715,7 @@ export function App() {
           activeAIConversationIdRef.current = first.id
           await loadAIMessages(first.id)
         } else {
-          await createAIConversation('新对话')
+          await createAIConversation(t('aiWorkspace.newConversation'))
         }
       } catch (error) {
         appendLog('warn', 'ui.ai', 'load ai conversations failed', { error: error instanceof Error ? error.message : String(error) })
@@ -4106,7 +4108,7 @@ ${recentContext}` : '',
     }
     let conversationId = activeAIConversationIdRef.current
     try {
-      conversationId = await ensureAIConversation(requestPrompt.slice(0, 24) || '新对话', sessionId)
+      conversationId = await ensureAIConversation(requestPrompt.slice(0, 24) || t('aiWorkspace.newConversation'), sessionId)
     } catch (error) {
       setAiAssistantError(error instanceof Error ? error.message : '创建 AI 对话失败')
       return
@@ -5236,16 +5238,16 @@ ${recentContext}` : '',
         </div>
         <nav className="menu-groups">
           {[
-            ['file', '文件'],
-            ['edit', '编辑'],
-            ['session', '会话'],
-            ['transfer', '传输'],
-            ['tools', '工具'],
-            ['settings', '设置'],
+            ['file', t('appMenu.file')],
+            ['edit', t('appMenu.edit')],
+            ['session', t('appMenu.session')],
+            ['transfer', t('appMenu.transfer')],
+            ['tools', t('appMenu.tools')],
+            ['settings', t('appMenu.settings')],
           ].map(([key, label]) => (
             <div className="menu-item" key={key}>
               <button
-                title={`打开${label}菜单`}
+                title={t('appMenu.openMenu', { label })}
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation()
@@ -5258,45 +5260,45 @@ ${recentContext}` : '',
                 <div className="top-dropdown" onClick={(event) => event.stopPropagation()}>
                   {key === 'file' ? (
                     <>
-                      <button type="button" title="新增 SSH 连接" onClick={openAddHostDialog}>新增连接</button>
-                      <button type="button" title="导出服务器列表" onClick={() => void exportHosts(false)}>{isTauriRuntime ? '导出服务器列表到文件' : '导出服务器列表（复制）'}</button>
-                      <button type="button" title="导出服务器列表并包含加密凭据" onClick={() => void exportHosts(true)}>{isTauriRuntime ? '导出服务器列表到文件（含凭据）' : '导出服务器列表（含凭据、复制）'}</button>
-                      <button type="button" title="导出软件配置" onClick={() => void exportSoftwareConfig()}>{isTauriRuntime ? '导出软件配置到文件' : '导出软件配置（复制）'}</button>
-                      <button type="button" title={isTauriRuntime ? '从文件导入服务器列表' : '从剪贴板导入服务器列表'} onClick={() => void importHostsFromClipboard()}>{isTauriRuntime ? '从文件导入服务器列表' : '导入服务器列表'}</button>
-                      <button type="button" title={isTauriRuntime ? '从文件导入软件配置' : '从剪贴板导入软件配置'} onClick={() => void importSoftwareConfig()}>{isTauriRuntime ? '从文件导入软件配置' : '导入软件配置'}</button>
+                      <button type="button" title={t('appMenu.addConnection')} onClick={openAddHostDialog}>{t('appMenu.addConnection')}</button>
+                      <button type="button" title={t('appMenu.exportHosts')} onClick={() => void exportHosts(false)}>{isTauriRuntime ? t('appMenu.exportHostsToFile') : t('appMenu.exportHostsCopy')}</button>
+                      <button type="button" title={t('appMenu.exportHostsWithSecrets')} onClick={() => void exportHosts(true)}>{isTauriRuntime ? t('appMenu.exportHostsToFileWithSecrets') : t('appMenu.exportHostsCopyWithSecrets')}</button>
+                      <button type="button" title={t('appMenu.exportConfig')} onClick={() => void exportSoftwareConfig()}>{isTauriRuntime ? t('appMenu.exportConfigToFile') : t('appMenu.exportConfigCopy')}</button>
+                      <button type="button" title={isTauriRuntime ? t('appMenu.importHostsFromFile') : t('appMenu.importHosts')} onClick={() => void importHostsFromClipboard()}>{isTauriRuntime ? t('appMenu.importHostsFromFile') : t('appMenu.importHosts')}</button>
+                      <button type="button" title={isTauriRuntime ? t('appMenu.importConfigFromFile') : t('appMenu.importConfig')} onClick={() => void importSoftwareConfig()}>{isTauriRuntime ? t('appMenu.importConfigFromFile') : t('appMenu.importConfig')}</button>
                     </>
                   ) : null}
                   {key === 'session' ? (
                     <>
-                      <button type="button" title="为当前选中服务器新建会话" onClick={() => void createSession()}>新建会话</button>
+                      <button type="button" title={t('appMenu.newSession')} onClick={() => void createSession()}>{t('appMenu.newSession')}</button>
                       <button
                         disabled={!activeSession || (activeSession.status !== 'error' && activeSession.status !== 'closed')}
-                        title="重连当前会话"
+                        title={t('appMenu.reconnectCurrent')}
                         type="button"
                         onClick={() => activeSession && void reconnectSession(activeSession)}
                       >
-                        重连当前
+                        {t('appMenu.reconnectCurrent')}
                       </button>
-                      <button type="button" title="管理 SSH 分组" onClick={openGroupDialog}>管理分组</button>
-                      <button disabled={!activeSession} title="关闭当前会话" type="button" onClick={() => activeSession && void closeSession(activeSession)}>
-                        关闭当前
+                      <button type="button" title={t('appMenu.manageGroups')} onClick={openGroupDialog}>{t('appMenu.manageGroups')}</button>
+                      <button disabled={!activeSession} title={t('appMenu.closeCurrent')} type="button" onClick={() => activeSession && void closeSession(activeSession)}>
+                        {t('appMenu.closeCurrent')}
                       </button>
                     </>
                   ) : null}
                   {key === 'transfer' ? (
                     <>
-                      <button type="button" title="上传文件到当前目录" onClick={() => void chooseUploadFiles()}>上传文件</button>
-                      <button type="button" title="打开远程文件面板" onClick={() => setLeftMode('files')}>打开文件</button>
+                      <button type="button" title={t('appMenu.uploadFiles')} onClick={() => void chooseUploadFiles()}>{t('appMenu.uploadFiles')}</button>
+                      <button type="button" title={t('appMenu.openFiles')} onClick={() => setLeftMode('files')}>{t('appMenu.openFiles')}</button>
                     </>
                   ) : null}
-                  {key === 'tools' ? <button type="button" title="查看运行日志" onClick={openLogDialog}>日志</button> : null}
+                  {key === 'tools' ? <button type="button" title={t('appMenu.logs')} onClick={openLogDialog}>{t('appMenu.logs')}</button> : null}
                   {key === 'settings' ? (
                     <>
-                      <button type="button" title="打开功能说明" onClick={openFeatureGuide}>功能说明</button>
-                      <button type="button" title="打开偏好设置" onClick={openSettingsDialog}>偏好设置</button>
+                      <button type="button" title={t('appMenu.featureGuide')} onClick={openFeatureGuide}>{t('appMenu.featureGuide')}</button>
+                      <button type="button" title={t('appMenu.preferences')} onClick={openSettingsDialog}>{t('appMenu.preferences')}</button>
                     </>
                   ) : null}
-                  {key === 'edit' ? <button type="button" title="复制选中内容" disabled>复制</button> : null}
+                  {key === 'edit' ? <button type="button" title={t('appMenu.copySelection')} disabled>{t('appMenu.copy')}</button> : null}
                 </div>
               ) : null}
             </div>
@@ -5322,7 +5324,7 @@ ${recentContext}` : '',
               <button
                 className="rail-toggle-button"
                 type="button"
-                title="展开左侧面板"
+                title={t('appMenu.expandLeftPanel')}
                 onClick={() => setIsLeftRailCollapsed(false)}
               >
                 ▸
@@ -5332,7 +5334,7 @@ ${recentContext}` : '',
           <div className="rail-tabs">
             <button
               className={leftMode === 'servers' ? 'active' : ''}
-              title="切换到 SSH 服务器列表"
+              title={t('appMenu.showServerList')}
               type="button"
               onClick={() => setLeftMode('servers')}
             >
@@ -5340,11 +5342,11 @@ ${recentContext}` : '',
             </button>
             <button
               className={leftMode === 'files' ? 'active' : ''}
-              title="切换到远程文件目录"
+              title={t('appMenu.showFilePanel')}
               type="button"
               onClick={() => setLeftMode('files')}
             >
-              文件
+              {t('appMenu.files')}
             </button>
           </div>
           )}
@@ -5421,7 +5423,7 @@ ${recentContext}` : '',
         </aside>
         {!isLeftRailCollapsed ? (
         <div
-          aria-label="调整左侧宽度"
+          aria-label={t('appMenu.resizeLeftPanel')}
           className="rail-resizer"
           role="separator"
           tabIndex={0}
@@ -5500,11 +5502,11 @@ ${recentContext}` : '',
         </main>
 
         <div
-          aria-label="拖动调整右侧区域宽度"
+          aria-label={t('appMenu.resizeRightPanelWidth')}
           className="right-rail-width-resizer"
           role="separator"
           tabIndex={0}
-          title="拖动调整右侧当前服务器和 AI 区域宽度"
+          title={t('appMenu.resizeRightPanelWidth')}
           onPointerDown={startRightPanelWidthResize}
         />
 
@@ -5527,11 +5529,11 @@ ${recentContext}` : '',
           />
 
           <div
-            aria-label="拖动调整右侧命令区域高度"
+            aria-label={t('appMenu.resizeRightPanelHeight')}
             className="right-panel-resizer"
             role="separator"
             tabIndex={0}
-            title="拖动调整右侧当前服务器和命令区域的高度"
+            title={t('appMenu.resizeRightPanelHeight')}
             onPointerDown={startRightToolResize}
           />
 
@@ -5539,7 +5541,7 @@ ${recentContext}` : '',
             <div className="tool-tabs">
               <button
                 className={rightTool === 'ai' ? 'active' : ''}
-                title="切换到 AI 工具"
+                title={t('appMenu.showAI')}
                 type="button"
                 onClick={() => setRightTool('ai')}
               >
@@ -5547,19 +5549,19 @@ ${recentContext}` : '',
               </button>
               <button
                 className={rightTool === 'history' ? 'active' : ''}
-                title="切换到历史命令"
+                title={t('appMenu.showHistory')}
                 type="button"
                 onClick={() => setRightTool('history')}
               >
-                历史
+                {t('appMenu.history')}
               </button>
               <button
                 className={rightTool === 'favorites' ? 'active' : ''}
-                title="切换到收藏命令"
+                title={t('appMenu.showFavorites')}
                 type="button"
                 onClick={() => setRightTool('favorites')}
               >
-                收藏
+                {t('appMenu.favorites')}
               </button>
             </div>
 
@@ -5569,8 +5571,10 @@ ${recentContext}` : '',
                 activeAIConversationId={activeAIConversationId}
                 liveAIConversationId={liveAIConversationId}
                 isPreviewingHistory={isPreviewingAIHistory}
-                activeAIModelLabel={activeAIModelConfig?.model || activeAIModelConfig?.name || '未配置'}
-                activeAIModelTitle={activeAIModelConfig ? `当前模型：${activeAIModelConfig.model || activeAIModelConfig.name}` : '未配置 AI 模型'}
+                activeAIModelLabel={activeAIModelConfig?.model || activeAIModelConfig?.name || t('appMenu.unconfigured')}
+                activeAIModelTitle={activeAIModelConfig
+                  ? t('appMenu.currentModel', { model: activeAIModelConfig.model || activeAIModelConfig.name })
+                  : t('appMenu.unconfiguredModel')}
                 agentMode={activeAgentMode}
                 agentState={agentState}
                 aiAssistantError={aiAssistantError}
@@ -5600,7 +5604,7 @@ ${recentContext}` : '',
                 onClearAiInput={() => { updateAiUnifiedInputValue(''); setAiAssistantError('') }}
                 onCloseBatchHostCard={closeBatchHostCard}
                 onContinueAgentTask={() => continueAgentTask(activeAgentSessionId)}
-                onCreateConversation={() => { void createAIConversation('新对话') }}
+                onCreateConversation={() => { void createAIConversation(t('aiWorkspace.newConversation')) }}
                 onDeleteConversation={confirmDeleteAIConversation}
                 onLoadMoreConversations={() => { void loadAIConversations(false) }}
                 onRemoveBatchSelectedHost={removeBatchSelectedHost}

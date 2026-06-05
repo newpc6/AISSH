@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { HostRecord } from '@ai-ssh/shared-contracts'
 import type { HostGroupView } from '../../types'
 
@@ -49,6 +50,8 @@ export function ServersPanel({
   onToggleBatchHost,
   onToggleBatchMode,
 }: ServersPanelProps) {
+  const { t } = useTranslation()
+
   const handleHostKeyDown = (event: KeyboardEvent<HTMLDivElement>, hostId: string) => {
     if (event.key === 'Enter') {
       void onCreateSession(hostId)
@@ -63,40 +66,40 @@ export function ServersPanel({
   return (
     <div className="left-content">
       <div className="panel-toolbar">
-        <strong>服务器</strong>
+        <strong>{t('servers.title')}</strong>
         <div className="toolbar-actions">
-          <button type="button" title="折叠左侧面板" onClick={onCollapse}>
-            ◁
+          <button type="button" title={t('serversPanel.collapse')} onClick={onCollapse}>
+            ◀
           </button>
           <div className="toolbar-segment toolbar-mode-group">
             <button
               type="button"
               className={batchMode ? 'batch-mode-active' : ''}
-              title="批量任务模式"
+              title={t('serversPanel.batchMode')}
               onClick={onToggleBatchMode}
             >
-              批量
+              {t('serversPanel.batch')}
             </button>
           </div>
           <div className="toolbar-segment toolbar-action-group">
-            <button type="button" title="新增 SSH 连接" onClick={onOpenAddHostDialog}>
+            <button type="button" title={t('serversPanel.addConnection')} onClick={onOpenAddHostDialog}>
               +
             </button>
-            <button type="button" title="管理 SSH 分组" onClick={onOpenGroupDialog}>
-              分组
+            <button type="button" title={t('serversPanel.manageGroups')} onClick={onOpenGroupDialog}>
+              {t('servers.groups')}
             </button>
-            <button type="button" title="导出服务器列表" onClick={() => void onExportHosts(false)}>
-              ⇅
+            <button type="button" title={t('serversPanel.exportHosts')} onClick={() => void onExportHosts(false)}>
+              ⇩
             </button>
           </div>
         </div>
       </div>
       <label className="server-search">
-        <span>搜索服务器</span>
+        <span>{t('serversPanel.search')}</span>
         <input
           type="search"
           value={serverSearch}
-          placeholder="名称、IP、端口"
+          placeholder={t('serversPanel.searchPlaceholder')}
           onChange={(event) => onServerSearchChange(event.target.value)}
         />
       </label>
@@ -104,13 +107,13 @@ export function ServersPanel({
       <div className="server-groups">
         {visibleHostCount === 0 ? (
           <p className="server-search-empty">
-            {serverSearch.trim() ? '没有匹配的服务器' : '暂无服务器'}
+            {serverSearch.trim() ? t('serversPanel.noMatch') : t('serversPanel.empty')}
           </p>
         ) : null}
         {visibleHostGroups.map((group) => (
           <section className="server-group" key={group.name}>
             <p>{group.name}<span>{group.hosts.length}</span></p>
-            {group.hosts.length === 0 ? <small className="empty-group-text">空分组</small> : null}
+            {group.hosts.length === 0 ? <small className="empty-group-text">{t('serversPanel.emptyGroup')}</small> : null}
             {group.hosts.map((host) => (
               <div
                 key={host.id}
@@ -122,7 +125,7 @@ export function ServersPanel({
                 onKeyDown={(event) => handleHostKeyDown(event, host.id)}
               >
                 {batchMode ? (
-                  <label className="batch-checkbox" onClick={(event) => event.stopPropagation()} title="勾选批量执行">
+                  <label className="batch-checkbox" onClick={(event) => event.stopPropagation()} title={t('serversPanel.selectBatch')}>
                     <input
                       type="checkbox"
                       checked={batchSelectedHostIds.includes(host.id)}
@@ -143,8 +146,8 @@ export function ServersPanel({
                         className="host-move-btn"
                         type="button"
                         disabled={flatHostIds.indexOf(host.id) <= 0}
-                        title="上移"
-                        aria-label={`${host.name} 上移`}
+                        title={t('servers.moveUp')}
+                        aria-label={t('serversPanel.moveUpHost', { name: host.name })}
                         onClick={(event) => {
                           event.stopPropagation()
                           void onMoveHost(host.id, 'up')
@@ -156,8 +159,8 @@ export function ServersPanel({
                         className="host-move-btn"
                         type="button"
                         disabled={flatHostIds.indexOf(host.id) >= flatHostIds.length - 1}
-                        title="下移"
-                        aria-label={`${host.name} 下移`}
+                        title={t('servers.moveDown')}
+                        aria-label={t('serversPanel.moveDownHost', { name: host.name })}
                         onClick={(event) => {
                           event.stopPropagation()
                           void onMoveHost(host.id, 'down')
@@ -168,9 +171,9 @@ export function ServersPanel({
                     </>
                   ) : null}
                   <button
-                    aria-label={`${host.name} 菜单`}
+                    aria-label={t('serversPanel.hostMenu', { name: host.name })}
                     className="host-menu-trigger"
-                    title={`${host.name} 更多操作`}
+                    title={t('serversPanel.hostActions', { name: host.name })}
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation()
@@ -182,11 +185,11 @@ export function ServersPanel({
                 </div>
                 {openHostMenuId === host.id ? (
                   <div className="host-menu" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" title="编辑服务器配置" onClick={() => onOpenEditHostDialog(host)}>编辑</button>
-                    <button type="button" title="连接此服务器" onClick={() => void onCreateSession(host.id)}>连接</button>
-                    <button type="button" title="复制一份服务器配置" onClick={() => void onDuplicateHost(host)}>复制配置</button>
-                    <button className="danger-item" type="button" title="删除此服务器" onClick={() => onConfirmDeleteHost(host)}>
-                      删除
+                    <button type="button" title={t('serversPanel.editServer')} onClick={() => onOpenEditHostDialog(host)}>{t('app.edit')}</button>
+                    <button type="button" title={t('serversPanel.connectServer')} onClick={() => void onCreateSession(host.id)}>{t('servers.connect')}</button>
+                    <button type="button" title={t('serversPanel.duplicateServer')} onClick={() => void onDuplicateHost(host)}>{t('serversPanel.duplicate')}</button>
+                    <button className="danger-item" type="button" title={t('serversPanel.deleteServer')} onClick={() => onConfirmDeleteHost(host)}>
+                      {t('app.delete')}
                     </button>
                   </div>
                 ) : null}

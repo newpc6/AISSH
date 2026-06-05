@@ -1,4 +1,5 @@
 import type { CSSProperties, PointerEvent, RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { HostRecord, SessionRecord } from '@ai-ssh/shared-contracts'
 import type {
   AIPredictionSessionState,
@@ -74,6 +75,7 @@ export function TerminalStage({
   onStartPredictionPanelResize,
   onToggleFavoriteCommand,
 }: TerminalStageProps) {
+  const { t } = useTranslation()
   const showTerminalSurface = Boolean(activeSession) && !isFilePreviewActive
 
   return (
@@ -89,16 +91,16 @@ export function TerminalStage({
             </span>
           </div>
           <span className={`session-pill session-${activeSession.status}`}>
-            {sessionStatusLabel(activeSession.status)}
+            {sessionStatusLabel(activeSession.status, t)}
           </span>
           {activeSession.status === 'error' || activeSession.status === 'closed' ? (
             <button
               className="terminal-reconnect"
               type="button"
-              title="重连当前 SSH 会话"
+              title={t('terminalStage.reconnectSession')}
               onClick={() => void onReconnectSession(activeSession)}
             >
-              重连
+              {t('servers.reconnect')}
             </button>
           ) : null}
         </div>
@@ -115,7 +117,7 @@ export function TerminalStage({
               height: predictionGhostPosition.height,
             }}
             type="button"
-            title="应用 AI 预测命令"
+            title={t('terminalStage.applyPrediction')}
             onClick={onApplyPrediction}
           >
             {primaryPrediction}
@@ -126,36 +128,36 @@ export function TerminalStage({
             className="terminal-selection-ai-button"
             style={{ left: terminalSelectionAction.left, top: terminalSelectionAction.top }}
             type="button"
-            title="把当前选中的终端文本加入 AI 输入框"
+            title={t('terminalStage.addSelectionToAI')}
             onClick={onAddTerminalSelectionToAI}
           >
-            加入 AI
+            {t('terminalStage.addToAI')}
           </button>
         ) : null}
         {!activeSession && !isFilePreviewActive ? (
           <div className="terminal-empty">
             <div className="terminal-empty-intro">
-              <p className="section-label">快速连接</p>
-              <h2>选择一个服务器开始 SSH 会话</h2>
-              <p className="terminal-empty-subtitle">双击左侧服务器卡片可以直接连接，或者从最近连接的服务器开始。</p>
+              <p className="section-label">{t('terminalStage.quickConnect')}</p>
+              <h2>{t('terminalStage.emptyTitle')}</h2>
+              <p className="terminal-empty-subtitle">{t('terminalStage.emptySubtitle')}</p>
             </div>
             <div className="recent-hosts-panel">
               <div className="recent-hosts-header">
-                <strong>最近连接</strong>
-                <span>{recentHosts.length > 0 ? '从这里恢复常用服务器连接' : '先添加一个服务器开始使用'}</span>
+                <strong>{t('terminalStage.recentHosts')}</strong>
+                <span>{recentHosts.length > 0 ? t('terminalStage.recentHostsHint') : t('terminalStage.addHostHint')}</span>
               </div>
               <div className="recent-hosts">
                 {recentHosts.length > 0 ? (
                   recentHosts.map((host) => (
-                    <button key={host.id} type="button" title={`连接 ${host.name}`} onClick={() => void onCreateSession(host.id)}>
+                    <button key={host.id} type="button" title={t('terminalStage.connectHost', { name: host.name })} onClick={() => void onCreateSession(host.id)}>
                       <strong title={host.name}>{host.name}</strong>
                       <span>{host.username}@{host.address}:{host.port}</span>
                     </button>
                   ))
                 ) : (
-                  <button type="button" title="新增 SSH 连接" onClick={onOpenAddHostDialog}>
-                    <strong>新增 SSH 连接</strong>
-                    <span>保存后双击服务器卡片即可连接</span>
+                  <button type="button" title={t('terminalStage.addConnection')} onClick={onOpenAddHostDialog}>
+                    <strong>{t('terminalStage.addConnection')}</strong>
+                    <span>{t('terminalStage.addConnectionHint')}</span>
                   </button>
                 )}
               </div>
@@ -170,35 +172,35 @@ export function TerminalStage({
         >
           {!isPredictionDockCollapsed ? (
             <div
-              aria-label="拖动调整 AI 预测区域高度"
+              aria-label={t('terminalStage.resizePredictionPanel')}
               className="prediction-panel-resizer"
               role="separator"
               tabIndex={0}
-              title="拖动调整 AI 预测区域高度"
+              title={t('terminalStage.resizePredictionPanel')}
               onPointerDown={onStartPredictionPanelResize}
             />
           ) : null}
           <div className="terminal-prediction-header">
             <div>
-              <strong>AI 预测</strong>
+              <strong>{t('terminalStage.predictionTitle')}</strong>
               <span>{activeSession.hostName}</span>
             </div>
-            <label className="prediction-toggle" title="开启后只针对手动输入的命令预测下一步">
+            <label className="prediction-toggle" title={t('terminalStage.autoPredictionHint')}>
               <input
                 checked={aiPredictionEnabled}
                 disabled={!aiEnabled}
                 onChange={(event) => onSetAIPredictionEnabled(event.target.checked)}
                 type="checkbox"
               />
-              <span>自动预测</span>
+              <span>{t('terminalStage.autoPrediction')}</span>
             </label>
             <button
               className="prediction-collapse-button"
               type="button"
-              title={isPredictionDockCollapsed ? '展开 AI 预测区域' : '收起 AI 预测区域'}
+              title={isPredictionDockCollapsed ? t('terminalStage.expandPredictionPanel') : t('terminalStage.collapsePredictionPanel')}
               onClick={() => onSetIsPredictionDockCollapsed((current) => !current)}
             >
-              <span aria-hidden="true">{isPredictionDockCollapsed ? '▾' : '▴'}</span>
+              <span aria-hidden="true">{isPredictionDockCollapsed ? '▴' : '▾'}</span>
             </button>
           </div>
           {!isPredictionDockCollapsed ? (
@@ -206,7 +208,7 @@ export function TerminalStage({
               {activePrediction.state === 'loading' ? (
                 <div className="prediction-loading">
                   <span aria-hidden="true" className="file-loading-spinner" />
-                  <span>正在流式预测下一步命令...</span>
+                  <span>{t('terminalStage.streamingPrediction')}</span>
                 </div>
               ) : null}
               {activePrediction.thinking ? (
@@ -220,13 +222,13 @@ export function TerminalStage({
                     onSetPredictionThinkingExpanded(event.currentTarget.open, activeSession.id)
                   }}
                 >
-                  <summary>预测思考 <span className="collapse-icon">▾</span></summary>
+                  <summary>{t('terminalStage.predictionThinking')} <span className="collapse-icon">▾</span></summary>
                   <pre>{activePrediction.thinking}</pre>
                 </details>
               ) : null}
               {activePrediction.streamingContent && activePredictions.length === 0 ? (
                 <article className="ai-stream-card compact-stream">
-                  <strong>预测内容</strong>
+                  <strong>{t('terminalStage.predictionContent')}</strong>
                   <pre>{activePrediction.streamingContent}</pre>
                 </article>
               ) : null}
@@ -243,16 +245,16 @@ export function TerminalStage({
                         <button
                           className="command-main"
                           type="button"
-                          title={`切换到第 ${index + 1} 条 AI 预测命令`}
+                          title={t('terminalStage.switchPrediction', { index: index + 1 })}
                           onClick={() => onSelectPrediction(index)}
                         >
-                          <strong>{index === activePredictionIndex ? '当前建议' : `建议 ${index + 1}`}</strong>
+                          <strong>{index === activePredictionIndex ? t('terminalStage.currentSuggestion') : t('terminalStage.suggestion', { index: index + 1 })}</strong>
                           <code>{command}</code>
                         </button>
                         <button
                           className={`favorite-command-button ${favorited ? 'active' : ''}`}
                           type="button"
-                          title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                          title={favorited ? t('terminalStage.unfavoriteCommand', { command }) : t('terminalStage.favoriteCommand', { command })}
                           onClick={() => onToggleFavoriteCommand(command)}
                         >
                           {favorited ? '★' : '☆'}
@@ -260,19 +262,19 @@ export function TerminalStage({
                         <button
                           className="copy-command-button"
                           type="button"
-                          title={`复制命令：${command}`}
+                          title={t('terminalStage.copyCommand', { command })}
                           onClick={() => void onCopyCommand(command)}
                         >
-                          复制
+                          {t('terminalStage.copy')}
                         </button>
                         <button
                           className="execute-command-button"
                           disabled={!activeSessionConnected}
                           type="button"
-                          title={`执行 AI 预测命令：${command}`}
+                          title={t('terminalStage.executePrediction', { command })}
                           onClick={() => onExecuteCommand(command)}
                         >
-                          执行
+                          {t('terminalStage.execute')}
                         </button>
                       </div>
                     )
@@ -280,7 +282,7 @@ export function TerminalStage({
                 </div>
               ) : null}
               {activePredictions.length > 0 ? (
-                <p className="hint-text">空命令行按 Tab 循环切换建议，按回车执行当前建议；按 Shift+Tab 可手动重新触发预测，选中文本后按 Ctrl+Insert 可复制，输入其他字符会清空建议。</p>
+                <p className="hint-text">{t('terminalStage.predictionHint')}</p>
               ) : null}
             </div>
           ) : null}

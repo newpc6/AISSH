@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 type CommandHistoryPanelProps = {
   commandHistory: string[]
   isFavoriteCommand: (command: string) => boolean
@@ -17,10 +19,12 @@ export function CommandHistoryPanel({
   onCopyCommand,
   onExecuteCommand,
 }: CommandHistoryPanelProps) {
+  const { t } = useTranslation()
+
   return (
     <div className="history-list">
       {commandHistory.length === 0 ? (
-        <p className="hint-text">暂无历史命令</p>
+        <p className="hint-text">{t('commandPanels.historyEmpty')}</p>
       ) : (
         commandHistory.map((command, index) => {
           const favorited = isFavoriteCommand(command)
@@ -29,7 +33,7 @@ export function CommandHistoryPanel({
               <button
                 className="command-main"
                 type="button"
-                title={`输入历史命令：${command}`}
+                title={t('commandPanels.useHistoryCommand', { command })}
                 onClick={() => onWriteCommand(command)}
               >
                 {command}
@@ -37,7 +41,7 @@ export function CommandHistoryPanel({
               <button
                 className={`favorite-command-button ${favorited ? 'active' : ''}`}
                 type="button"
-                title={favorited ? `取消收藏：${command}` : `收藏命令：${command}`}
+                title={favorited ? t('commandPanels.unfavorite', { command }) : t('commandPanels.favorite', { command })}
                 onClick={() => onToggleFavoriteCommand(command)}
               >
                 {favorited ? '★' : '☆'}
@@ -45,7 +49,7 @@ export function CommandHistoryPanel({
               <button
                 className="copy-command-button"
                 type="button"
-                title={`复制命令：${command}`}
+                title={t('commandPanels.copy', { command })}
                 onClick={() => onCopyCommand(command)}
               >
                 ⧉
@@ -54,7 +58,7 @@ export function CommandHistoryPanel({
                 className="execute-command-button"
                 disabled={!activeSessionConnected}
                 type="button"
-                title={`执行历史命令：${command}`}
+                title={t('commandPanels.executeHistoryCommand', { command })}
                 onClick={() => onExecuteCommand(command)}
               >
                 ▶

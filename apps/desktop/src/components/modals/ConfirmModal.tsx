@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { ConfirmDialogState } from '../../types'
 
 type ConfirmModalProps = {
@@ -7,6 +8,8 @@ type ConfirmModalProps = {
 }
 
 export function ConfirmModal({ dialog, onClose, onConfirm }: ConfirmModalProps) {
+  const { t } = useTranslation()
+
   if (!dialog) {
     return null
   }
@@ -19,19 +22,19 @@ export function ConfirmModal({ dialog, onClose, onConfirm }: ConfirmModalProps) 
             {dialog.section ? <p className="section-label">{dialog.section}</p> : null}
             <h3>{dialog.title}</h3>
           </div>
-          <button type="button" title="关闭确认" onClick={onClose}>×</button>
+          <button type="button" title={t('confirmModal.close')} onClick={onClose}>×</button>
         </div>
         <p className="confirm-copy">{dialog.message}</p>
         {dialog.detail ? <code className="confirm-command">{dialog.detail}</code> : null}
         <div className="modal-actions">
-          <button type="button" title="取消操作" onClick={onClose}>{dialog.cancelText ?? '取消'}</button>
+          <button type="button" title={t('confirmModal.cancel')} onClick={onClose}>{dialog.cancelText ?? t('app.cancel')}</button>
           <button
             className={dialog.danger ? 'danger-button' : 'primary-button'}
             type="button"
-            title="确认操作"
+            title={t('confirmModal.confirm')}
             onClick={onConfirm}
           >
-            {dialog.confirmText ?? '确认'}
+            {dialog.confirmText ?? t('app.confirm')}
           </button>
         </div>
       </section>

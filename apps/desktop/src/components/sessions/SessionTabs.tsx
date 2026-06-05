@@ -1,7 +1,8 @@
 import type { KeyboardEvent, RefObject, WheelEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { SessionRecord } from '@ai-ssh/shared-contracts'
 import type { FilePreviewTab } from '../../types'
-import { previewKindLabel, sessionStatusLabel } from '../../utils'
+import { sessionStatusLabel } from '../../utils'
 
 type SessionTabMenuState = {
   sessionId: string
@@ -46,6 +47,7 @@ export function SessionTabs({
   onCreateSession,
   onSessionTabMenuChange,
 }: SessionTabsProps) {
+  const { t } = useTranslation()
   const hasAnyTabs = sessions.length > 0 || filePreviewTabs.length > 0
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>, onEnter: () => void) => {
@@ -80,13 +82,13 @@ export function SessionTabs({
           tabIndex={0}
           onKeyDown={(event) => handleTabKeyDown(event, () => onActivateSession(session))}
         >
-          <span className={`tab-status tab-status-${session.status}`} title={sessionStatusLabel(session.status)} />
+          <span className={`tab-status tab-status-${session.status}`} title={sessionStatusLabel(session.status, t)} />
           <span className="tab-title">{session.hostName}</span>
           <button
             className="tab-close"
             type="button"
-            aria-label={`关闭 ${session.hostName}`}
-            title={`关闭 ${session.hostName}`}
+            aria-label={t('sessionTabs.closeSession', { name: session.hostName })}
+            title={t('sessionTabs.closeSession', { name: session.hostName })}
             onClick={(event) => {
               event.stopPropagation()
               void onCloseSession(session)
@@ -100,7 +102,7 @@ export function SessionTabs({
         <div
           key={tab.id}
           className={`session-tab file-preview-tab ${activeViewId === `file:${tab.id}` ? 'active' : ''}`}
-          title={`${tab.hostName} 路径 ${tab.path}`}
+          title={t('sessionTabs.fileTabTitle', { host: tab.hostName, path: tab.path })}
           onClick={() => onActivateFilePreview(tab.id)}
           role="button"
           tabIndex={0}
@@ -108,7 +110,7 @@ export function SessionTabs({
         >
           <span
             className={`tab-status tab-status-${tab.status === 'error' ? 'error' : tab.status === 'loading' ? 'connecting' : 'connected'}`}
-            title={previewKindLabel(tab.kind)}
+            title={t(`fileBrowser.kind.${tab.kind === 'binary' ? 'binary' : tab.kind}`)}
           />
           <span className="tab-title tab-file-title">
             <small>{tab.hostName}</small>
@@ -117,8 +119,8 @@ export function SessionTabs({
           <button
             className="tab-close"
             type="button"
-            aria-label={`关闭 ${tab.name}`}
-            title={`关闭 ${tab.name}`}
+            aria-label={t('sessionTabs.closeFile', { name: tab.name })}
+            title={t('sessionTabs.closeFile', { name: tab.name })}
             onClick={(event) => {
               event.stopPropagation()
               onCloseFilePreview(tab.id)
@@ -129,7 +131,7 @@ export function SessionTabs({
         </div>
       ))}
       {hasAnyTabs ? (
-        <button className="session-new" type="button" title="新建 SSH 会话" onClick={() => void onCreateSession()}>
+        <button className="session-new" type="button" title={t('sessionTabs.newSession')} onClick={() => void onCreateSession()}>
           +
         </button>
       ) : null}
@@ -142,54 +144,54 @@ export function SessionTabs({
         >
           <button
             type="button"
-            title="复制当前 SSH 连接信息"
+            title={t('sessionTabs.copySSHInfo')}
             onClick={() => {
               onSessionTabMenuChange(null)
               void onCopySessionSSHInfo(menuSession)
             }}
           >
-            复制 SSH
+            {t('sessionTabs.copySSH')}
           </button>
           <button
             type="button"
-            title="关闭当前 SSH 标签"
+            title={t('sessionTabs.closeCurrent')}
             onClick={() => {
               onSessionTabMenuChange(null)
               void onCloseSession(menuSession)
             }}
           >
-            关闭当前
+            {t('sessionTabs.closeCurrent')}
           </button>
           <button
             type="button"
-            title="关闭全部 SSH 标签"
+            title={t('sessionTabs.closeAll')}
             onClick={() => {
               onSessionTabMenuChange(null)
               void onCloseAllSessions()
             }}
           >
-            关闭全部
+            {t('sessionTabs.closeAll')}
           </button>
           <button
             type="button"
-            title="关闭其他 SSH 标签"
+            title={t('sessionTabs.closeOthers')}
             onClick={() => {
               onSessionTabMenuChange(null)
               void onCloseOtherSessions(menuSession)
             }}
           >
-            关闭其他
+            {t('sessionTabs.closeOthers')}
           </button>
           <button
             disabled={menuSessionIndex < 0 || menuSessionIndex >= sessions.length - 1}
             type="button"
-            title="关闭右侧 SSH 标签"
+            title={t('sessionTabs.closeRight')}
             onClick={() => {
               onSessionTabMenuChange(null)
               void onCloseSessionsToRight(menuSession)
             }}
           >
-            关闭右侧
+            {t('sessionTabs.closeRight')}
           </button>
         </div>
       ) : null}

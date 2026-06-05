@@ -250,10 +250,10 @@ export const isTauriRuntime = (() => {
 })()
 
 export function statusToLabel(state: LoadState) {
-  if (state === 'loading') return '连接 core 中'
-  if (state === 'success') return 'core 已连接'
-  if (state === 'error') return 'core 未连接'
-  return '等待检查'
+  if (state === 'loading') return 'core connecting'
+  if (state === 'success') return 'core connected'
+  if (state === 'error') return 'core disconnected'
+  return 'core checking'
 }
 
 export function isLikelyStatic405(response: Response) {
@@ -866,12 +866,22 @@ export function normalizeHostGroups(groups: HostGroup[], hosts: HostRecord[] = [
   return normalized
 }
 
-export function sessionStatusLabel(status: SessionRecord['status']) {
-  if (status === 'connected') return '已连接'
-  if (status === 'connecting') return '连接中'
-  if (status === 'error') return '已断开'
-  if (status === 'closed') return '已关闭'
-  return '空闲'
+export function sessionStatusLabel(
+  status: SessionRecord['status'],
+  t?: (key: string) => string,
+) {
+  if (t) {
+    if (status === 'connected') return t('sessionStatus.connected')
+    if (status === 'connecting') return t('sessionStatus.connecting')
+    if (status === 'error') return t('sessionStatus.error')
+    if (status === 'closed') return t('sessionStatus.closed')
+    return t('sessionStatus.idle')
+  }
+  if (status === 'connected') return 'connected'
+  if (status === 'connecting') return 'connecting'
+  if (status === 'error') return 'disconnected'
+  if (status === 'closed') return 'closed'
+  return 'idle'
 }
 
 export function truncateErrorDetail(value: string) {

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 type FavoriteCommandsPanelProps = {
   favoriteCommandDraft: string
   favoriteCommands: string[]
@@ -23,6 +25,8 @@ export function FavoriteCommandsPanel({
   onMoveFavoriteCommand,
   onConfirmDeleteFavoriteCommand,
 }: FavoriteCommandsPanelProps) {
+  const { t } = useTranslation()
+
   return (
     <div className="favorite-list">
       <form
@@ -33,14 +37,14 @@ export function FavoriteCommandsPanel({
         }}
       >
         <input
-          placeholder="手动添加收藏命令"
+          placeholder={t('commandPanels.favoritePlaceholder')}
           value={favoriteCommandDraft}
           onChange={(event) => onFavoriteCommandDraftChange(event.target.value)}
         />
-        <button type="submit" title="添加收藏命令">添加</button>
+        <button type="submit" title={t('commandPanels.addFavorite')}>{t('app.add')}</button>
       </form>
       {favoriteCommands.length === 0 ? (
-        <p className="hint-text">暂无收藏命令</p>
+        <p className="hint-text">{t('commandPanels.favoriteEmpty')}</p>
       ) : (
         favoriteCommands.map((command, index) => (
           <div className="command-row compact" key={command}>
@@ -48,7 +52,7 @@ export function FavoriteCommandsPanel({
             <button
               className="command-main"
               type="button"
-              title={`输入收藏命令：${command}`}
+              title={t('commandPanels.useFavoriteCommand', { command })}
               onClick={() => onWriteCommand(command)}
             >
               {command}
@@ -57,7 +61,7 @@ export function FavoriteCommandsPanel({
               className="execute-command-button"
               disabled={!activeSessionConnected}
               type="button"
-              title={`执行收藏命令：${command}`}
+              title={t('commandPanels.executeFavoriteCommand', { command })}
               onClick={() => onExecuteCommand(command)}
             >
               ▶
@@ -65,7 +69,7 @@ export function FavoriteCommandsPanel({
             <button
               className="copy-command-button"
               type="button"
-              title={`复制命令：${command}`}
+              title={t('commandPanels.copy', { command })}
               onClick={() => onCopyCommand(command)}
             >
               ⧉
@@ -75,7 +79,7 @@ export function FavoriteCommandsPanel({
                 className="favorite-command-button"
                 disabled={index === 0}
                 type="button"
-                title={`上移收藏命令：${command}`}
+                title={t('commandPanels.moveUp', { command })}
                 onClick={() => onMoveFavoriteCommand(index, -1)}
               >
                 ↑
@@ -84,7 +88,7 @@ export function FavoriteCommandsPanel({
                 className="favorite-command-button"
                 disabled={index === favoriteCommands.length - 1}
                 type="button"
-                title={`下移收藏命令：${command}`}
+                title={t('commandPanels.moveDown', { command })}
                 onClick={() => onMoveFavoriteCommand(index, 1)}
               >
                 ↓
@@ -93,7 +97,7 @@ export function FavoriteCommandsPanel({
             <button
               className="favorite-command-button danger"
               type="button"
-              title={`删除收藏命令：${command}`}
+              title={t('commandPanels.deleteFavorite', { command })}
               onClick={() => onConfirmDeleteFavoriteCommand(command)}
             >
               ×

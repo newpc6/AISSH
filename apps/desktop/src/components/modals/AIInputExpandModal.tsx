@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 type AIInputExpandModalProps = {
   open: boolean
   placeholder: string
@@ -17,6 +19,8 @@ export function AIInputExpandModal({
   onChange,
   onSubmit,
 }: AIInputExpandModalProps) {
+  const { t } = useTranslation()
+
   if (!open) {
     return null
   }
@@ -26,10 +30,10 @@ export function AIInputExpandModal({
       <section className="ai-input-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <p className="section-label">AI 输入框</p>
-            <h3>放大查看与编辑</h3>
+            <p className="section-label">{t('aiInputModal.section')}</p>
+            <h3>{t('aiInputModal.title')}</h3>
           </div>
-          <button type="button" title="关闭放大输入框" onClick={onClose}>×</button>
+          <button type="button" title={t('aiInputModal.close')} onClick={onClose}>×</button>
         </div>
         <div className="ai-input-modal-body">
           <textarea
@@ -52,15 +56,15 @@ export function AIInputExpandModal({
           />
         </div>
         <div className="modal-actions">
-          <button type="button" title="关闭放大输入框" onClick={onClose}>关闭</button>
+          <button type="button" title={t('aiInputModal.close')} onClick={onClose}>{t('app.close')}</button>
           <button
             className="primary-button"
             disabled={!canSubmit}
             type="button"
-            title="发送给统一 AI 助手"
+            title={t('aiWorkspace.actions.send')}
             onClick={onSubmit}
           >
-            发送
+            {t('ai.send')}
           </button>
         </div>
       </section>

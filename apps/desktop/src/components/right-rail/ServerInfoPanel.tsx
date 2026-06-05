@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { HostRecord, ServerMetrics, SessionRecord, SystemInfo } from '@ai-ssh/shared-contracts'
 import type { MetricChartKey, MetricSample } from '../../types'
 import { formatBytes, formatRate } from '../../utils'
@@ -36,11 +37,12 @@ export function ServerInfoPanel({
   systemInfo,
   onToggleCollapsed,
 }: ServerInfoPanelProps) {
+  const { t } = useTranslation()
   const isConnected = Boolean(activeSession)
-  const displayHostName = activeSession?.hostName ?? activeHost?.name ?? '未连接'
+  const displayHostName = activeSession?.hostName ?? activeHost?.name ?? t('serverInfo.disconnected')
   const displayAddress = activeHost ? `${activeHost.address}:${activeHost.port}` : '-'
   const displayUsername = activeHost?.username ?? '-'
-  const sectionLabel = isConnected ? '当前会话' : '已选服务器'
+  const sectionLabel = isConnected ? t('serverInfo.currentSession') : t('serverInfo.selectedServer')
 
   return (
     <section
@@ -55,51 +57,51 @@ export function ServerInfoPanel({
         <button
           className="panel-icon-button"
           type="button"
-          title={isCollapsed ? '展开当前服务器信息' : '折叠当前服务器信息'}
+          title={isCollapsed ? t('serverInfo.expand') : t('serverInfo.collapse')}
           onClick={onToggleCollapsed}
         >
-          {isCollapsed ? '▾' : '▴'}
+          {isCollapsed ? '▴' : '▾'}
         </button>
       </div>
       {!isCollapsed ? (
         <>
           <dl>
             <div>
-              <dt>地址</dt>
+              <dt>{t('serverInfo.address')}</dt>
               <dd>{displayAddress}</dd>
             </div>
             <div>
-              <dt>用户</dt>
+              <dt>{t('serverInfo.user')}</dt>
               <dd>{displayUsername}</dd>
             </div>
           </dl>
           {activeSession && systemInfo ? (
             <div className="system-info-card">
               <div className="system-info-row">
-                <span>系统</span>
+                <span>{t('serverInfo.system')}</span>
                 <strong>{systemInfo.os || '-'}</strong>
               </div>
               <div className="system-info-row">
-                <span>内核</span>
+                <span>{t('serverInfo.kernel')}</span>
                 <strong>{systemInfo.kernel || '-'}</strong>
               </div>
               <div className="system-info-row">
-                <span>主机名</span>
+                <span>{t('serverInfo.hostname')}</span>
                 <strong>{systemInfo.hostname || '-'}</strong>
               </div>
               <div className="system-info-row">
-                <span>架构</span>
+                <span>{t('serverInfo.arch')}</span>
                 <strong>{systemInfo.arch || '-'}</strong>
               </div>
               <div className="system-info-row">
-                <span>运行时长</span>
+                <span>{t('serverInfo.uptime')}</span>
                 <strong>{systemInfo.uptime || '-'}</strong>
               </div>
             </div>
           ) : (
             <div className="info-panel-idle-note">
-              <strong>已选择服务器</strong>
-              <span>当前还没有活动 SSH 会话，双击左侧服务器卡片即可连接。</span>
+              <strong>{t('serverInfo.selectedServerStrong')}</strong>
+              <span>{t('serverInfo.idleHint')}</span>
             </div>
           )}
           {activeSession ? (
@@ -124,7 +126,7 @@ export function ServerInfoPanel({
                   compactWidth={compactMetricWidth}
                   expandedPointLimit={expandedMetricPointLimit}
                   keyName="memoryPercent"
-                  label="内存"
+                  label={t('serverInfo.memory')}
                   metricHistory={metricHistory}
                   serverMetrics={serverMetrics}
                   onExpand={onExpandMetric}
@@ -132,7 +134,7 @@ export function ServerInfoPanel({
               </div>
               <div className="metric-card">
                 <div>
-                  <span>磁盘</span>
+                  <span>{t('serverInfo.disk')}</span>
                   <strong>{primaryDisk ? `${primaryDisk.mount} ${primaryDisk.usedPercent}%` : serverMetrics ? `${serverMetrics.diskPercent}%` : '-'}</strong>
                 </div>
                 <div className="disk-list">
@@ -147,17 +149,23 @@ export function ServerInfoPanel({
               </div>
               <div className="metric-card">
                 <div>
-                  <span>网络</span>
+                  <span>{t('serverInfo.network')}</span>
                   <strong>
                     {latestMetricSample
-                      ? `入 ${formatRate(latestMetricSample.networkRxRateBytes)} / 出 ${formatRate(latestMetricSample.networkTxRateBytes)}`
+                      ? t('serverInfo.networkRate', {
+                          rx: formatRate(latestMetricSample.networkRxRateBytes),
+                          tx: formatRate(latestMetricSample.networkTxRateBytes),
+                        })
                       : '-'}
                   </strong>
                 </div>
                 <small>
                   {serverMetrics
-                    ? `累计 入 ${formatBytes(serverMetrics.networkRxBytes)} / 出 ${formatBytes(serverMetrics.networkTxBytes)}`
-                    : '等待采样'}
+                    ? t('serverInfo.networkTotal', {
+                        rx: formatBytes(serverMetrics.networkRxBytes),
+                        tx: formatBytes(serverMetrics.networkTxBytes),
+                      })
+                    : t('serverInfo.waitingSample')}
                 </small>
               </div>
             </div>
