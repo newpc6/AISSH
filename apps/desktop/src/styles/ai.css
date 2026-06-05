@@ -182,6 +182,36 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+.ai-history-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(79, 140, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(79, 140, 255, 0.08);
+  color: #dbeafe;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-inline-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(79, 140, 255, 0.3);
+  border-radius: 7px;
+  background: rgba(8, 12, 18, 0.4);
+  color: #dbeafe;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-inline-button:hover {
+  border-color: rgba(79, 140, 255, 0.46);
+  background: rgba(79, 140, 255, 0.14);
+}
+
 .ai-response-card p,
 .agent-step p,
 .ai-message-card p,

@@ -9,6 +9,8 @@ type BatchSelectedHost = {
 
 type AIWorkspacePanelProps = {
   activeSessionName: string
+  liveAIConversationId: string
+  isPreviewingHistory: boolean
   isAIHistoryOpen: boolean
   aiConversations: AIChatConversation[]
   activeAIConversationId: string
@@ -39,6 +41,7 @@ type AIWorkspacePanelProps = {
   renderMarkdown: (content: string, fallback?: string) => ReactNode
   onCreateConversation: () => void
   onSelectConversation: (conversationId: string) => void
+  onReturnToLiveConversation: () => void
   onDeleteConversation: (conversationId: string) => void
   onLoadMoreConversations: () => void
   onUpdateAiUnifiedInputValue: (value: string) => void
@@ -57,6 +60,8 @@ type AIWorkspacePanelProps = {
 
 export function AIWorkspacePanel({
   activeSessionName,
+  liveAIConversationId,
+  isPreviewingHistory,
   isAIHistoryOpen,
   aiConversations,
   activeAIConversationId,
@@ -87,6 +92,7 @@ export function AIWorkspacePanel({
   renderMarkdown,
   onCreateConversation,
   onSelectConversation,
+  onReturnToLiveConversation,
   onDeleteConversation,
   onLoadMoreConversations,
   onUpdateAiUnifiedInputValue,
@@ -147,6 +153,14 @@ export function AIWorkspacePanel({
           </aside>
         ) : null}
         <div className="ai-message-list" ref={aiMessageListRef}>
+          {isPreviewingHistory && liveAIConversationId ? (
+            <div className="ai-history-preview-banner">
+              <span>当前正在查看历史对话，实时任务仍会继续写入当前 SSH 的任务对话。</span>
+              <button className="ai-inline-button" type="button" onClick={onReturnToLiveConversation}>
+                返回当前任务
+              </button>
+            </div>
+          ) : null}
           {!settingsAiEnabled ? <p className="hint-text">AI 功能已关闭，可在设置中开启。</p> : null}
           {!isAIProviderConfigured && settingsAiEnabled ? (
             <p className="hint-text">请先在设置里填写大模型地址和模型，保存后再使用 AI。</p>

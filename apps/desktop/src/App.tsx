@@ -31,6 +31,7 @@ import { SessionTabs } from './components/sessions/SessionTabs'
 import { useBatchSelection } from './hooks/useBatchSelection'
 import { useConfirmDialog } from './hooks/useConfirmDialog'
 import { useAIUnifiedInput } from './hooks/useAIUnifiedInput'
+import { useSessionAIConversationBinding } from './hooks/useSessionAIConversationBinding'
 import { useDesktopOverlays } from './hooks/useDesktopOverlays'
 import { useFavoriteCommands } from './hooks/useFavoriteCommands'
 import { useFileBrowserSelection } from './hooks/useFileBrowserSelection'
@@ -279,7 +280,6 @@ export function App() {
   const [aiConversations, setAiConversations] = useState<AIChatConversation[]>([])
   const [hasMoreConversations, setHasMoreConversations] = useState(false)
   const [activeAIConversationId, setActiveAIConversationId] = useState('')
-  const [aiConversationIdBySession, setAiConversationIdBySession] = useState<Record<string, string>>({})
   const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
   const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
   const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
@@ -329,7 +329,6 @@ export function App() {
   const aiMessagesRef = useRef<AIChatMessageDraft[]>([])
   const aiConversationsRef = useRef<AIChatConversation[]>([])
   const activeAIConversationIdRef = useRef('')
-  const aiConversationIdBySessionRef = useRef<Record<string, string>>({})
   const aiMessageConversationIdsRef = useRef<Record<string, string>>({})
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
   const aiStreamThinkingRef = useRef('')
@@ -358,6 +357,17 @@ export function App() {
   const batchCardsRef = useRef<HTMLDivElement | null>(null)
   const predictionPositionFrameRef = useRef<number | undefined>(undefined)
   const predictionGhostVisibleRef = useRef(false)
+  const {
+    clearPreviewConversationId,
+    getDisplayedConversationId,
+    getLiveConversationId,
+    isPreviewingHistoryForSession,
+    liveConversationIdBySession,
+    previewConversationIdBySession,
+    removeConversationReferences,
+    setLiveConversationId,
+    setPreviewConversationId,
+  } = useSessionAIConversationBinding()
   const alternateScreenSessionsRef = useRef<Set<string>>(new Set())
   const previousMetricsRef = useRef<ServerMetrics | null>(null)
   const filePathRef = useRef('.')
@@ -521,15 +531,6 @@ export function App() {
 
   const getAIPredictionForSession = (sessionId: string) =>
     aiPredictionBySessionRef.current[sessionId] ?? EMPTY_AI_PREDICTION_STATE
-
-  const setSessionConversationId = (sessionId: string, conversationId: string) => {
-    if (!sessionId) {
-      return
-    }
-    const next = { ...aiConversationIdBySessionRef.current, [sessionId]: conversationId }
-    aiConversationIdBySessionRef.current = next
-    setAiConversationIdBySession(next)
-  }
 
   const getSessionAgentState = (sessionId: string) =>
     agentStateBySessionRef.current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
@@ -1677,10 +1678,6 @@ export function App() {
   }, [activeAIConversationId])
 
   useEffect(() => {
-    aiConversationIdBySessionRef.current = aiConversationIdBySession
-  }, [aiConversationIdBySession])
-
-  useEffect(() => {
     const element = aiMessageListRef.current
     if (!element) {
       return
@@ -1732,8 +1729,8 @@ export function App() {
       resetAIStreamBuffers()
       return
     }
-    const mappedConversationId = aiConversationIdBySessionRef.current[activeSessionId]
-    if (!mappedConversationId) {
+    const displayedConversationId = getDisplayedConversationId(activeSessionId)
+    if (!displayedConversationId) {
       setActiveAIConversationId('')
       activeAIConversationIdRef.current = ''
       setAiMessages([])
@@ -1742,11 +1739,11 @@ export function App() {
       resetAIStreamBuffers()
       return
     }
-    if (activeAIConversationIdRef.current === mappedConversationId) {
+    if (activeAIConversationIdRef.current === displayedConversationId) {
       return
     }
-    void selectAIConversation(mappedConversationId, { sessionId: activeSessionId, resetAgentState: false })
-  }, [activeSessionId])
+    void selectAIConversation(displayedConversationId, { sessionId: activeSessionId, resetAgentState: false, bindToSession: false })
+  }, [activeSessionId, liveConversationIdBySession, previewConversationIdBySession])
 
   useEffect(() => {
     const isKnownSessionView =
@@ -1878,6 +1875,8 @@ export function App() {
   })
   const activeAgentSessionId = activeSession?.id ?? ''
   const activeAgentState = activeAgentSessionId ? getSessionAgentState(activeAgentSessionId) : DEFAULT_SESSION_AGENT_STATE
+  const liveAIConversationId = activeAgentSessionId ? getLiveConversationId(activeAgentSessionId) : ''
+  const isPreviewingAIHistory = activeAgentSessionId ? isPreviewingHistoryForSession(activeAgentSessionId) : false
   const agentState = activeAgentState.state
   const agentMessage = activeAgentState.message
   const activeAgentMode = activeAgentState.mode
@@ -3889,9 +3888,10 @@ export function App() {
     kind: AIChatMessageKind,
     content: string,
     extras: Partial<AIChatMessage> = {},
+    conversationId = activeAIConversationIdRef.current,
   ): AIChatMessageDraft => ({
     id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    conversationId: activeAIConversationIdRef.current,
+    conversationId,
     kind,
     content,
     createdAt: new Date().toISOString(),
@@ -3936,12 +3936,12 @@ export function App() {
     conversationId = activeAIConversationIdRef.current,
   ) => {
     if (!conversationId) {
-      const local = makeLocalAIMessage(kind, content, extras)
+      const local = makeLocalAIMessage(kind, content, extras, conversationId)
       aiMessageConversationIdsRef.current[local.id] = local.conversationId
       setAiMessages((current) => [...current, local])
       return local
     }
-    const local = { ...makeLocalAIMessage(kind, content, extras), conversationId, pending: true }
+    const local = { ...makeLocalAIMessage(kind, content, extras, conversationId), pending: true }
     aiMessageConversationIdsRef.current[local.id] = conversationId
     setAiMessages((current) => [...current, local])
     try {
@@ -3972,8 +3972,8 @@ export function App() {
     setAiStreamContent('')
   }
 
-  const startStreamingThinkingMessage = () => {
-    const message = makeLocalAIMessage('thinking', '')
+  const startStreamingThinkingMessage = (conversationId = activeAIConversationIdRef.current) => {
+    const message = makeLocalAIMessage('thinking', '', {}, conversationId)
     aiMessageConversationIdsRef.current[message.id] = message.conversationId
     aiStreamThinkingMessageIdRef.current = message.id
     setAiMessages((current) => [...current, message])
@@ -3997,12 +3997,12 @@ export function App() {
     })
   }
 
-  const updateStreamingThinkingMessage = (text: string) => {
+  const updateStreamingThinkingMessage = (text: string, conversationId = activeAIConversationIdRef.current) => {
     if (!text) {
       return
     }
     if (!aiStreamThinkingMessageIdRef.current) {
-      startStreamingThinkingMessage()
+      startStreamingThinkingMessage(conversationId)
     }
     const messageId = aiStreamThinkingMessageIdRef.current
     setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
@@ -4015,19 +4015,19 @@ export function App() {
     scrollStreamingThinkingToBottom()
   }, [aiStreamThinking])
 
-  const startStreamingContentMessage = () => {
-    const message = makeLocalAIMessage('content', '')
+  const startStreamingContentMessage = (conversationId = activeAIConversationIdRef.current) => {
+    const message = makeLocalAIMessage('content', '', {}, conversationId)
     aiMessageConversationIdsRef.current[message.id] = message.conversationId
     aiStreamContentMessageIdRef.current = message.id
     setAiMessages((current) => [...current, message])
   }
 
-  const updateStreamingContentMessage = (text: string) => {
+  const updateStreamingContentMessage = (text: string, conversationId = activeAIConversationIdRef.current) => {
     if (!text) {
       return
     }
     if (!aiStreamContentMessageIdRef.current) {
-      startStreamingContentMessage()
+      startStreamingContentMessage(conversationId)
     }
     const messageId = aiStreamContentMessageIdRef.current
     setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
@@ -4134,7 +4134,8 @@ export function App() {
       const existing = aiConversations.find((item) => item.id === activeAIConversationIdRef.current)
       if (existing) {
         if (sessionId) {
-          setSessionConversationId(sessionId, existing.id)
+          setLiveConversationId(sessionId, existing.id)
+          clearPreviewConversationId(sessionId)
         }
         return existing
       }
@@ -4145,7 +4146,8 @@ export function App() {
         updatedAt: new Date().toISOString(),
       }
       if (sessionId) {
-        setSessionConversationId(sessionId, draftConversation.id)
+        setLiveConversationId(sessionId, draftConversation.id)
+        clearPreviewConversationId(sessionId)
       }
       return draftConversation
     }
@@ -4163,7 +4165,8 @@ export function App() {
     setActiveAIConversationId(conversation.id)
     activeAIConversationIdRef.current = conversation.id
     if (sessionId) {
-      setSessionConversationId(sessionId, conversation.id)
+      setLiveConversationId(sessionId, conversation.id)
+      clearPreviewConversationId(sessionId)
     }
     setAiMessages([])
     aiMessagesRef.current = []
@@ -4182,6 +4185,7 @@ export function App() {
       setAiAssistantError((await readResponseErrorDetail(response)) || `删除 AI 对话失败：${response.status}`)
       return
     }
+    removeConversationReferences(conversationId)
     const nextConversations = aiConversations.filter((item) => item.id !== conversationId)
     setAiConversations(nextConversations)
     if (conversationId === activeAIConversationIdRef.current) {
@@ -4191,14 +4195,18 @@ export function App() {
       aiMessagesRef.current = []
       resetAIStreamBuffers()
       setAiAssistantResponse(null)
-      if (activeSessionIdRef.current) {
-        setAgentStepsForSession(activeSessionIdRef.current, [])
-        updateSessionAgentState(activeSessionIdRef.current, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
+      const sessionId = activeSessionIdRef.current
+      const nextDisplayedConversationId = sessionId ? getDisplayedConversationId(sessionId) : ''
+      if (sessionId && !nextDisplayedConversationId) {
+        setAgentStepsForSession(sessionId, [])
+        updateSessionAgentState(sessionId, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
       }
-      if (nextConversations.length > 0) {
-        await selectAIConversation(nextConversations[0].id)
+      if (nextDisplayedConversationId) {
+        await selectAIConversation(nextDisplayedConversationId, { sessionId, resetAgentState: false, bindToSession: false })
+      } else if (nextConversations.length > 0) {
+        await selectAIConversation(nextConversations[0].id, { sessionId, resetAgentState: false, bindToSession: false })
       } else {
-        await createAIConversation('新对话')
+        await createAIConversation('新对话', sessionId)
       }
     }
   }
@@ -4217,16 +4225,18 @@ export function App() {
   }
 
   const ensureAIConversation = async (title = '新对话', sessionId = activeSessionIdRef.current) => {
-    const mappedConversationId = sessionId ? aiConversationIdBySessionRef.current[sessionId] : ''
-    if (mappedConversationId) {
-      if (activeAIConversationIdRef.current !== mappedConversationId) {
-        setActiveAIConversationId(mappedConversationId)
-        activeAIConversationIdRef.current = mappedConversationId
+    const liveConversationId = sessionId ? getLiveConversationId(sessionId) : ''
+    if (liveConversationId) {
+      if (activeAIConversationIdRef.current !== liveConversationId) {
+        setActiveAIConversationId(liveConversationId)
+        activeAIConversationIdRef.current = liveConversationId
       }
-      return mappedConversationId
+      clearPreviewConversationId(sessionId)
+      return liveConversationId
     }
     if (activeAIConversationIdRef.current && sessionId) {
-      setSessionConversationId(sessionId, activeAIConversationIdRef.current)
+      setLiveConversationId(sessionId, activeAIConversationIdRef.current)
+      clearPreviewConversationId(sessionId)
       return activeAIConversationIdRef.current
     }
     const conversation = await createAIConversation(title, sessionId)
@@ -4235,13 +4245,18 @@ export function App() {
 
   const selectAIConversation = async (
     conversationId: string,
-    options: { sessionId?: string; resetAgentState?: boolean } = {},
+    options: { sessionId?: string; resetAgentState?: boolean; bindToSession?: boolean } = {},
   ) => {
     const sessionId = options.sessionId ?? activeSessionIdRef.current
     setActiveAIConversationId(conversationId)
     activeAIConversationIdRef.current = conversationId
     if (sessionId) {
-      setSessionConversationId(sessionId, conversationId)
+      if (options.bindToSession === false) {
+        setPreviewConversationId(sessionId, conversationId)
+      } else {
+        setLiveConversationId(sessionId, conversationId)
+        clearPreviewConversationId(sessionId)
+      }
     }
     setAiAssistantResponse(null)
     resetAIStreamBuffers()
@@ -4277,6 +4292,7 @@ export function App() {
   const requestAIAssistStream = async (
     prompt: string,
     options: Partial<AIAssistRequest> & {
+      conversationId?: string
       ignoreAmbientContext?: boolean
       ignoreConversationContext?: boolean
       suppressStreamingMessages?: boolean
@@ -4291,8 +4307,8 @@ export function App() {
     if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
-    const { ignoreAmbientContext, ignoreConversationContext, suppressStreamingMessages, ...requestOptions } = options
-    const conversationContext = ignoreConversationContext ? '' : currentConversationContext(activeAIConversationIdRef.current)
+    const { conversationId, ignoreAmbientContext, ignoreConversationContext, suppressStreamingMessages, ...requestOptions } = options
+    const conversationContext = ignoreConversationContext ? '' : currentConversationContext(conversationId || activeAIConversationIdRef.current)
     const payload: AIAssistRequest = {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
@@ -4339,14 +4355,14 @@ export function App() {
         if (!suppressStreamingMessages) {
           aiStreamThinkingRef.current = `${aiStreamThinkingRef.current}${event.text}`
           setAiStreamThinking((current) => `${current}${event.text}`)
-          updateStreamingThinkingMessage(event.text)
+          updateStreamingThinkingMessage(event.text, conversationId)
         }
       }
       if (event.type === 'content' && event.text) {
         if (!suppressStreamingMessages) {
           aiStreamContentRef.current = `${aiStreamContentRef.current}${event.text}`
           setAiStreamContent((current) => `${current}${event.text}`)
-          updateStreamingContentMessage(event.text)
+          updateStreamingContentMessage(event.text, conversationId)
         }
       }
       if (event.type === 'done' && event.response) {
@@ -4378,7 +4394,11 @@ export function App() {
     )
   }
 
-  const addAgentStepFromAIResponse = (response: AIAssistResponse, sessionId = activeSessionIdRef.current) => {
+  const addAgentStepFromAIResponse = (
+    response: AIAssistResponse,
+    sessionId = activeSessionIdRef.current,
+    conversationId = getLiveConversationId(sessionId) || activeAIConversationIdRef.current,
+  ) => {
     const command = stripTerminalControlSequences(response.agentCommand || firstString(response.commands)).trim()
     if (response.agentStatus === 'done') {
       updateSessionAgentState(sessionId, {
@@ -4421,7 +4441,7 @@ export function App() {
       updateSessionAgentState(sessionId, { running: false })
       return
     }
-    void appendAIMessage('agent_step', command, { step }).then((message) => {
+    void appendAIMessage('agent_step', command, { step }, conversationId).then((message) => {
       const messageStep = { ...step, id: message.id }
       setAgentStepsForSession(sessionId, (current) => [messageStep, ...current].slice(0, 30))
       const latestAgentState = getSessionAgentState(sessionId)
@@ -4483,7 +4503,7 @@ export function App() {
       } else {
         await appendAIMessage('assistant', response.answer || response.summary || response.agentReason || 'AI 已返回结果。', { response }, conversationId)
       }
-      addAgentStepFromAIResponse(response, sessionId)
+      addAgentStepFromAIResponse(response, sessionId, conversationId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI 请求失败'
       await appendAIMessage('error', message, {}, conversationId)
@@ -4523,6 +4543,7 @@ export function App() {
     const batchHost = findBatchHostBySession(sessionId)
     const isBatchSession = Boolean(batchHost)
     const batchConversationId = isBatchSession ? batchConversationIdRef.current : ''
+    const liveConversationId = isBatchSession ? batchConversationId : getLiveConversationId(sessionId) || activeAIConversationIdRef.current
     const batchHostName = batchHost?.hostName || sessionsRef.current.find((item) => item.id === sessionId)?.hostName || '服务器'
     const batchPrefix = isBatchSession ? `【${batchHostName}】` : ''
     if (!goal) {
@@ -4547,6 +4568,7 @@ export function App() {
       const response = await requestAIAssistStream(
         goal,
         {
+          conversationId: liveConversationId,
           agentGoal: goal,
           agentMode: getSessionAgentState(sessionId).mode,
           agentSteps: steps,
@@ -4568,8 +4590,8 @@ export function App() {
             batchConversationId,
           )
         } else {
-          await persistStreamingArtifacts(activeAIConversationIdRef.current)
-          await appendAIMessage('agent_result', response.answer || response.summary || response.agentReason || '已根据命令输出生成执行结论。', { response })
+          await persistStreamingArtifacts(liveConversationId)
+          await appendAIMessage('agent_result', response.answer || response.summary || response.agentReason || '已根据命令输出生成执行结论。', { response }, liveConversationId)
         }
         updateSessionAgentState(sessionId, { message: '已根据命令输出生成执行结论。' })
         return
@@ -4587,8 +4609,8 @@ export function App() {
             batchConversationId,
           )
         } else {
-          await persistStreamingArtifacts(activeAIConversationIdRef.current)
-          await appendAIMessage('agent_result', response.answer || response.agentReason || 'AI 需要更多信息。', { response })
+          await persistStreamingArtifacts(liveConversationId)
+          await appendAIMessage('agent_result', response.answer || response.agentReason || 'AI 需要更多信息。', { response }, liveConversationId)
         }
         updateSessionAgentState(sessionId, { message: 'AI 需要更多信息，已生成说明。' })
         return
@@ -4609,8 +4631,8 @@ export function App() {
       }
       updateSessionAgentState(sessionId, { state: 'success' })
       if (!isBatchSession) {
-        await persistStreamingArtifacts(activeAIConversationIdRef.current)
-        await appendAIMessage('command', response.answer || response.agentReason || 'Agent 已给出下一步命令。', { response })
+        await persistStreamingArtifacts(liveConversationId)
+        await appendAIMessage('command', response.answer || response.agentReason || 'Agent 已给出下一步命令。', { response }, liveConversationId)
       }
       const latestAgentState = getSessionAgentState(sessionId)
       if (latestAgentState.mode === 'review' || !latestAgentState.running) {
@@ -4624,7 +4646,7 @@ export function App() {
         const stepMessage = await appendAIMessage('agent_step', command, { step }, batchConversationId)
         step.id = stepMessage.id
       } else {
-        const stepMessage = await appendAIMessage('agent_step', command, { step })
+        const stepMessage = await appendAIMessage('agent_step', command, { step }, liveConversationId)
         step.id = stepMessage.id
       }
       setAgentStepsForSession(sessionId, [step, ...steps].slice(0, 30))
@@ -5285,6 +5307,7 @@ export function App() {
       return
     }
     const sessionId = activeSessionIdRef.current
+    const conversationId = getLiveConversationId(sessionId) || activeAIConversationIdRef.current
     const normalizedRisk = riskLevel || classifyCommandRisk(normalized)
     if (normalizedRisk === 'high' && !confirmed && getSessionAgentState(sessionId).mode !== 'full-auto') {
       requestConfirm({
@@ -5317,7 +5340,7 @@ export function App() {
       riskReason: commandResponse?.riskReason || aiAssistantResponse?.riskReason,
       createdAt: new Date().toISOString(),
     }
-    const stepMessage = await appendAIMessage('agent_step', normalized, { step })
+    const stepMessage = await appendAIMessage('agent_step', normalized, { step }, conversationId)
     step.id = stepMessage.id
     setAgentStepsForSession(sessionId, (current) => [step, ...current].slice(0, 30))
     void executeAgentStep(step.id, getSessionAgentState(sessionId).mode !== 'review', true)
@@ -6308,6 +6331,8 @@ export function App() {
               <AIWorkspacePanel
                 activeSessionName={activeSession?.hostName ?? ''}
                 activeAIConversationId={activeAIConversationId}
+                liveAIConversationId={liveAIConversationId}
+                isPreviewingHistory={isPreviewingAIHistory}
                 activeAIModelLabel={activeAIModelConfig?.model || activeAIModelConfig?.name || '未配置'}
                 activeAIModelTitle={activeAIModelConfig ? `当前模型：${activeAIModelConfig.model || activeAIModelConfig.name}` : '未配置 AI 模型'}
                 agentMode={activeAgentMode}
@@ -6342,7 +6367,28 @@ export function App() {
                 onDeleteConversation={confirmDeleteAIConversation}
                 onLoadMoreConversations={() => { void loadAIConversations(false) }}
                 onRemoveBatchSelectedHost={removeBatchSelectedHost}
-                onSelectConversation={(conversationId) => { void selectAIConversation(conversationId) }}
+                onReturnToLiveConversation={() => {
+                  if (!activeAgentSessionId || !liveAIConversationId) {
+                    return
+                  }
+                  clearPreviewConversationId(activeAgentSessionId)
+                  void selectAIConversation(liveAIConversationId, {
+                    sessionId: activeAgentSessionId,
+                    resetAgentState: false,
+                    bindToSession: false,
+                  })
+                }}
+                onSelectConversation={(conversationId) => {
+                  if (!activeAgentSessionId) {
+                    void selectAIConversation(conversationId, { resetAgentState: false, bindToSession: false })
+                    return
+                  }
+                  void selectAIConversation(conversationId, {
+                    sessionId: activeAgentSessionId,
+                    resetAgentState: false,
+                    bindToSession: false,
+                  })
+                }}
                 onSetAgentMode={(mode) => {
                   if (!activeAgentSessionId) {
                     return
