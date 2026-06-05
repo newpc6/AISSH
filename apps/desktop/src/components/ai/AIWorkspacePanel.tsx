@@ -8,6 +8,7 @@ type BatchSelectedHost = {
 }
 
 type AIWorkspacePanelProps = {
+  activeSessionName: string
   isAIHistoryOpen: boolean
   aiConversations: AIChatConversation[]
   activeAIConversationId: string
@@ -55,6 +56,7 @@ type AIWorkspacePanelProps = {
 }
 
 export function AIWorkspacePanel({
+  activeSessionName,
   isAIHistoryOpen,
   aiConversations,
   activeAIConversationId,
@@ -102,6 +104,9 @@ export function AIWorkspacePanel({
 }: AIWorkspacePanelProps) {
   return (
     <div className={`ai-box unified-ai-box ${isAIHistoryOpen ? 'history-open' : ''}`}>
+      <div className="ai-session-banner">
+        <strong>{activeSessionName || '未选择 SSH 会话'}</strong>
+      </div>
       <div className="ai-conversation-shell">
         {isAIHistoryOpen ? (
           <aside className="ai-chat-sidebar">

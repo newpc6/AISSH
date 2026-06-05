@@ -279,6 +279,7 @@ export function App() {
   const [aiConversations, setAiConversations] = useState<AIChatConversation[]>([])
   const [hasMoreConversations, setHasMoreConversations] = useState(false)
   const [activeAIConversationId, setActiveAIConversationId] = useState('')
+  const [aiConversationIdBySession, setAiConversationIdBySession] = useState<Record<string, string>>({})
   const [aiMessages, setAiMessages] = useState<AIChatMessageDraft[]>([])
   const [collapsedAIMessageIds, setCollapsedAIMessageIds] = useState<Record<string, boolean>>({})
   const [isAIHistoryOpen, setIsAIHistoryOpen] = useState(false)
@@ -328,6 +329,7 @@ export function App() {
   const aiMessagesRef = useRef<AIChatMessageDraft[]>([])
   const aiConversationsRef = useRef<AIChatConversation[]>([])
   const activeAIConversationIdRef = useRef('')
+  const aiConversationIdBySessionRef = useRef<Record<string, string>>({})
   const aiMessageConversationIdsRef = useRef<Record<string, string>>({})
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
   const aiStreamThinkingRef = useRef('')
@@ -519,6 +521,15 @@ export function App() {
 
   const getAIPredictionForSession = (sessionId: string) =>
     aiPredictionBySessionRef.current[sessionId] ?? EMPTY_AI_PREDICTION_STATE
+
+  const setSessionConversationId = (sessionId: string, conversationId: string) => {
+    if (!sessionId) {
+      return
+    }
+    const next = { ...aiConversationIdBySessionRef.current, [sessionId]: conversationId }
+    aiConversationIdBySessionRef.current = next
+    setAiConversationIdBySession(next)
+  }
 
   const getSessionAgentState = (sessionId: string) =>
     agentStateBySessionRef.current[sessionId] ?? DEFAULT_SESSION_AGENT_STATE
@@ -1666,6 +1677,10 @@ export function App() {
   }, [activeAIConversationId])
 
   useEffect(() => {
+    aiConversationIdBySessionRef.current = aiConversationIdBySession
+  }, [aiConversationIdBySession])
+
+  useEffect(() => {
     const element = aiMessageListRef.current
     if (!element) {
       return
@@ -1706,6 +1721,32 @@ export function App() {
       }
     })()
   }, [authState])
+
+  useEffect(() => {
+    if (!activeSessionId) {
+      setActiveAIConversationId('')
+      activeAIConversationIdRef.current = ''
+      setAiMessages([])
+      aiMessagesRef.current = []
+      setAiAssistantResponse(null)
+      resetAIStreamBuffers()
+      return
+    }
+    const mappedConversationId = aiConversationIdBySessionRef.current[activeSessionId]
+    if (!mappedConversationId) {
+      setActiveAIConversationId('')
+      activeAIConversationIdRef.current = ''
+      setAiMessages([])
+      aiMessagesRef.current = []
+      setAiAssistantResponse(null)
+      resetAIStreamBuffers()
+      return
+    }
+    if (activeAIConversationIdRef.current === mappedConversationId) {
+      return
+    }
+    void selectAIConversation(mappedConversationId, { sessionId: activeSessionId, resetAgentState: false })
+  }, [activeSessionId])
 
   useEffect(() => {
     const isKnownSessionView =
@@ -4057,7 +4098,7 @@ export function App() {
     return data.conversations
   }
 
-  const loadAIMessages = async (conversationId: string) => {
+  const loadAIMessages = async (conversationId: string, sessionId = activeSessionIdRef.current) => {
     if (!conversationId) {
       setAiMessages([])
       aiMessagesRef.current = []
@@ -4079,8 +4120,8 @@ export function App() {
       .filter((step): step is AIAgentPlanStep => Boolean(step))
       .slice(-30)
       .reverse()
-    if (activeSessionIdRef.current) {
-      setAgentStepsForSession(activeSessionIdRef.current, sessionSteps)
+    if (sessionId) {
+      setAgentStepsForSession(sessionId, sessionSteps)
     }
     return messages
   }
@@ -4088,18 +4129,25 @@ export function App() {
   const isConversationEmpty = (conversationId = activeAIConversationIdRef.current) =>
     Boolean(conversationId) && conversationId === activeAIConversationIdRef.current && aiMessagesRef.current.length === 0
 
-  const createAIConversation = async (title = '新对话') => {
+  const createAIConversation = async (title = '新对话', sessionId = activeSessionIdRef.current) => {
     if (isConversationEmpty()) {
       const existing = aiConversations.find((item) => item.id === activeAIConversationIdRef.current)
       if (existing) {
+        if (sessionId) {
+          setSessionConversationId(sessionId, existing.id)
+        }
         return existing
       }
-      return {
+      const draftConversation = {
         id: activeAIConversationIdRef.current,
         title,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
+      if (sessionId) {
+        setSessionConversationId(sessionId, draftConversation.id)
+      }
+      return draftConversation
     }
     const body: AIChatConversationCreateRequest = { title }
     const response = await apiFetch('/ai/chats', {
@@ -4114,6 +4162,9 @@ export function App() {
     setAiConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)])
     setActiveAIConversationId(conversation.id)
     activeAIConversationIdRef.current = conversation.id
+    if (sessionId) {
+      setSessionConversationId(sessionId, conversation.id)
+    }
     setAiMessages([])
     aiMessagesRef.current = []
     setAiAssistantResponse(null)
@@ -4165,24 +4216,40 @@ export function App() {
     })
   }
 
-  const ensureAIConversation = async (title = '新对话') => {
-    if (activeAIConversationIdRef.current) {
+  const ensureAIConversation = async (title = '新对话', sessionId = activeSessionIdRef.current) => {
+    const mappedConversationId = sessionId ? aiConversationIdBySessionRef.current[sessionId] : ''
+    if (mappedConversationId) {
+      if (activeAIConversationIdRef.current !== mappedConversationId) {
+        setActiveAIConversationId(mappedConversationId)
+        activeAIConversationIdRef.current = mappedConversationId
+      }
+      return mappedConversationId
+    }
+    if (activeAIConversationIdRef.current && sessionId) {
+      setSessionConversationId(sessionId, activeAIConversationIdRef.current)
       return activeAIConversationIdRef.current
     }
-    const conversation = await createAIConversation(title)
+    const conversation = await createAIConversation(title, sessionId)
     return conversation.id
   }
 
-  const selectAIConversation = async (conversationId: string) => {
+  const selectAIConversation = async (
+    conversationId: string,
+    options: { sessionId?: string; resetAgentState?: boolean } = {},
+  ) => {
+    const sessionId = options.sessionId ?? activeSessionIdRef.current
     setActiveAIConversationId(conversationId)
     activeAIConversationIdRef.current = conversationId
+    if (sessionId) {
+      setSessionConversationId(sessionId, conversationId)
+    }
     setAiAssistantResponse(null)
     resetAIStreamBuffers()
-    if (activeSessionIdRef.current) {
-      setAgentStepsForSession(activeSessionIdRef.current, [])
-      updateSessionAgentState(activeSessionIdRef.current, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
+    if (options.resetAgentState !== false && sessionId) {
+      setAgentStepsForSession(sessionId, [])
+      updateSessionAgentState(sessionId, { goal: '', message: '', pendingStepId: '', running: false, state: 'idle' })
     }
-    await loadAIMessages(conversationId)
+    await loadAIMessages(conversationId, sessionId)
   }
 
   const currentConversationContext = (conversationId = activeAIConversationIdRef.current) => {
@@ -4388,7 +4455,7 @@ export function App() {
     }
     let conversationId = activeAIConversationIdRef.current
     try {
-      conversationId = await ensureAIConversation(requestPrompt.slice(0, 24) || '新对话')
+      conversationId = await ensureAIConversation(requestPrompt.slice(0, 24) || '新对话', sessionId)
     } catch (error) {
       setAiAssistantError(error instanceof Error ? error.message : '创建 AI 对话失败')
       return
@@ -4403,7 +4470,7 @@ export function App() {
     updateSessionAgentState(sessionId, (current) => ({
       ...current,
       goal: requestPrompt,
-      running: current.mode === 'auto',
+      running: current.mode !== 'review',
     }))
     try {
       const response = await requestAIUnifiedStream(requestPrompt)
@@ -6239,6 +6306,7 @@ export function App() {
 
             {rightTool === 'ai' ? (
               <AIWorkspacePanel
+                activeSessionName={activeSession?.hostName ?? ''}
                 activeAIConversationId={activeAIConversationId}
                 activeAIModelLabel={activeAIModelConfig?.model || activeAIModelConfig?.name || '未配置'}
                 activeAIModelTitle={activeAIModelConfig ? `当前模型：${activeAIModelConfig.model || activeAIModelConfig.name}` : '未配置 AI 模型'}

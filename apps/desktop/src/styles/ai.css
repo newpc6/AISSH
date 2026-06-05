@@ -319,6 +319,17 @@
   overflow: auto;
 }
 
+.ai-session-banner {
+  padding: 10px 14px 0;
+}
+
+.ai-session-banner strong {
+  display: block;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .ai-conversation-shell {
   min-height: 0;
   display: grid;
