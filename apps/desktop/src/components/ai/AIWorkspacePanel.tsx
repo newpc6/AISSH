@@ -1,6 +1,8 @@
 import type { RefObject, ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { AIAgentMode, AIChatConversation } from '@ai-ssh/shared-contracts'
 import type { AIChatMessageDraft, BatchHostResult, LoadState } from '../../types'
+import { formatLocalizedDateTime } from '../../utils'
 
 type BatchSelectedHost = {
   id: string
@@ -110,14 +112,24 @@ export function AIWorkspacePanel({
   onStartBatchExecution,
   onCloseBatchHostCard,
 }: AIWorkspacePanelProps) {
+  const { t, i18n } = useTranslation()
+
+  const batchStatusText = (result: BatchHostResult) => {
+    if (result.status === 'pending') return t('aiWorkspace.batch.status.pending')
+    if (result.status === 'connecting') return t('aiWorkspace.batch.status.connecting')
+    if (result.status === 'running') return t('aiWorkspace.batch.status.running', { steps: result.stepCount })
+    if (result.status === 'success') return t('aiWorkspace.batch.status.success', { steps: result.stepCount })
+    return t('aiWorkspace.batch.status.error')
+  }
+
   return (
     <div className={`ai-box unified-ai-box ${isAIHistoryOpen ? 'history-open' : ''}`}>
       <div className="ai-conversation-shell">
         {isAIHistoryOpen ? (
           <aside className="ai-chat-sidebar">
             <div className="ai-chat-sidebar-head">
-              <strong>历史对话</strong>
-              <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={onCreateConversation}>
+              <strong>{t('aiWorkspace.historyTitle')}</strong>
+              <button className="ai-icon-button" type="button" title={t('aiWorkspace.newConversation')} onClick={onCreateConversation}>
                 +
               </button>
             </div>
@@ -129,16 +141,16 @@ export function AIWorkspacePanel({
                     <button
                       className="ai-chat-select"
                       type="button"
-                      title={`切换到 ${displayTitle}`}
+                      title={t('aiWorkspace.switchConversation', { title: displayTitle })}
                       onClick={() => onSelectConversation(conversation.id)}
                     >
                       <span>{displayTitle}</span>
-                      <small>{new Date(conversation.updatedAt).toLocaleString('zh-CN', { hour12: false })}</small>
+                      <small>{formatLocalizedDateTime(conversation.updatedAt, i18n.language, { hour12: false })}</small>
                     </button>
                     <button
                       className="ai-chat-delete ai-icon-button"
                       type="button"
-                      title={`删除对话：${displayTitle}`}
+                      title={t('aiWorkspace.deleteConversation', { title: displayTitle })}
                       onClick={() => onDeleteConversation(conversation.id)}
                     >
                       ×
@@ -148,7 +160,7 @@ export function AIWorkspacePanel({
               })}
               {hasMoreConversations ? (
                 <button className="load-more-chats" type="button" onClick={onLoadMoreConversations}>
-                  加载更多...
+                  {t('aiWorkspace.loadMore')}
                 </button>
               ) : null}
             </div>
@@ -157,28 +169,28 @@ export function AIWorkspacePanel({
         <div className="ai-message-list" ref={aiMessageListRef} onScroll={onAiMessageListScroll}>
           {isPreviewingHistory && liveAIConversationId ? (
             <div className="ai-history-preview-banner">
-              <span>当前正在查看历史对话，实时任务仍会继续写入当前 SSH 的任务对话。</span>
+              <span>{t('aiWorkspace.viewingHistory')}</span>
               <button className="ai-inline-button" type="button" onClick={onReturnToLiveConversation}>
-                返回当前任务
+                {t('aiWorkspace.returnToLive')}
               </button>
             </div>
           ) : null}
-          {!settingsAiEnabled ? <p className="hint-text">AI 功能已关闭，可在设置中开启。</p> : null}
+          {!settingsAiEnabled ? <p className="hint-text">{t('aiWorkspace.aiDisabled')}</p> : null}
           {!isAIProviderConfigured && settingsAiEnabled ? (
-            <p className="hint-text">请先在设置里填写大模型地址和模型，保存后再使用 AI。</p>
+            <p className="hint-text">{t('aiWorkspace.providerMissing')}</p>
           ) : null}
-          {aiMessages.length === 0 ? <p className="hint-text">当前对话暂无消息，可以直接输入问题或目标。</p> : null}
+          {aiMessages.length === 0 ? <p className="hint-text">{t('aiWorkspace.emptyConversation')}</p> : null}
           {aiMessages.map((message) => renderAIMessage(message))}
           {aiAssistantState === 'loading' ? (
             <div className="prediction-loading">
               <span aria-hidden="true" className="file-loading-spinner" />
-              <span>AI 正在实时返回，消息会按时间顺序追加...</span>
+              <span>{t('aiWorkspace.streaming')}</span>
             </div>
           ) : null}
           {shouldRenderAgentMessageCard ? (
             <article className={`ai-message-card ${agentState === 'error' ? 'ai-error-card' : 'ai-status-line'}`}>
               <header className="ai-message-header">
-                <strong>{agentState === 'error' ? '错误' : '状态'}</strong>
+                <strong>{agentState === 'error' ? t('aiWorkspace.status.error') : t('aiWorkspace.status.title')}</strong>
               </header>
               <div className={`ai-status-content ${agentState === 'loading' ? 'loading' : ''}`}>
                 {agentState === 'loading' ? <span aria-hidden="true" className="file-loading-spinner" /> : null}
@@ -210,15 +222,15 @@ export function AIWorkspacePanel({
           <div className="agent-mode-row">
             {batchMode && batchSelectedHosts.length > 0 ? (
               <div className="batch-mode-summary">
-                <span className="batch-mode-hint">批量模式 · 已选 {batchSelectedHosts.length} 台</span>
+                <span className="batch-mode-hint">{t('aiWorkspace.batch.modeSummary', { count: batchSelectedHosts.length })}</span>
                 <div className="batch-selected-tags" title={batchSelectedHosts.map((host) => host.name).join('、')}>
                   {batchSelectedHosts.map((host) => (
                     <span className="batch-selected-tag" key={host.id} title={host.name}>
                       <span>{host.name}</span>
                       <button
                         type="button"
-                        aria-label={`取消选择 ${host.name}`}
-                        title={`取消选择 ${host.name}`}
+                        aria-label={t('aiWorkspace.batch.removeHost', { name: host.name })}
+                        title={t('aiWorkspace.batch.removeHost', { name: host.name })}
                         onClick={(event) => {
                           event.stopPropagation()
                           onRemoveBatchSelectedHost(host.id)
@@ -232,17 +244,17 @@ export function AIWorkspacePanel({
               </div>
             ) : (
               <>
-                <label title="AI 给出命令后需要人工点击执行">
+                <label title={t('aiWorkspace.modes.review.title')}>
                   <input checked={agentMode === 'review'} type="radio" onChange={() => onSetAgentMode('review')} />
-                  <span>审核模式</span>
+                  <span>{t('aiWorkspace.modes.review.label')}</span>
                 </label>
-                <label title="AI 给出低风险命令后自动执行，高风险命令仍会暂停确认">
+                <label title={t('aiWorkspace.modes.auto.title')}>
                   <input checked={agentMode === 'auto'} type="radio" onChange={() => onSetAgentMode('auto')} />
-                  <span>自动模式</span>
+                  <span>{t('aiWorkspace.modes.auto.label')}</span>
                 </label>
-                <label title="后果自负：AI 给出的所有命令都会自动执行，不再进行风险审核或确认">
+                <label title={t('aiWorkspace.modes.fullAuto.title')}>
                   <input checked={agentMode === 'full-auto'} type="radio" onChange={() => onSetAgentMode('full-auto')} />
-                  <span>完全自动</span>
+                  <span>{t('aiWorkspace.modes.fullAuto.label')}</span>
                 </label>
               </>
             )}
@@ -251,54 +263,54 @@ export function AIWorkspacePanel({
 
         {isAIInputCollapsed ? (
           <div className="agent-actions">
-            <button className="ai-icon-button" type="button" title="展开 AI 输入区域" onClick={() => onSetIsAIInputCollapsed(false)}>
+            <button className="ai-icon-button" type="button" title={t('aiWorkspace.actions.expandInput')} onClick={() => onSetIsAIInputCollapsed(false)}>
               ▴
             </button>
           </div>
         ) : (
           <div className="agent-actions">
             <div className="agent-actions-group">
-              <button className="ai-icon-button" type="button" title={isAIHistoryOpen ? '收起历史对话' : '展开历史对话'} onClick={onToggleAIHistory}>
-                {isAIHistoryOpen ? '◀' : '☰'}
+              <button className="ai-icon-button" type="button" title={isAIHistoryOpen ? t('aiWorkspace.actions.collapseHistory') : t('aiWorkspace.actions.expandHistory')} onClick={onToggleAIHistory}>
+                {isAIHistoryOpen ? '▤' : '☰'}
               </button>
-              <button className="ai-icon-button" type="button" title="新建 AI 对话" onClick={onCreateConversation}>
+              <button className="ai-icon-button" type="button" title={t('aiWorkspace.newConversation')} onClick={onCreateConversation}>
                 +
               </button>
-              <button className="ai-icon-button" type="button" title="放大 AI 输入框" onClick={() => onSetIsAIInputExpanded(true)}>
-                ⛶
+              <button className="ai-icon-button" type="button" title={t('aiWorkspace.actions.enlargeInput')} onClick={() => onSetIsAIInputExpanded(true)}>
+                ⇱
               </button>
-              <button className="ai-icon-button" type="button" title="清空当前 AI 输入框" onClick={onClearAiInput}>
+              <button className="ai-icon-button" type="button" title={t('aiWorkspace.actions.clearInput')} onClick={onClearAiInput}>
                 ×
               </button>
             </div>
             <div className="agent-actions-group agent-actions-group-primary">
-              <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title="让 AI 继续规划下一步" onClick={onContinueAgentTask}>
-                ↻
+              <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title={t('aiWorkspace.actions.continueTask')} onClick={onContinueAgentTask}>
+                →
               </button>
-              <button className="ai-icon-button" type="button" title="停止自动推进任务" onClick={onStopAgentTask}>
+              <button className="ai-icon-button" type="button" title={t('aiWorkspace.actions.stopTask')} onClick={onStopAgentTask}>
                 ■
               </button>
               {batchMode && batchSelectedHosts.length > 0 && !batchActive ? (
                 <button
                   className="ai-icon-button batch-run-button"
                   type="button"
-                  title={`批量执行 · 已选 ${batchSelectedHosts.length} 台`}
+                  title={t('aiWorkspace.batch.run', { count: batchSelectedHosts.length })}
                   disabled={!batchTask.trim()}
                   onClick={onStartBatchExecution}
                 >
-                  ▶
+                  ⚡
                 </button>
               ) : null}
               <button
                 className="ai-icon-button ai-send-button primary-button"
                 disabled={aiAssistantState === 'loading' || !settingsAiEnabled}
                 type="button"
-                title="发送给统一 AI 助手"
+                title={t('aiWorkspace.actions.send')}
                 onClick={onSubmitAiUnifiedInput}
               >
-                {aiAssistantState === 'loading' ? '…' : '▶'}
+                {aiAssistantState === 'loading' ? '…' : '➤'}
               </button>
-              <button className="ai-icon-button" type="button" title="收起 AI 输入区域" onClick={() => onSetIsAIInputCollapsed(true)}>
+              <button className="ai-icon-button" type="button" title={t('aiWorkspace.actions.collapseInput')} onClick={() => onSetIsAIInputCollapsed(true)}>
                 ▾
               </button>
             </div>
@@ -311,16 +323,6 @@ export function AIWorkspacePanel({
           <div className="batch-exec-cards" ref={batchCardsRef}>
             {batchHostResults.map((result) => {
               const isCurrent = batchActive && result.hostId === batchHostResults[batchHostIndex]?.hostId
-              const statusText =
-                result.status === 'pending'
-                  ? '等待中'
-                  : result.status === 'connecting'
-                    ? '连接中'
-                    : result.status === 'running'
-                      ? `执行中 · ${result.stepCount} 步`
-                      : result.status === 'success'
-                        ? `完成 · ${result.stepCount} 步`
-                        : '失败'
               return (
                 <div
                   key={result.hostId}
@@ -328,11 +330,11 @@ export function AIWorkspacePanel({
                 >
                   <div className="batch-card-header">
                     <span className="batch-card-host">{result.hostName}</span>
-                    <button className="batch-card-close" type="button" title="关闭此服务器任务" onClick={() => onCloseBatchHostCard(result.hostId)}>
+                    <button className="batch-card-close" type="button" title={t('aiWorkspace.batch.closeHostTask')} onClick={() => onCloseBatchHostCard(result.hostId)}>
                       ×
                     </button>
                   </div>
-                  <span className="batch-card-status">{statusText}</span>
+                  <span className="batch-card-status">{batchStatusText(result)}</span>
                 </div>
               )
             })}

@@ -31,10 +31,28 @@
       "ai": "AI"
     },
     "general": {
+      "language": "语言",
       "healthCheckInterval": "健康检查间隔（秒）",
       "terminalRetainedLines": "每个 SSH 标签保留终端行数",
       "rightServerInfoHeight": "右侧服务器信息默认高度（像素）",
       "rightPanelWidth": "右侧区域默认宽度（像素）"
+    },
+    "security": {
+      "desktopLoginRequired": "桌面客户端启动时要求登录",
+      "desktopLoginRequiredHint": "网页访问始终需要登录；关闭此项后，本机安装版客户端会使用本地安全会话自动进入。",
+      "webAccessEnabled": "启用网页远程访问",
+      "webAccessEnabledHint": "关闭后将禁止浏览器网页登录，仅允许本机桌面客户端访问。",
+      "changePasswordTitle": "修改登录密码",
+      "oldPassword": "旧密码",
+      "newPassword": "新密码",
+      "confirmPassword": "确认新密码",
+      "changePassword": "修改密码"
+    },
+    "metrics": {
+      "refreshInterval": "服务器信息刷新频率（秒）",
+      "historyWindow": "指标折线时间范围（分钟）",
+      "compactPoints": "小图圆点数量",
+      "expandedPoints": "放大图圆点数量"
     },
     "ai": {
       "enableAI": "开启 AI 功能",
@@ -48,7 +66,7 @@
       "conversationContextLimit": "对话上下文消息数",
       "agentCommandTimeout": "Agent 命令等待超时（秒）",
       "aiProviderTimeout": "AI 请求超时（秒）",
-      "predictionTriggerDelay": "预测触发延迟（毫秒）",
+      "predictionTriggerDelay": "预测触发延迟（ms）",
       "modelBaseUrl": "大模型地址",
       "modelApiKey": "API Key",
       "modelName": "模型",
@@ -58,6 +76,31 @@
       "addOllama": "+ Ollama",
       "modelHelp": "OpenAI/Ollama 走 /chat/completions；Claude 原生协议走 /v1/messages，需要 x-api-key。",
       "noModels": "尚未配置 AI 模型。",
+      "provider": {
+        "openaiCompatible": "OpenAI 兼容",
+        "anthropicClaude": "Anthropic Claude",
+        "ollama": "Ollama"
+      },
+      "providerHelp": {
+        "openaiCompatible": "适用于 OpenAI、DeepSeek、通义千问等兼容接口。",
+        "anthropicClaude": "使用 Claude 原生 Messages API，走 x-api-key 鉴权和事件流。",
+        "ollama": "使用 Ollama 的 OpenAI 兼容接口。"
+      },
+      "placeholders": {
+        "openaiModel": "gpt-4.1-mini",
+        "claudeModel": "claude-sonnet-4-0",
+        "ollamaModel": "llama3.1",
+        "defaultApiKey": "sk-...",
+        "claudeApiKey": "sk-ant-...",
+        "ollamaApiKey": "Ollama 通常不需要 API Key"
+      },
+      "providerTimeoutHint": "远端 Ollama 或大模型首次加载较慢时可调大，例如 120-300 秒。",
+      "modelActionTitles": {
+        "addOpenAI": "新增 OpenAI 兼容模型",
+        "addClaude": "新增 Anthropic Claude 模型",
+        "addOllama": "新增 Ollama 模型",
+        "removeModel": "删除这个模型配置"
+      },
       "modelTable": {
         "enable": "启用",
         "name": "名称",
@@ -67,173 +110,14 @@
         "model": "模型",
         "thinking": "思考",
         "description": "说明"
-      }
+      },
+      "systemPrompt": "系统提示词",
+      "overrideSystemPrompt": "覆盖默认系统提示词（上面填写的提示词将完全替代内置提示词，不再追加）",
+      "systemPromptHint": "用于统一 AI 对话和 Agent 任务，会随请求发送给 Go core。"
     }
   },
-  "menu": {
-    "file": "文件",
-    "edit": "编辑",
-    "view": "视图",
-    "tools": "工具",
-    "help": "帮助",
-    "session": "会话",
-    "window": "窗口"
-  },
-  "servers": {
-    "title": "SSH 服务器",
-    "addServer": "添加服务器",
-    "editServer": "编辑服务器",
-    "deleteServer": "删除服务器",
-    "connect": "连接",
-    "disconnect": "断开",
-    "reconnect": "重连",
-    "groups": "分组",
-    "addGroup": "新增分组",
-    "editGroup": "编辑分组",
-    "deleteGroup": "删除分组",
-    "serverName": "服务器名称",
-    "host": "主机",
-    "port": "端口",
-    "username": "用户名",
-    "password": "密码",
-    "sshKey": "SSH 密钥",
-    "authentication": "认证方式",
-    "savePassword": "保存密码",
-    "saveKey": "保存 SSH 密钥",
-    "selectFile": "选择文件",
-    "groupName": "分组名称",
-    "moveUp": "上移",
-    "moveDown": "下移"
-  },
   "files": {
-    "title": "文件",
-    "upload": "上传",
-    "download": "下载",
-    "refresh": "刷新",
-    "currentPath": "当前路径",
-    "parentDirectory": "上级目录",
-    "fileName": "文件名",
-    "fileSize": "文件大小",
-    "modifiedTime": "修改时间",
-    "permissions": "权限",
-    "preview": "预览",
-    "edit": "编辑",
-    "save": "保存",
-    "trackTerminalPath": "跟踪终端路径"
-  },
-  "terminal": {
-    "title": "终端",
-    "newSession": "新建会话",
-    "closeSession": "关闭会话",
-    "clearScreen": "清屏",
-    "copy": "复制",
-    "paste": "粘贴",
-    "selectAll": "全选",
-    "search": "搜索",
-    "fontSize": "字体大小",
-    "scrollback": "滚动缓冲行数"
-  },
-  "ai": {
-    "title": "AI 助手",
-    "input": "询问 AI...",
-    "send": "发送",
-    "clear": "清空",
-    "history": "历史",
-    "prediction": "命令预测",
-    "agentMode": "Agent 模式",
-    "reviewMode": "审核模式",
-    "autoMode": "自动模式",
-    "thinking": "思考中...",
-    "generating": "生成中...",
-    "addToAI": "加入 AI",
-    "customPrompt": "自定义系统提示词",
-    "overridePrompt": "覆盖默认系统提示词",
-    "overridePromptHint": "上面填写的提示词将完全替代内置提示词，不再追加"
-  },
-  "metrics": {
-    "title": "服务器指标",
-    "cpu": "CPU 使用率",
-    "memory": "内存使用率",
-    "disk": "磁盘使用率",
-    "network": "网络",
-    "upload": "上传",
-    "download": "下载",
-    "uptime": "运行时间",
-    "loadAverage": "负载均衡",
-    "processes": "进程数"
-  },
-  "settings": {
-    "title": "设置",
-    "general": "通用",
-    "security": "安全",
-    "ai": "AI",
-    "metrics": "指标",
-    "language": "语言",
-    "theme": "主题",
-    "fontSize": "字体大小",
-    "terminalSettings": "终端设置",
-    "aiSettings": "AI 设置",
-    "apiKey": "API Key",
-    "model": "模型",
-    "endpoint": "端点",
-    "timeout": "超时",
-    "contextLength": "上下文长度",
-    "maxTokens": "最大 Token 数",
-    "stepsLimit": "步数限制",
-    "predictionCount": "预测数量",
-    "commandHistory": "命令历史",
-    "systemPrompt": "系统提示词",
-    "refreshInterval": "刷新间隔",
-    "chartTimeRange": "图表时间范围",
-    "chartPoints": "图表数据点数"
-  },
-  "commands": {
-    "history": "命令历史",
-    "favorites": "收藏命令",
-    "addToFavorites": "添加到收藏",
-    "removeFromFavorites": "从收藏移除",
-    "copyCommand": "复制命令",
-    "executeCommand": "执行命令",
-    "searchHistory": "搜索历史"
-  },
-  "errors": {
-    "connectionFailed": "连接失败",
-    "authenticationFailed": "认证失败",
-    "fileNotFound": "文件未找到",
-    "permissionDenied": "权限被拒绝",
-    "networkError": "网络错误",
-    "timeout": "超时",
-    "unknownError": "未知错误",
-    "coreNotConnected": "Core 未连接",
-    "coreConnected": "Core 已连接"
-  },
-  "success": {
-    "connected": "已连接",
-    "disconnected": "已断开",
-    "saved": "已保存",
-    "deleted": "已删除",
-    "uploaded": "已上传",
-    "downloaded": "已下载"
-  },
-  "confirm": {
-    "deleteServer": "确定要删除这个服务器吗？",
-    "deleteGroup": "确定要删除这个分组吗？",
-    "closeSession": "确定要关闭这个会话吗？",
-    "unsavedChanges": "您有未保存的更改。要保存吗？"
-  },
-  "shortcuts": {
-    "title": "键盘快捷键",
-    "newSession": "新建会话",
-    "closeSession": "关闭会话",
-    "nextSession": "下一个会话",
-    "previousSession": "上一个会话",
-    "toggleAI": "切换 AI 面板",
-    "toggleFiles": "切换文件面板",
-    "toggleMetrics": "切换指标面板",
-    "search": "搜索",
-    "settings": "设置",
-    "copy": "复制",
-    "paste": "粘贴"
+    "parentDirectory": "上级目录"
   },
   "featureGuide": {
     "title": "功能说明",
@@ -260,7 +144,7 @@
       },
       "serverReorder": {
         "name": "服务器排序",
-        "description": "支持上移下移调整服务器在列表中的显示顺序。",
+        "description": "支持上移和下移，调整列表中的显示顺序。",
         "usage": "点击服务器卡片右上角菜单，选择上移或下移。"
       }
     },
@@ -269,32 +153,32 @@
       "summary": "管理多个 SSH 会话，保留终端输出，并跟踪远程路径。",
       "multiSession": {
         "name": "多会话标签",
-        "description": "每台服务器可以打开独立会话标签。",
+        "description": "每台服务器都可以打开独立的会话标签。",
         "usage": "从左侧服务器列表创建会话，在中间标签栏切换或关闭。"
       },
       "commandHistory": {
         "name": "命令历史",
-        "description": "记录可复用命令，支持复制、执行和收藏。",
-        "usage": "右侧切换到历史或收藏，点击命令即可回填或执行。"
+        "description": "记录可复用的命令，支持复制、执行和收藏。",
+        "usage": "在右侧切换到历史或收藏，点击命令即可填充或执行。"
       },
       "terminalContext": {
         "name": "终端上下文",
-        "description": "AI 会读取最近终端输出、当前命令和目录作为上下文。",
-        "usage": "在设置里调整终端上下文字符数和保留行数。"
+        "description": "AI 会读取最近的终端输出、当前命令和目录作为上下文。",
+        "usage": "可在设置中调整终端上下文字符数和保留行数。"
       }
     },
     "aiAssistant": {
       "title": "AI 助手",
-      "summary": "统一问答、错误解释、命令生成和 Agent 执行入口。",
+      "summary": "统一处理问答、错误解释、命令生成和 Agent 执行入口。",
       "modelConfig": {
         "name": "模型配置",
-        "description": "支持多个 OpenAI 兼容模型和 Ollama 模型，并选择当前启用项。",
-        "usage": "设置 > AI 中新增模型；Ollama 地址填写到 /v1，例如 http://host:11434/v1。"
+        "description": "支持多个 OpenAI 兼容模型和 Ollama 模型，并可选择当前启用项。",
+        "usage": "在 设置 > AI 中添加模型；Ollama 地址需填到 /v1，例如 http://host:11434/v1。"
       },
       "unifiedInput": {
         "name": "统一 AI 输入",
-        "description": "直接输入问题、目标或让 AI 根据终端内容生成命令。",
-        "usage": "右侧 AI 面板输入需求，Ctrl+Enter 或发送按钮提交。"
+        "description": "可直接输入问题、目标，或让 AI 基于终端内容生成命令。",
+        "usage": "在右侧 AI 面板输入要求，按 Ctrl+Enter 或发送按钮提交。"
       },
       "agentMode": {
         "name": "Agent 模式",
@@ -303,23 +187,23 @@
       },
       "thinkingControl": {
         "name": "思考控制",
-        "description": "可关闭 Agent 思考以减少 Qwen/Ollama 长时间推理。",
-        "usage": "设置 > AI 中关闭【开启 Agent 思考】。"
+        "description": "可以关闭 Agent 思考，减少部分模型的长时间推理。",
+        "usage": "在 设置 > AI 中关闭“开启 Agent 思考”。"
       },
       "commandPrediction": {
         "name": "命令预测",
-        "description": "根据终端上下文预测下一条可能输入的命令。",
-        "usage": "在终端区域查看预测，启用预测 thinking 可观察模型推理片段。"
+        "description": "基于终端上下文预测下一条可能的命令。",
+        "usage": "在终端区查看预测，开启预测 thinking 可观察模型推理片段。"
       },
       "customPrompt": {
-        "name": "自定义提示词",
+        "name": "自定义 Prompt",
         "description": "支持完全覆盖默认系统提示词，自定义 AI 行为规则。",
-        "usage": "设置 > AI 中填写自定义提示词，勾选覆盖选项。"
+        "usage": "在 设置 > AI 中填写自定义提示词，勾选覆盖选项。"
       },
       "longTaskOptimization": {
         "name": "长任务优化",
-        "description": "增大 token/上下文/步数限制，智能命令超时与输出截断。",
-        "usage": "适用于安装、部署等长任务，Agent 可自动执行多步骤操作。"
+        "description": "提高 token、上下文和步数上限，智能调整命令超时与输出截断。",
+        "usage": "适合安装、部署等长任务，Agent 可自动执行多步操作。"
       }
     },
     "batchTask": {
@@ -327,18 +211,18 @@
       "summary": "勾选多台服务器，让 AI 按顺序执行同一个自然语言任务。",
       "batchSelection": {
         "name": "批量选择",
-        "description": "左侧开启批量模式后勾选目标服务器。",
-        "usage": "右侧 AI 区域会显示已选服务器 tag，点击 tag 上的 x 可取消勾选。"
+        "description": "在左侧开启批量模式，勾选目标服务器。",
+        "usage": "右侧 AI 区域会显示已选服务器标签，点击 x 可取消勾选。"
       },
       "sequentialExecution": {
-        "name": "逐台执行",
+        "name": "顺序执行",
         "description": "批量任务会按勾选顺序连接服务器并推进 Agent。",
-        "usage": "输入任务描述后点击闪电按钮，执行卡片会显示每台状态。"
+        "usage": "输入任务描述后点击闪电按钮，执行卡片会显示各自状态。"
       },
       "finalSummary": {
         "name": "最终总结",
-        "description": "批量完成后会汇总成功、失败和每台执行摘要。",
-        "usage": "在 AI 对话历史中查看批量任务记录和最终总结。"
+        "description": "批量完成后，会总结成功、失败和各自执行结论。",
+        "usage": "可在 AI 对话历史中查看批量任务记录与最终总结。"
       }
     },
     "fileTransfer": {
@@ -346,61 +230,61 @@
       "summary": "浏览远程目录，预览、编辑和传输文件。",
       "filePanel": {
         "name": "文件面板",
-        "description": "查看当前服务器目录、排序和搜索文件。",
-        "usage": "顶部传输菜单打开文件面板，也可以跟随终端当前目录。"
+        "description": "查看当前服务器目录，对文件排序并浏览。",
+        "usage": "从顶部传输菜单打开文件面板，也可以跟随当前终端目录。"
       },
       "previewEdit": {
         "name": "预览与编辑",
-        "description": "文本文件可直接预览和编辑，图片视频可预览。",
-        "usage": "在文件列表中打开文件，编辑后保存到远程服务器。"
+        "description": "文本文件可直接预览和编辑，图片和视频可以预览。",
+        "usage": "在文件列表中打开文件，编辑后保存回远程服务器。"
       },
       "uploadDownload": {
-        "name": "上传下载",
-        "description": "支持上传本地文件到远程目录和下载远程文件。",
+        "name": "上传与下载",
+        "description": "支持上传本地文件到远程目录与下载远程文件。",
         "usage": "使用传输菜单或文件面板按钮发起传输。"
       }
     },
     "logSecurity": {
       "title": "日志与安全",
-      "summary": "查看运行日志、调整登录策略和排查 AI/provider 问题。",
+      "summary": "查看运行日志，调整登录策略，并排查 AI 和 provider 问题。",
       "runtimeLog": {
         "name": "运行日志",
-        "description": "查看 core、AI、认证和 UI 的运行记录。",
-        "usage": "工具 > 日志中搜索 source=ai 或接口路径排查问题。"
+        "description": "查看 core、AI、鉴权和 UI 的运行记录。",
+        "usage": "在 工具 > 日志 中搜索 source=ai 或接口路径来排查问题。"
       },
       "webLogin": {
         "name": "网页登录",
-        "description": "可要求 Web 访问登录，也可要求桌面启动时登录。",
-        "usage": "设置 > 安全中调整登录策略或修改密码。"
+        "description": "可以要求 Web 访问登录，也可以要求桌面启动登录。",
+        "usage": "在 设置 > 安全 中调整登录策略或修改密码。"
       },
       "errorNotification": {
-        "name": "错误通知",
+        "name": "错误提示",
         "description": "右下角错误卡片会显示来源、接口和详细信息。",
-        "usage": "遇到 AI 或 SSH 错误时先看详情，再到日志里查完整上下文。"
+        "usage": "遇到 AI 或 SSH 错误时，先看详情，再到日志中查看完整上下文。"
       }
     },
     "keyboardShortcuts": {
       "title": "键盘快捷键",
-      "summary": "提高操作效率的快捷键列表。",
+      "summary": "快捷键列表，提升操作效率。",
       "global": {
         "name": "全局快捷键",
         "description": "Ctrl+N 新建会话，Ctrl+W 关闭会话，Ctrl+Tab 切换会话，Ctrl+, 打开设置。",
-        "usage": "在任何界面都可使用全局快捷键。"
+        "usage": "在任意界面都可使用全局快捷键。"
       },
       "terminal": {
         "name": "终端快捷键",
         "description": "Ctrl+C 复制，Ctrl+V 粘贴，Ctrl+L 清屏，Tab 接受预测。",
-        "usage": "在终端区域使用，Tab 键可接受 AI 预测的命令。"
+        "usage": "在终端区域使用，Tab 键可接受 AI 预测命令。"
       },
       "ai": {
         "name": "AI 快捷键",
-        "description": "Ctrl+Space 触发预测，Enter 发送消息，Escape 清空输入。",
-        "usage": "在 AI 输入框中使用快捷键提高效率。"
+        "description": "Ctrl+Space 触发预测，Ctrl+Enter 发送消息，Escape 清空输入。",
+        "usage": "在 AI 输入框中使用快捷键，提高效率。"
       }
     },
     "multiLanguage": {
       "title": "多语言支持",
-      "summary": "支持中英文切换，方便国际用户使用。",
+      "summary": "支持中英文切换，方便国际化使用。",
       "languageSwitch": {
         "name": "语言切换",
         "description": "在设置中切换界面语言，支持中文和英文。",
@@ -408,9 +292,167 @@
       },
       "autoSave": {
         "name": "自动保存",
-        "description": "语言偏好会自动保存到本地，下次启动自动应用。",
+        "description": "语言偏好会自动保存到本地，下次启动会自动应用。",
         "usage": "切换语言后无需手动保存，系统会自动记住您的选择。"
       }
+    }
+  },
+  "logs": {
+    "sectionLabel": "工具",
+    "title": "运行日志",
+    "close": "关闭日志窗口",
+    "level": "展示级别",
+    "healthChecks": "记录健康检查",
+    "search": "搜索",
+    "searchPlaceholder": "搜索 predict、ai/predict、source=ai...",
+    "refresh": "刷新日志",
+    "empty": "暂无日志"
+  },
+  "fileBrowser": {
+    "title": "远程文件",
+    "collapse": "折叠左侧面板",
+    "parentDirectory": "进入上级目录",
+    "downloadSelected": "下载选中的 {{count}} 个文件",
+    "downloadSelectedEmpty": "先单击选择要下载的文件",
+    "downloadButton": "下载",
+    "uploadToCurrent": "上传文件到当前目录",
+    "upload": "上传",
+    "pathLabel": "远程路径",
+    "openPath": "进入输入的远程路径",
+    "open": "进入",
+    "trackTerminalPath": "跟踪终端路径",
+    "directoryLabel": "远程文件目录",
+    "dropUpload": "松开上传",
+    "dropTarget": "上传到 {{path}}",
+    "loadingFiles": "远程文件加载中",
+    "refreshCurrent": "刷新当前目录",
+    "sortBy": "按{{label}}{{direction}}排序",
+    "sortDirection": {
+      "asc": "降序",
+      "desc": "升序"
+    },
+    "fileTitle": "单击选择，Ctrl/Shift 多选，双击预览，右键下载，拖出快速下载",
+    "directoryTitle": "双击进入目录",
+    "transferTasks": "传输任务",
+    "removeTransfer": "移除 {{name}} 传输记录",
+    "transferDirection": {
+      "upload": "上传",
+      "download": "下载"
+    },
+    "columns": {
+      "name": "名称",
+      "size": "大小",
+      "modifiedAt": "修改日期"
+    },
+    "kind": {
+      "text": "文本",
+      "image": "图片",
+      "video": "视频",
+      "binary": "文件"
+    }
+  },
+  "filePreview": {
+    "preview": "预览",
+    "search": "搜索",
+    "edit": "编辑",
+    "save": "保存",
+    "saving": "保存中...",
+    "download": "下载",
+    "downloadFile": "下载文件",
+    "loading": "正在加载 {{name}}",
+    "loadFailed": "预览失败",
+    "openAsText": "以文本方式打开",
+    "unsupported": "暂不支持直接预览这种文件",
+    "unableToRead": "无法读取远程文件",
+    "editMode": "编辑模式",
+    "undo": "撤销",
+    "redo": "重做",
+    "selectAll": "全选",
+    "indentMore": "缩进",
+    "indentLess": "反缩进",
+    "toggleComment": "注释",
+    "format": "格式化",
+    "reset": "还原",
+    "copy": "复制",
+    "titlePreview": "以预览模式查看 {{name}}",
+    "titleSearch": "搜索 {{name}} 内容",
+    "titleEdit": "编辑 {{name}}",
+    "titleSave": "保存 {{name}}",
+    "titleDownload": "下载 {{name}}",
+    "titleOpenAsText": "以文本方式打开 {{name}}",
+    "titleUndo": "撤销 {{name}} 的上一步编辑",
+    "titleRedo": "重做 {{name}} 的编辑",
+    "titleSelectAll": "全选 {{name}} 内容",
+    "titleIndentMore": "增加 {{name}} 选中行缩进",
+    "titleIndentLess": "减少 {{name}} 选中行缩进",
+    "titleToggleComment": "切换 {{name}} 选中内容注释",
+    "titleFormat": "格式化 {{name}}",
+    "titleReset": "将 {{name}} 恢复为已保存内容",
+    "titleCopy": "复制 {{name}} 当前内容"
+  },
+  "sideError": {
+    "close": "关闭错误提示",
+    "source": "来源",
+    "path": "接口",
+    "status": "状态"
+  },
+  "aiWorkspace": {
+    "historyTitle": "历史对话",
+    "newConversation": "新建 AI 对话",
+    "switchConversation": "切换到 {{title}}",
+    "deleteConversation": "删除对话：{{title}}",
+    "loadMore": "加载更多...",
+    "viewingHistory": "当前正在查看历史对话，实时任务仍会继续写入当前 SSH 的任务对话。",
+    "returnToLive": "返回当前任务",
+    "aiDisabled": "AI 功能已关闭，可在设置中开启。",
+    "providerMissing": "请先在设置里填写大模型地址和模型，保存后再使用 AI。",
+    "emptyConversation": "当前对话暂无消息，可以直接输入问题或目标。",
+    "streaming": "AI 正在实时返回，消息会按时间顺序继续追加。",
+    "status": {
+      "title": "状态",
+      "error": "错误"
+    },
+    "input": {
+      "defaultPlaceholder": "直接告诉 AI 你想做什么，例如：解释这段报错、总结日志、生成安装 nginx 的命令，或帮我完成一次服务器操作。",
+      "batchPlaceholder": "批量任务：输入自然语言任务描述（如更新 apt、检查磁盘空间），点击右侧发送按钮启动。"
+    },
+    "batch": {
+      "modeSummary": "批量模式 - 已选 {{count}} 台",
+      "removeHost": "取消选择 {{name}}",
+      "run": "批量执行 - 已选 {{count}} 台",
+      "status": {
+        "pending": "等待中",
+        "connecting": "连接中",
+        "running": "执行中 - {{steps}} 步",
+        "success": "完成 - {{steps}} 步",
+        "error": "失败"
+      },
+      "closeHostTask": "关闭此服务器任务"
+    },
+    "modes": {
+      "review": {
+        "label": "审核模式",
+        "title": "AI 给出命令后需要人工点击执行"
+      },
+      "auto": {
+        "label": "自动模式",
+        "title": "AI 给出低风险命令后自动执行，高风险命令仍需确认"
+      },
+      "fullAuto": {
+        "label": "完全自动",
+        "title": "AI 给出的所有命令都会自动执行，不再进行风险审核或确认"
+      }
+    },
+    "actions": {
+      "expandInput": "展开 AI 输入区域",
+      "collapseHistory": "收起历史对话",
+      "expandHistory": "展开历史对话",
+      "enlargeInput": "放大 AI 输入框",
+      "clearInput": "清空当前 AI 输入框",
+      "continueTask": "让 AI 继续规划下一步",
+      "stopTask": "停止自动推进任务",
+      "send": "发送给统一 AI 助手",
+      "collapseInput": "收起 AI 输入区域"
     }
   }
 }

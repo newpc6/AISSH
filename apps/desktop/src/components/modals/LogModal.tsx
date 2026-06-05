@@ -1,4 +1,6 @@
 import type { LogEntry, LogLevel } from '@ai-ssh/shared-contracts'
+import { useTranslation } from 'react-i18next'
+import { formatLocalizedDateTime } from '../../utils'
 
 type LogModalProps = {
   open: boolean
@@ -25,6 +27,8 @@ export function LogModal({
   onLogSearchChange,
   onRefresh,
 }: LogModalProps) {
+  const { t, i18n } = useTranslation()
+
   if (!open) {
     return null
   }
@@ -34,15 +38,15 @@ export function LogModal({
       <section className="log-modal">
         <div className="modal-header">
           <div>
-            <p className="section-label">工具</p>
-            <h3>运行日志</h3>
+            <p className="section-label">{t('logs.sectionLabel')}</p>
+            <h3>{t('logs.title')}</h3>
           </div>
-          <button type="button" title="关闭日志窗口" onClick={onClose}>×</button>
+          <button type="button" title={t('logs.close')} onClick={onClose}>×</button>
         </div>
 
         <div className="log-toolbar">
           <label>
-            <span>展示级别</span>
+            <span>{t('logs.level')}</span>
             <select value={logLevel} onChange={(event) => onUpdateLogLevel(event.target.value as LogLevel)}>
               <option value="debug">debug</option>
               <option value="info">info</option>
@@ -56,22 +60,22 @@ export function LogModal({
               type="checkbox"
               onChange={(event) => onUpdateLogHealthChecks(event.target.checked)}
             />
-            <span>记录健康检查</span>
+            <span>{t('logs.healthChecks')}</span>
           </label>
           <label>
-            <span>搜索</span>
+            <span>{t('logs.search')}</span>
             <input
-              placeholder="搜索 predict、ai/predict、source=ai..."
+              placeholder={t('logs.searchPlaceholder')}
               value={logSearch}
               onChange={(event) => onLogSearchChange(event.target.value)}
             />
           </label>
-          <button type="button" title="刷新运行日志" onClick={onRefresh}>刷新</button>
+          <button type="button" title={t('logs.refresh')} onClick={onRefresh}>{t('app.refresh')}</button>
         </div>
 
         <div className="log-list">
           {visibleLogs.length === 0 ? (
-            <p className="hint-text">暂无日志</p>
+            <p className="hint-text">{t('logs.empty')}</p>
           ) : (
             visibleLogs
               .slice()
@@ -81,7 +85,7 @@ export function LogModal({
                   <header>
                     <strong>{entry.level}</strong>
                     <span>{entry.source}</span>
-                    <time>{new Date(entry.timestamp).toLocaleString()}</time>
+                    <time>{formatLocalizedDateTime(entry.timestamp, i18n.language)}</time>
                   </header>
                   <p>{entry.message}</p>
                   {entry.fields ? <code>{JSON.stringify(entry.fields)}</code> : null}

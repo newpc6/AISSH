@@ -1,4 +1,6 @@
+import { useTranslation } from 'react-i18next'
 import type { AppErrorNotice } from '../../types'
+import { formatLocalizedTime } from '../../utils'
 
 type SideErrorNoticeProps = {
   errorNotice: AppErrorNotice | null
@@ -6,6 +8,8 @@ type SideErrorNoticeProps = {
 }
 
 export function SideErrorNotice({ errorNotice, onClose }: SideErrorNoticeProps) {
+  const { t, i18n } = useTranslation()
+
   if (!errorNotice) {
     return null
   }
@@ -15,9 +19,9 @@ export function SideErrorNotice({ errorNotice, onClose }: SideErrorNoticeProps) 
       <header>
         <div>
           <strong>{errorNotice.title}</strong>
-          <span>{new Date(errorNotice.occurredAt).toLocaleTimeString()}</span>
+          <span>{formatLocalizedTime(errorNotice.occurredAt, i18n.language)}</span>
         </div>
-        <button type="button" title="关闭错误提示" onClick={onClose}>
+        <button type="button" title={t('sideError.close')} onClick={onClose}>
           ×
         </button>
       </header>
@@ -25,19 +29,19 @@ export function SideErrorNotice({ errorNotice, onClose }: SideErrorNoticeProps) 
       <dl>
         {errorNotice.source ? (
           <>
-            <dt>来源</dt>
+            <dt>{t('sideError.source')}</dt>
             <dd>{errorNotice.source}</dd>
           </>
         ) : null}
         {errorNotice.path ? (
           <>
-            <dt>接口</dt>
+            <dt>{t('sideError.path')}</dt>
             <dd>{`${errorNotice.method ?? 'GET'} ${errorNotice.path}`}</dd>
           </>
         ) : null}
         {errorNotice.status ? (
           <>
-            <dt>状态</dt>
+            <dt>{t('sideError.status')}</dt>
             <dd>{errorNotice.status}</dd>
           </>
         ) : null}

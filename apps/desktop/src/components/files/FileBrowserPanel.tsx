@@ -1,7 +1,8 @@
 import type { CompositionEvent, DragEvent, KeyboardEvent, MouseEvent, RefObject } from 'react'
 import type { FileEntry } from '@ai-ssh/shared-contracts'
+import { useTranslation } from 'react-i18next'
 import type { FileSortKey, FileSortState, TransferTask } from '../../types'
-import { fileSortLabel, formatBytes, parentPath } from '../../utils'
+import { formatBytes, formatLocalizedDateTime, parentPath } from '../../utils'
 
 type FileBrowserPanelProps = {
   fileBrowserRef: RefObject<HTMLDivElement | null>
@@ -74,27 +75,31 @@ export function FileBrowserPanel({
   onSetupRemoteFileDrag,
   onUploadInputChange,
 }: FileBrowserPanelProps) {
+  const { t, i18n } = useTranslation()
+
+  const sortLabel = (key: FileSortKey) => t(`fileBrowser.columns.${key}`)
+
   return (
     <div className="left-content">
       <div className="panel-toolbar">
-        <strong>远程文件</strong>
+        <strong>{t('fileBrowser.title')}</strong>
         <div>
-          <button type="button" title="折叠左侧面板" onClick={onCollapse}>
-            ◁
+          <button type="button" title={t('fileBrowser.collapse')} onClick={onCollapse}>
+            ◀
           </button>
-          <button type="button" title="进入上级目录" onClick={() => void onLoadFiles(parentPath(filePath))}>
-            上级
+          <button type="button" title={t('fileBrowser.parentDirectory')} onClick={() => void onLoadFiles(parentPath(filePath))}>
+            {t('files.parentDirectory')}
           </button>
           <button
             type="button"
-            title={selectedFileCount > 0 ? `下载选中的 ${selectedFileCount} 个文件` : '先单击选择要下载的文件'}
+            title={selectedFileCount > 0 ? t('fileBrowser.downloadSelected', { count: selectedFileCount }) : t('fileBrowser.downloadSelectedEmpty')}
             disabled={selectedFileCount === 0}
             onClick={() => void onDownloadSelectedFiles()}
           >
-            下载{selectedFileCount > 0 ? `(${selectedFileCount})` : ''}
+            {t('fileBrowser.downloadButton')}{selectedFileCount > 0 ? `(${selectedFileCount})` : ''}
           </button>
-          <button type="button" title="上传文件到当前目录" onClick={() => void onChooseUploadFiles()}>
-            上传
+          <button type="button" title={t('fileBrowser.uploadToCurrent')} onClick={() => void onChooseUploadFiles()}>
+            {t('fileBrowser.upload')}
           </button>
         </div>
       </div>
@@ -105,9 +110,9 @@ export function FileBrowserPanel({
           void onLoadFiles(filePathDraft.trim() || '.')
         }}
       >
-        <input aria-label="远程路径" value={filePathDraft} onChange={(event) => onFilePathDraftChange(event.target.value)} />
-        <button type="submit" title="进入输入的远程路径">
-          进入
+        <input aria-label={t('fileBrowser.pathLabel')} value={filePathDraft} onChange={(event) => onFilePathDraftChange(event.target.value)} />
+        <button type="submit" title={t('fileBrowser.openPath')}>
+          {t('fileBrowser.open')}
         </button>
       </form>
       <input
@@ -122,11 +127,11 @@ export function FileBrowserPanel({
       />
       <label className="toggle-row">
         <input checked={trackTerminalPath} type="checkbox" onChange={(event) => onSetTrackTerminalPath(event.target.checked)} />
-        <span>跟踪终端路径</span>
+        <span>{t('fileBrowser.trackTerminalPath')}</span>
       </label>
       <div
         ref={fileBrowserRef}
-        aria-label="远程文件目录"
+        aria-label={t('fileBrowser.directoryLabel')}
         className={`file-browser ${fileError ? 'has-status' : ''} ${isFileDropActive ? 'drop-active' : ''}`}
         tabIndex={0}
         onCompositionEnd={onHandleBrowserCompositionEnd}
@@ -162,18 +167,18 @@ export function FileBrowserPanel({
       >
         {isFileDropActive ? (
           <div className="file-drop-overlay">
-            <strong>松开上传</strong>
-            <span>上传到 {filePath}</span>
+            <strong>{t('fileBrowser.dropUpload')}</strong>
+            <span>{t('fileBrowser.dropTarget', { path: filePath })}</span>
           </div>
         ) : null}
         <div className="file-path-row">
           <span className="file-path-text">{filePath}</span>
           <div className="file-path-actions">
             {isLoadingFiles ? (
-              <span className="file-loading-spinner" role="status" aria-label="远程文件加载中" title="远程文件加载中" />
+              <span className="file-loading-spinner" role="status" aria-label={t('fileBrowser.loadingFiles')} title={t('fileBrowser.loadingFiles')} />
             ) : null}
-            <button type="button" title="刷新当前目录" onClick={() => void onLoadFiles(filePath)}>
-              刷新
+            <button type="button" title={t('fileBrowser.refreshCurrent')} onClick={() => void onLoadFiles(filePath)}>
+              {t('app.refresh')}
             </button>
           </div>
         </div>
@@ -189,11 +194,14 @@ export function FileBrowserPanel({
                 key={key}
                 className={fileSort.key === key ? 'active' : ''}
                 type="button"
-                title={`按${fileSortLabel(key)}${fileSort.key === key && fileSort.direction === 'asc' ? '降序' : '升序'}排序`}
+                title={t('fileBrowser.sortBy', {
+                  label: sortLabel(key),
+                  direction: t(`fileBrowser.sortDirection.${fileSort.key === key && fileSort.direction === 'asc' ? 'asc' : 'desc'}`),
+                })}
                 onClick={() => onFileSortChange(key)}
               >
-                <span>{fileSortLabel(key)}</span>
-                <small aria-hidden="true">{fileSort.key === key ? (fileSort.direction === 'asc' ? '↑' : '↓') : ''}</small>
+                <span>{sortLabel(key)}</span>
+                <small aria-hidden="true">{fileSort.key === key ? (fileSort.direction === 'asc' ? '↓' : '↑') : ''}</small>
               </button>
             ))}
           </div>
@@ -205,7 +213,7 @@ export function FileBrowserPanel({
               data-file-index={index}
               draggable={entry.type === 'file'}
               type="button"
-              title={entry.type === 'directory' ? '双击进入目录' : '单击选择，Ctrl/Shift 多选，双击预览，右键下载，拖出快速下载'}
+              title={entry.type === 'directory' ? t('fileBrowser.directoryTitle') : t('fileBrowser.fileTitle')}
               onClick={(event) => {
                 onFocusFilePath(entry.path)
                 if (entry.type === 'file') {
@@ -236,26 +244,26 @@ export function FileBrowserPanel({
             >
               <span>{entry.type === 'directory' ? '▸ ' : ''}{entry.name}</span>
               <span>{entry.type === 'directory' ? '-' : formatBytes(entry.size)}</span>
-              <span>{new Date(entry.modifiedAt).toLocaleString()}</span>
+              <span>{formatLocalizedDateTime(entry.modifiedAt, i18n.language)}</span>
             </button>
           ))}
         </div>
       </div>
       {transferTasks.length > 0 ? (
         <div className="transfer-dock">
-          <strong>传输任务</strong>
+          <strong>{t('fileBrowser.transferTasks')}</strong>
           <div className="transfer-list">
             {transferTasks.slice(0, 4).map((task) => (
               <div key={task.id}>
                 <button
                   className="transfer-close"
                   type="button"
-                  title={`移除 ${task.name} 传输记录`}
+                  title={t('fileBrowser.removeTransfer', { name: task.name })}
                   onClick={() => onConfirmRemoveTransferTask(task)}
                 >
                   ×
                 </button>
-                <span>{task.direction === 'upload' ? '上传' : '下载'} · {task.name}</span>
+                <span>{t(`fileBrowser.transferDirection.${task.direction}`)} · {task.name}</span>
                 <progress max="100" value={task.progress} />
                 <small>{task.status}</small>
               </div>

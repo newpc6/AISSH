@@ -30,6 +30,7 @@ import {
   CORE_DEFAULT_PORT,
 } from '@ai-ssh/shared-contracts'
 import type { AIStreamEvent, DesktopWindow, FilePreviewKind, FileSortKey, FileSortState, LoadState, MetricChartKey, MetricSample, TerminalCache, WindowWithSaveFilePicker } from './types'
+import { currentLocaleTag, normalizeAppLanguage } from './i18n'
 
 export const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 export const AI_PREDICT_STREAM_API_PATH = '/api/ai/predict/stream'
@@ -330,6 +331,34 @@ export function compareFileEntries(a: FileEntry, b: FileEntry, sort: FileSortSta
 
 export function formatRate(size: number) {
   return `${formatBytes(Math.max(0, size))}/s`
+}
+
+export function resolveLocaleTag(language?: string | null) {
+  return currentLocaleTag(language)
+}
+
+export function localeFromLanguage(language?: string | null) {
+  return normalizeAppLanguage(language)
+}
+
+export function formatLocalizedDateTime(
+  value: string,
+  language?: string | null,
+  options?: Intl.DateTimeFormatOptions,
+) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(resolveLocaleTag(language), options)
+}
+
+export function formatLocalizedTime(
+  value: string,
+  language?: string | null,
+  options?: Intl.DateTimeFormatOptions,
+) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleTimeString(resolveLocaleTag(language), options)
 }
 
 export function fileExtension(name: string) {

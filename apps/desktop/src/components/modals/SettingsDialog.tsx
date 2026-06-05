@@ -4,20 +4,18 @@ import type { SettingsSection } from '../../types'
 import { useTranslation } from 'react-i18next'
 import { LanguageSwitcher } from '../common/LanguageSwitcher'
 
-const AI_PROVIDER_OPTIONS: Array<{ value: AIModelProvider; label: string }> = [
-  { value: 'openai-compatible', label: 'OpenAI 兼容' },
-  { value: 'anthropic-claude', label: 'Anthropic Claude' },
-  { value: 'ollama', label: 'Ollama' },
-]
+const AI_PROVIDER_VALUES: AIModelProvider[] = ['openai-compatible', 'anthropic-claude', 'ollama']
 
-function aiProviderLabel(provider: AIModelProvider) {
-  return AI_PROVIDER_OPTIONS.find((item) => item.value === provider)?.label ?? provider
+function aiProviderLabel(provider: AIModelProvider, t: (key: string) => string) {
+  if (provider === 'ollama') return t('settings.ai.provider.ollama')
+  if (provider === 'anthropic-claude') return t('settings.ai.provider.anthropicClaude')
+  return t('settings.ai.provider.openaiCompatible')
 }
 
-function aiModelPlaceholder(provider: AIModelProvider) {
-  if (provider === 'ollama') return 'llama3.1'
-  if (provider === 'anthropic-claude') return 'claude-sonnet-4-0'
-  return 'gpt-4.1-mini'
+function aiModelPlaceholder(provider: AIModelProvider, t: (key: string) => string) {
+  if (provider === 'ollama') return t('settings.ai.placeholders.ollamaModel')
+  if (provider === 'anthropic-claude') return t('settings.ai.placeholders.claudeModel')
+  return t('settings.ai.placeholders.openaiModel')
 }
 
 function aiBaseUrlPlaceholder(provider: AIModelProvider, defaultOllamaBaseUrl: string) {
@@ -26,16 +24,16 @@ function aiBaseUrlPlaceholder(provider: AIModelProvider, defaultOllamaBaseUrl: s
   return 'https://api.openai.com/v1'
 }
 
-function aiKeyPlaceholder(provider: AIModelProvider) {
-  if (provider === 'ollama') return 'Ollama 通常可留空'
-  if (provider === 'anthropic-claude') return 'sk-ant-...'
-  return 'sk-...'
+function aiKeyPlaceholder(provider: AIModelProvider, t: (key: string) => string) {
+  if (provider === 'ollama') return t('settings.ai.placeholders.ollamaApiKey')
+  if (provider === 'anthropic-claude') return t('settings.ai.placeholders.claudeApiKey')
+  return t('settings.ai.placeholders.defaultApiKey')
 }
 
-function aiProviderHelp(provider: AIModelProvider) {
-  if (provider === 'ollama') return '使用 Ollama 的 OpenAI 兼容接口。'
-  if (provider === 'anthropic-claude') return '使用 Claude 原生 Messages API，走 x-api-key 与事件流。'
-  return '适用于 OpenAI、DeepSeek、通义千问等兼容接口。'
+function aiProviderHelp(provider: AIModelProvider, t: (key: string) => string) {
+  if (provider === 'ollama') return t('settings.ai.providerHelp.ollama')
+  if (provider === 'anthropic-claude') return t('settings.ai.providerHelp.anthropicClaude')
+  return t('settings.ai.providerHelp.openaiCompatible')
 }
 
 type ChangePasswordForm = {
@@ -227,19 +225,19 @@ export function SettingsDialog({
               <>
                 <label className="checkbox-row">
                   <input checked={desktopLoginRequired} type="checkbox" onChange={(event) => onDesktopLoginRequiredChange(event.target.checked)} />
-                  <span>桌面客户端启动时要求登录</span>
+                  <span>{t('settings.security.desktopLoginRequired')}</span>
                 </label>
-                <p className="hint-text">网页访问始终需要登录；关闭此项后，本机安装版客户端会使用本机安全会话自动进入。</p>
+                <p className="hint-text">{t('settings.security.desktopLoginRequiredHint')}</p>
                 <label className="checkbox-row">
                   <input checked={webAccessEnabled} type="checkbox" onChange={(event) => onWebAccessEnabledChange(event.target.checked)} />
-                  <span>启用网页远程访问</span>
+                  <span>{t('settings.security.webAccessEnabled')}</span>
                 </label>
-                <p className="hint-text">关闭后禁止浏览器网页登录，仅允许本机桌面客户端访问。</p>
+                <p className="hint-text">{t('settings.security.webAccessEnabledHint')}</p>
                 {authInitialized ? (
                   <div className="password-change-section">
-                    <h3>修改登录密码</h3>
+                    <h3>{t('settings.security.changePasswordTitle')}</h3>
                     <label>
-                      <span>旧密码</span>
+                      <span>{t('settings.security.oldPassword')}</span>
                       <input
                         type="password"
                         value={changePasswordForm.oldPassword}
@@ -247,7 +245,7 @@ export function SettingsDialog({
                       />
                     </label>
                     <label>
-                      <span>新密码</span>
+                      <span>{t('settings.security.newPassword')}</span>
                       <input
                         type="password"
                         value={changePasswordForm.newPassword}
@@ -255,7 +253,7 @@ export function SettingsDialog({
                       />
                     </label>
                     <label>
-                      <span>确认新密码</span>
+                      <span>{t('settings.security.confirmPassword')}</span>
                       <input
                         type="password"
                         value={changePasswordForm.confirmPassword}
@@ -264,7 +262,7 @@ export function SettingsDialog({
                     </label>
                     {changePasswordError ? <p className="error-text">{changePasswordError}</p> : null}
                     {changePasswordSuccess ? <p className="success-text">{changePasswordSuccess}</p> : null}
-                    <button className="primary-button" type="button" onClick={onChangePassword}>修改密码</button>
+                    <button className="primary-button" type="button" onClick={onChangePassword}>{t('settings.security.changePassword')}</button>
                   </div>
                 ) : null}
               </>
@@ -273,20 +271,20 @@ export function SettingsDialog({
             {settingsSection === 'metrics' ? (
               <>
                 <label>
-                  <span>服务器信息刷新频率（秒）</span>
+                  <span>{t('settings.metrics.refreshInterval')}</span>
                   <input min="1" type="number" value={settings.metricsRefreshIntervalSeconds} onChange={updateNumber('metricsRefreshIntervalSeconds', 2)} />
                 </label>
                 <label>
-                  <span>指标折线时间范围（分钟）</span>
+                  <span>{t('settings.metrics.historyWindow')}</span>
                   <input min="1" type="number" value={settings.metricsHistoryWindowMinutes} onChange={updateNumber('metricsHistoryWindowMinutes', 5)} />
                 </label>
                 <div className="form-row settings-pair">
                   <label>
-                    <span>小图圆点数量</span>
+                    <span>{t('settings.metrics.compactPoints')}</span>
                     <input min="2" max="30" type="number" value={settings.metricsCompactPointLimit} onChange={updateNumber('metricsCompactPointLimit', 5)} />
                   </label>
                   <label>
-                    <span>放大图圆点数量</span>
+                    <span>{t('settings.metrics.expandedPoints')}</span>
                     <input min="2" max="120" type="number" value={settings.metricsExpandedPointLimit} onChange={updateNumber('metricsExpandedPointLimit', 20)} />
                   </label>
                 </div>
@@ -393,7 +391,7 @@ export function SettingsDialog({
                     value={settings.aiProviderTimeoutSeconds ?? defaultAiProviderTimeoutSeconds}
                     onChange={updateNumber('aiProviderTimeoutSeconds', defaultAiProviderTimeoutSeconds)}
                   />
-                  <small>远程 Ollama 或大模型首次加载较慢时可调大，例如 120-300 秒。</small>
+                  <small>{t('settings.ai.providerTimeoutHint')}</small>
                 </label>
                 <label>
                   <span>{t('settings.ai.predictionTriggerDelay')}</span>
@@ -422,9 +420,9 @@ export function SettingsDialog({
                   <div className="ai-model-settings-head">
                     <span>{t('settings.ai.modelConfigTitle')}</span>
                     <div className="ai-model-actions">
-                      <button type="button" title="新增 OpenAI 兼容模型" onClick={() => onAddAIModelConfig('openai-compatible')}>{t('settings.ai.addOpenAI')}</button>
-                      <button type="button" title="新增 Anthropic Claude 模型" onClick={() => onAddAIModelConfig('anthropic-claude')}>{t('settings.ai.addClaude')}</button>
-                      <button type="button" title="新增 Ollama 模型" onClick={() => onAddAIModelConfig('ollama')}>{t('settings.ai.addOllama')}</button>
+                      <button type="button" title={t('settings.ai.modelActionTitles.addOpenAI')} onClick={() => onAddAIModelConfig('openai-compatible')}>{t('settings.ai.addOpenAI')}</button>
+                      <button type="button" title={t('settings.ai.modelActionTitles.addClaude')} onClick={() => onAddAIModelConfig('anthropic-claude')}>{t('settings.ai.addClaude')}</button>
+                      <button type="button" title={t('settings.ai.modelActionTitles.addOllama')} onClick={() => onAddAIModelConfig('ollama')}>{t('settings.ai.addOllama')}</button>
                     </div>
                   </div>
                   <p className="ai-model-help">{t('settings.ai.modelHelp')}</p>
@@ -462,13 +460,13 @@ export function SettingsDialog({
                                 <input
                                   value={model.name}
                                   onChange={(event) => onUpdateAIModelConfig(model.id, { name: event.target.value })}
-                                  placeholder={aiProviderLabel(model.provider)}
+                                  placeholder={aiProviderLabel(model.provider, t)}
                                 />
                               </td>
                               <td>
                                 <select value={model.provider} onChange={(event) => onUpdateAIModelConfig(model.id, { provider: event.target.value as AIModelProvider })}>
-                                  {AI_PROVIDER_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                  {AI_PROVIDER_VALUES.map((provider) => (
+                                    <option key={provider} value={provider}>{aiProviderLabel(provider, t)}</option>
                                   ))}
                                 </select>
                               </td>
@@ -484,14 +482,14 @@ export function SettingsDialog({
                                   type="password"
                                   value={model.apiKey}
                                   onChange={(event) => onUpdateAIModelConfig(model.id, { apiKey: event.target.value })}
-                                  placeholder={aiKeyPlaceholder(model.provider)}
+                                  placeholder={aiKeyPlaceholder(model.provider, t)}
                                 />
                               </td>
                               <td>
                                 <input
                                   value={model.model}
                                   onChange={(event) => onUpdateAIModelConfig(model.id, { model: event.target.value })}
-                                  placeholder={aiModelPlaceholder(model.provider)}
+                                  placeholder={aiModelPlaceholder(model.provider, t)}
                                 />
                               </td>
                               <td>
@@ -504,10 +502,10 @@ export function SettingsDialog({
                                 </label>
                               </td>
                               <td>
-                                <small>{aiProviderHelp(model.provider)}</small>
+                                <small>{aiProviderHelp(model.provider, t)}</small>
                               </td>
                               <td>
-                                <button type="button" title="删除这个模型配置" onClick={() => onRemoveAIModelConfig(model.id)}>删除</button>
+                                <button type="button" title={t('settings.ai.modelActionTitles.removeModel')} onClick={() => onRemoveAIModelConfig(model.id)}>{t('app.delete')}</button>
                               </td>
                             </tr>
                           ))}
@@ -517,7 +515,7 @@ export function SettingsDialog({
                   ) : null}
                 </div>
                 <label>
-                  <span>系统提示词</span>
+                  <span>{t('settings.ai.systemPrompt')}</span>
                   <textarea
                     value={settings.aiSystemPrompt}
                     onChange={(event) => onSettingsChange((current) => ({ ...current, aiSystemPrompt: event.target.value }))}
@@ -529,9 +527,9 @@ export function SettingsDialog({
                       checked={settings.aiSystemPromptOverride}
                       onChange={(event) => onSettingsChange((current) => ({ ...current, aiSystemPromptOverride: event.target.checked }))}
                     />
-                    <span>覆盖默认系统提示词（上面填写的提示词将完全替代内置提示词，不再追加）</span>
+                    <span>{t('settings.ai.overrideSystemPrompt')}</span>
                   </label>
-                  <small>用于统一 AI 对话和 Agent 任务，会随请求发送给 Go core。</small>
+                  <small>{t('settings.ai.systemPromptHint')}</small>
                 </label>
               </>
             ) : null}

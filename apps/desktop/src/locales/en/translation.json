@@ -31,10 +31,28 @@
       "ai": "AI"
     },
     "general": {
+      "language": "Language",
       "healthCheckInterval": "Health Check Interval (seconds)",
       "terminalRetainedLines": "Terminal Retained Lines per SSH Tab",
       "rightServerInfoHeight": "Default Right Server Info Height (pixels)",
       "rightPanelWidth": "Default Right Panel Width (pixels)"
+    },
+    "security": {
+      "desktopLoginRequired": "Require login when desktop app starts",
+      "desktopLoginRequiredHint": "Web access always requires login. When this is off, the local desktop app can enter with the existing secure local session.",
+      "webAccessEnabled": "Enable remote web access",
+      "webAccessEnabledHint": "When disabled, browser-based web login is blocked and only the local desktop app can access the service.",
+      "changePasswordTitle": "Change Login Password",
+      "oldPassword": "Current Password",
+      "newPassword": "New Password",
+      "confirmPassword": "Confirm New Password",
+      "changePassword": "Change Password"
+    },
+    "metrics": {
+      "refreshInterval": "Server Info Refresh Interval (seconds)",
+      "historyWindow": "Metric Chart Time Window (minutes)",
+      "compactPoints": "Compact Chart Points",
+      "expandedPoints": "Expanded Chart Points"
     },
     "ai": {
       "enableAI": "Enable AI Features",
@@ -58,6 +76,31 @@
       "addOllama": "+ Ollama",
       "modelHelp": "OpenAI/Ollama uses /chat/completions; Claude native protocol uses /v1/messages with x-api-key.",
       "noModels": "No AI models configured yet.",
+      "provider": {
+        "openaiCompatible": "OpenAI Compatible",
+        "anthropicClaude": "Anthropic Claude",
+        "ollama": "Ollama"
+      },
+      "providerHelp": {
+        "openaiCompatible": "Use OpenAI-compatible chat completion APIs such as OpenAI, DeepSeek, or Qwen.",
+        "anthropicClaude": "Use Claude native Messages API with x-api-key authentication and event-driven streaming.",
+        "ollama": "Use Ollama's OpenAI-compatible API endpoint."
+      },
+      "placeholders": {
+        "openaiModel": "gpt-4.1-mini",
+        "claudeModel": "claude-sonnet-4-0",
+        "ollamaModel": "llama3.1",
+        "defaultApiKey": "sk-...",
+        "claudeApiKey": "sk-ant-...",
+        "ollamaApiKey": "Usually no API key is needed for Ollama"
+      },
+      "providerTimeoutHint": "If remote Ollama or a large model is slow on first load, increase this to 120-300 seconds.",
+      "modelActionTitles": {
+        "addOpenAI": "Add OpenAI-compatible model",
+        "addClaude": "Add Anthropic Claude model",
+        "addOllama": "Add Ollama model",
+        "removeModel": "Remove this model configuration"
+      },
       "modelTable": {
         "enable": "Enable",
         "name": "Name",
@@ -67,173 +110,14 @@
         "model": "Model",
         "thinking": "Thinking",
         "description": "Description"
-      }
+      },
+      "systemPrompt": "System Prompt",
+      "overrideSystemPrompt": "Override default system prompt (the prompt above will fully replace the built-in prompt instead of appending to it)",
+      "systemPromptHint": "Used for unified AI chat and Agent tasks, and sent to the Go core with each request."
     }
   },
-  "menu": {
-    "file": "File",
-    "edit": "Edit",
-    "view": "View",
-    "tools": "Tools",
-    "help": "Help",
-    "session": "Session",
-    "window": "Window"
-  },
-  "servers": {
-    "title": "SSH Servers",
-    "addServer": "Add Server",
-    "editServer": "Edit Server",
-    "deleteServer": "Delete Server",
-    "connect": "Connect",
-    "disconnect": "Disconnect",
-    "reconnect": "Reconnect",
-    "groups": "Groups",
-    "addGroup": "Add Group",
-    "editGroup": "Edit Group",
-    "deleteGroup": "Delete Group",
-    "serverName": "Server Name",
-    "host": "Host",
-    "port": "Port",
-    "username": "Username",
-    "password": "Password",
-    "sshKey": "SSH Key",
-    "authentication": "Authentication",
-    "savePassword": "Save Password",
-    "saveKey": "Save SSH Key",
-    "selectFile": "Select File",
-    "groupName": "Group Name",
-    "moveUp": "Move Up",
-    "moveDown": "Move Down"
-  },
   "files": {
-    "title": "Files",
-    "upload": "Upload",
-    "download": "Download",
-    "refresh": "Refresh",
-    "currentPath": "Current Path",
-    "parentDirectory": "Parent Directory",
-    "fileName": "File Name",
-    "fileSize": "File Size",
-    "modifiedTime": "Modified Time",
-    "permissions": "Permissions",
-    "preview": "Preview",
-    "edit": "Edit",
-    "save": "Save",
-    "trackTerminalPath": "Track Terminal Path"
-  },
-  "terminal": {
-    "title": "Terminal",
-    "newSession": "New Session",
-    "closeSession": "Close Session",
-    "clearScreen": "Clear Screen",
-    "copy": "Copy",
-    "paste": "Paste",
-    "selectAll": "Select All",
-    "search": "Search",
-    "fontSize": "Font Size",
-    "scrollback": "Scrollback Lines"
-  },
-  "ai": {
-    "title": "AI Assistant",
-    "input": "Ask AI...",
-    "send": "Send",
-    "clear": "Clear",
-    "history": "History",
-    "prediction": "Command Prediction",
-    "agentMode": "Agent Mode",
-    "reviewMode": "Review Mode",
-    "autoMode": "Auto Mode",
-    "thinking": "Thinking...",
-    "generating": "Generating...",
-    "addToAI": "Add to AI",
-    "customPrompt": "Custom System Prompt",
-    "overridePrompt": "Override Default System Prompt",
-    "overridePromptHint": "The prompt above will completely replace the built-in prompt, not append to it"
-  },
-  "metrics": {
-    "title": "Server Metrics",
-    "cpu": "CPU Usage",
-    "memory": "Memory Usage",
-    "disk": "Disk Usage",
-    "network": "Network",
-    "upload": "Upload",
-    "download": "Download",
-    "uptime": "Uptime",
-    "loadAverage": "Load Average",
-    "processes": "Processes"
-  },
-  "settings": {
-    "title": "Settings",
-    "general": "General",
-    "security": "Security",
-    "ai": "AI",
-    "metrics": "Metrics",
-    "language": "Language",
-    "theme": "Theme",
-    "fontSize": "Font Size",
-    "terminalSettings": "Terminal Settings",
-    "aiSettings": "AI Settings",
-    "apiKey": "API Key",
-    "model": "Model",
-    "endpoint": "Endpoint",
-    "timeout": "Timeout",
-    "contextLength": "Context Length",
-    "maxTokens": "Max Tokens",
-    "stepsLimit": "Steps Limit",
-    "predictionCount": "Prediction Count",
-    "commandHistory": "Command History",
-    "systemPrompt": "System Prompt",
-    "refreshInterval": "Refresh Interval",
-    "chartTimeRange": "Chart Time Range",
-    "chartPoints": "Chart Points"
-  },
-  "commands": {
-    "history": "Command History",
-    "favorites": "Favorite Commands",
-    "addToFavorites": "Add to Favorites",
-    "removeFromFavorites": "Remove from Favorites",
-    "copyCommand": "Copy Command",
-    "executeCommand": "Execute Command",
-    "searchHistory": "Search History"
-  },
-  "errors": {
-    "connectionFailed": "Connection Failed",
-    "authenticationFailed": "Authentication Failed",
-    "fileNotFound": "File Not Found",
-    "permissionDenied": "Permission Denied",
-    "networkError": "Network Error",
-    "timeout": "Timeout",
-    "unknownError": "Unknown Error",
-    "coreNotConnected": "Core Not Connected",
-    "coreConnected": "Core Connected"
-  },
-  "success": {
-    "connected": "Connected",
-    "disconnected": "Disconnected",
-    "saved": "Saved",
-    "deleted": "Deleted",
-    "uploaded": "Uploaded",
-    "downloaded": "Downloaded"
-  },
-  "confirm": {
-    "deleteServer": "Are you sure you want to delete this server?",
-    "deleteGroup": "Are you sure you want to delete this group?",
-    "closeSession": "Are you sure you want to close this session?",
-    "unsavedChanges": "You have unsaved changes. Do you want to save them?"
-  },
-  "shortcuts": {
-    "title": "Keyboard Shortcuts",
-    "newSession": "New Session",
-    "closeSession": "Close Session",
-    "nextSession": "Next Session",
-    "previousSession": "Previous Session",
-    "toggleAI": "Toggle AI Panel",
-    "toggleFiles": "Toggle Files Panel",
-    "toggleMetrics": "Toggle Metrics Panel",
-    "search": "Search",
-    "settings": "Settings",
-    "copy": "Copy",
-    "paste": "Paste"
+    "parentDirectory": "Parent Directory"
   },
   "featureGuide": {
     "title": "Feature Guide",
@@ -299,12 +183,12 @@
       "agentMode": {
         "name": "Agent Mode",
         "description": "Review mode requires manual command execution, auto mode automatically advances low-risk commands, full-auto mode directly executes all commands.",
-        "usage": "Select review, auto, or full-auto below AI input box; full-auto mode won't intercept high-risk commands."
+        "usage": "Select review, auto, or full-auto below AI input box; full-auto mode will not intercept high-risk commands."
       },
       "thinkingControl": {
         "name": "Thinking Control",
-        "description": "Can disable Agent thinking to reduce Qwen/Ollama long-time reasoning.",
-        "usage": "Disable 'Enable Agent Thinking' in Settings > AI."
+        "description": "Can disable Agent thinking to reduce long reasoning time for some models.",
+        "usage": "Disable Enable Agent Thinking in Settings > AI."
       },
       "commandPrediction": {
         "name": "Command Prediction",
@@ -313,13 +197,13 @@
       },
       "customPrompt": {
         "name": "Custom Prompt",
-        "description": "Support completely overriding default system prompt, customize AI behavior rules.",
-        "usage": "Fill custom prompt in Settings > AI, check override option."
+        "description": "Support completely overriding the default system prompt to customize AI behavior rules.",
+        "usage": "Fill custom prompt in Settings > AI, then check the override option."
       },
       "longTaskOptimization": {
         "name": "Long Task Optimization",
-        "description": "Increase token/context/steps limits, intelligent command timeout and output truncation.",
-        "usage": "Suitable for installation, deployment and other long tasks, Agent can automatically execute multi-step operations."
+        "description": "Increase token/context/steps limits, intelligent command timeout, and output truncation.",
+        "usage": "Suitable for installation, deployment, and other long tasks; Agent can automatically execute multi-step operations."
       }
     },
     "batchTask": {
@@ -328,17 +212,17 @@
       "batchSelection": {
         "name": "Batch Selection",
         "description": "Enable batch mode on the left and check target servers.",
-        "usage": "Right AI area will show selected server tags, click x on tag to uncheck."
+        "usage": "The right AI area shows selected server tags; click x on a tag to uncheck."
       },
       "sequentialExecution": {
         "name": "Sequential Execution",
-        "description": "Batch task will connect servers in checked order and advance Agent.",
-        "usage": "Input task description and click lightning button, execution card will show each status."
+        "description": "Batch task connects servers in checked order and advances Agent.",
+        "usage": "Input the task description and click the lightning button; execution cards show each status."
       },
       "finalSummary": {
         "name": "Final Summary",
-        "description": "After batch completion, will summarize success, failure, and each execution summary.",
-        "usage": "View batch task records and final summary in AI conversation history."
+        "description": "After batch completion, summarize successes, failures, and each execution summary.",
+        "usage": "View batch task records and the final summary in AI conversation history."
       }
     },
     "fileTransfer": {
@@ -346,18 +230,18 @@
       "summary": "Browse remote directories, preview, edit, and transfer files.",
       "filePanel": {
         "name": "File Panel",
-        "description": "View current server directory, sort and search files.",
-        "usage": "Open file panel from top transfer menu, can also follow terminal current directory."
+        "description": "View current server directory, sort, and browse files.",
+        "usage": "Open the file panel from the top transfer menu, and you can also follow the current terminal directory."
       },
       "previewEdit": {
         "name": "Preview & Edit",
-        "description": "Text files can be directly previewed and edited, images and videos can be previewed.",
-        "usage": "Open file in file list, edit and save to remote server."
+        "description": "Text files can be previewed and edited directly, and images and videos can be previewed.",
+        "usage": "Open a file in the list, edit it, and save back to the remote server."
       },
       "uploadDownload": {
         "name": "Upload & Download",
-        "description": "Support uploading local files to remote directory and downloading remote files.",
-        "usage": "Use transfer menu or file panel buttons to initiate transfer."
+        "description": "Support uploading local files to the remote directory and downloading remote files.",
+        "usage": "Use the transfer menu or file panel buttons to start transfers."
       }
     },
     "logSecurity": {
@@ -365,52 +249,210 @@
       "summary": "View runtime logs, adjust login policies, and troubleshoot AI/provider issues.",
       "runtimeLog": {
         "name": "Runtime Log",
-        "description": "View runtime records of core, AI, authentication, and UI.",
-        "usage": "Search source=ai or interface path in Tools > Logs to troubleshoot issues."
+        "description": "View runtime records for core, AI, authentication, and UI.",
+        "usage": "Search source=ai or interface paths in Tools > Logs to troubleshoot issues."
       },
       "webLogin": {
         "name": "Web Login",
-        "description": "Can require Web access login, can also require desktop startup login.",
-        "usage": "Adjust login policy or change password in Settings > Security."
+        "description": "Require web access login and optionally require desktop startup login.",
+        "usage": "Adjust login policies or change passwords in Settings > Security."
       },
       "errorNotification": {
         "name": "Error Notification",
-        "description": "Bottom-right error card will show source, interface, and detailed information.",
-        "usage": "When encountering AI or SSH errors, first check details, then check complete context in logs."
+        "description": "The bottom-right error card shows source, endpoint, and detailed information.",
+        "usage": "When encountering AI or SSH errors, check the details first, then inspect full context in logs."
       }
     },
     "keyboardShortcuts": {
       "title": "Keyboard Shortcuts",
-      "summary": "Shortcut key list to improve operation efficiency.",
+      "summary": "Shortcut list to improve operation efficiency.",
       "global": {
         "name": "Global Shortcuts",
-        "description": "Ctrl+N new session, Ctrl+W close session, Ctrl+Tab switch session, Ctrl+, open settings.",
-        "usage": "Global shortcuts can be used in any interface."
+        "description": "Ctrl+N creates a new session, Ctrl+W closes a session, Ctrl+Tab switches sessions, and Ctrl+, opens settings.",
+        "usage": "Global shortcuts work from any interface."
       },
       "terminal": {
         "name": "Terminal Shortcuts",
         "description": "Ctrl+C copy, Ctrl+V paste, Ctrl+L clear screen, Tab accept prediction.",
-        "usage": "Use in terminal area, Tab key can accept AI predicted command."
+        "usage": "Use these in the terminal area; Tab accepts the AI predicted command."
       },
       "ai": {
         "name": "AI Shortcuts",
-        "description": "Ctrl+Space trigger prediction, Enter send message, Escape clear input.",
-        "usage": "Use shortcuts in AI input box to improve efficiency."
+        "description": "Ctrl+Space triggers prediction, Ctrl+Enter sends a message, and Escape clears input.",
+        "usage": "Use shortcuts in the AI input box to work faster."
       }
     },
     "multiLanguage": {
       "title": "Multi-Language Support",
-      "summary": "Support Chinese/English switching, convenient for international users.",
+      "summary": "Support Chinese/English switching for international teams.",
       "languageSwitch": {
         "name": "Language Switch",
-        "description": "Switch interface language in settings, support Chinese and English.",
-        "usage": "Settings > General > Language, select Chinese or English."
+        "description": "Switch the interface language in settings and support Chinese and English.",
+        "usage": "Settings > General > Language, then select Chinese or English."
       },
       "autoSave": {
         "name": "Auto Save",
-        "description": "Language preference will be automatically saved locally, automatically applied on next startup.",
-        "usage": "No need to manually save after switching language, system will automatically remember your choice."
+        "description": "Language preference is saved locally and applied again on next startup.",
+        "usage": "No manual save is needed after switching language."
       }
+    }
+  },
+  "logs": {
+    "sectionLabel": "Tools",
+    "title": "Runtime Logs",
+    "close": "Close logs window",
+    "level": "Level",
+    "healthChecks": "Log health checks",
+    "search": "Search",
+    "searchPlaceholder": "Search predict, ai/predict, source=ai...",
+    "refresh": "Refresh logs",
+    "empty": "No logs yet"
+  },
+  "fileBrowser": {
+    "title": "Remote Files",
+    "collapse": "Collapse left panel",
+    "parentDirectory": "Go to parent directory",
+    "downloadSelected": "Download {{count}} selected files",
+    "downloadSelectedEmpty": "Select files to download first",
+    "downloadButton": "Download",
+    "uploadToCurrent": "Upload files to current directory",
+    "upload": "Upload",
+    "pathLabel": "Remote path",
+    "openPath": "Open entered remote path",
+    "open": "Open",
+    "trackTerminalPath": "Track terminal path",
+    "directoryLabel": "Remote file directory",
+    "dropUpload": "Release to upload",
+    "dropTarget": "Upload to {{path}}",
+    "loadingFiles": "Loading remote files",
+    "refreshCurrent": "Refresh current directory",
+    "sortBy": "Sort by {{label}} {{direction}}",
+    "sortDirection": {
+      "asc": "descending",
+      "desc": "ascending"
+    },
+    "fileTitle": "Click to select, Ctrl/Shift for multi-select, double-click to preview, right-click to download, drag out for quick download",
+    "directoryTitle": "Double-click to open directory",
+    "transferTasks": "Transfer Tasks",
+    "removeTransfer": "Remove transfer record for {{name}}",
+    "transferDirection": {
+      "upload": "Upload",
+      "download": "Download"
+    },
+    "columns": {
+      "name": "Name",
+      "size": "Size",
+      "modifiedAt": "Modified"
+    },
+    "kind": {
+      "text": "Text",
+      "image": "Image",
+      "video": "Video",
+      "binary": "File"
+    }
+  },
+  "filePreview": {
+    "preview": "Preview",
+    "search": "Search",
+    "edit": "Edit",
+    "save": "Save",
+    "saving": "Saving...",
+    "download": "Download",
+    "downloadFile": "Download file",
+    "loading": "Loading {{name}}",
+    "loadFailed": "Preview failed",
+    "openAsText": "Open as text",
+    "unsupported": "Direct preview is not supported for this file type yet",
+    "unableToRead": "Unable to read remote file",
+    "editMode": "Edit Mode",
+    "undo": "Undo",
+    "redo": "Redo",
+    "selectAll": "Select all",
+    "indentMore": "Indent more",
+    "indentLess": "Indent less",
+    "toggleComment": "Toggle comment",
+    "format": "Format",
+    "reset": "Reset",
+    "copy": "Copy",
+    "titlePreview": "Preview {{name}}",
+    "titleSearch": "Search in {{name}}",
+    "titleEdit": "Edit {{name}}",
+    "titleSave": "Save {{name}}",
+    "titleDownload": "Download {{name}}",
+    "titleOpenAsText": "Open {{name}} as text",
+    "titleUndo": "Undo last edit in {{name}}",
+    "titleRedo": "Redo edits in {{name}}",
+    "titleSelectAll": "Select all content in {{name}}",
+    "titleIndentMore": "Increase indentation for selected lines in {{name}}",
+    "titleIndentLess": "Decrease indentation for selected lines in {{name}}",
+    "titleToggleComment": "Toggle comment for selected content in {{name}}",
+    "titleFormat": "Format {{name}}",
+    "titleReset": "Restore {{name}} to saved content",
+    "titleCopy": "Copy current content of {{name}}"
+  },
+  "sideError": {
+    "close": "Close error notice",
+    "source": "Source",
+    "path": "Endpoint",
+    "status": "Status"
+  },
+  "aiWorkspace": {
+    "historyTitle": "History",
+    "newConversation": "New AI conversation",
+    "switchConversation": "Switch to {{title}}",
+    "deleteConversation": "Delete conversation: {{title}}",
+    "loadMore": "Load more...",
+    "viewingHistory": "You are viewing history. Live tasks continue writing into the current SSH task conversation.",
+    "returnToLive": "Return to current task",
+    "aiDisabled": "AI is turned off. You can enable it in Settings.",
+    "providerMissing": "Configure a model endpoint and model in Settings, then save before using AI.",
+    "emptyConversation": "No messages in this conversation yet. You can directly enter a question or a goal.",
+    "streaming": "AI is streaming a reply in real time. Messages continue appearing in order.",
+    "status": {
+      "title": "Status",
+      "error": "Error"
+    },
+    "input": {
+      "defaultPlaceholder": "Tell AI what you want to do, for example: explain this error, summarize logs, generate commands to install nginx, or help me complete a server operation.",
+      "batchPlaceholder": "Batch task: describe the task in natural language, such as updating apt or checking disk space, then click Send on the right to start."
+    },
+    "batch": {
+      "modeSummary": "Batch mode - {{count}} selected",
+      "removeHost": "Remove {{name}} from selection",
+      "run": "Run batch on {{count}} selected hosts",
+      "status": {
+        "pending": "Waiting",
+        "connecting": "Connecting",
+        "running": "Running - {{steps}} steps",
+        "success": "Done - {{steps}} steps",
+        "error": "Failed"
+      },
+      "closeHostTask": "Close this server task"
+    },
+    "modes": {
+      "review": {
+        "label": "Review",
+        "title": "AI suggests commands and waits for you to execute them manually"
+      },
+      "auto": {
+        "label": "Auto",
+        "title": "Low-risk commands run automatically, while high-risk commands still wait for confirmation"
+      },
+      "fullAuto": {
+        "label": "Full Auto",
+        "title": "All AI-generated commands run automatically without extra review or confirmation"
+      }
+    },
+    "actions": {
+      "expandInput": "Expand AI input area",
+      "collapseHistory": "Hide conversation history",
+      "expandHistory": "Show conversation history",
+      "enlargeInput": "Enlarge AI input box",
+      "clearInput": "Clear current AI input",
+      "continueTask": "Let AI plan the next step",
+      "stopTask": "Stop automatic task progression",
+      "send": "Send to the unified AI assistant",
+      "collapseInput": "Collapse AI input area"
     }
   }
 }

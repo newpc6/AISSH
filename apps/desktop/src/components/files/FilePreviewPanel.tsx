@@ -8,8 +8,9 @@ import {
   undo,
 } from '@codemirror/commands'
 import { openSearchPanel } from '@codemirror/search'
+import { useTranslation } from 'react-i18next'
 import type { FilePreviewTab, LoadState } from '../../types'
-import { formatBytes, previewKindLabel } from '../../utils'
+import { formatBytes, formatLocalizedDateTime } from '../../utils'
 import { CodeMirrorEditor, type CodeMirrorEditorHandle } from './CodeMirrorEditor'
 
 type DownloadableFile = {
@@ -53,12 +54,18 @@ function FilePreviewEmptyState({
 
 function FilePreviewHeader({
   tab,
+  locale,
+  kindLabel,
+  t,
   onDownloadFile,
   onOpenSearch,
   onSaveFile,
   onSetEditMode,
 }: {
   tab: FilePreviewTab
+  locale: string
+  kindLabel: string
+  t: (key: string, options?: Record<string, unknown>) => string
   onDownloadFile: (file: DownloadableFile) => void | Promise<void>
   onOpenSearch: () => void
   onSaveFile: (tab: FilePreviewTab) => void | Promise<void>
@@ -71,7 +78,7 @@ function FilePreviewHeader({
         <span>{tab.hostName} · {tab.path}</span>
       </div>
       <small className="file-preview-meta">
-        {previewKindLabel(tab.kind)} · {formatBytes(tab.size)} · {new Date(tab.modifiedAt).toLocaleString()}
+        {kindLabel} · {formatBytes(tab.size)} · {formatLocalizedDateTime(tab.modifiedAt, locale)}
       </small>
       <div className="file-preview-actions">
         {tab.kind === 'text' && tab.status === 'ready' ? (
@@ -79,29 +86,29 @@ function FilePreviewHeader({
             <button
               className={!tab.isEditing ? 'active' : ''}
               type="button"
-              title={`以预览模式查看 ${tab.name}`}
+              title={t('filePreview.titlePreview', { name: tab.name })}
               onClick={() => onSetEditMode(tab.id, false)}
             >
-              预览
+              {t('filePreview.preview')}
             </button>
-            <button type="button" title={`搜索 ${tab.name} 内容`} onClick={onOpenSearch}>
-              搜索
+            <button type="button" title={t('filePreview.titleSearch', { name: tab.name })} onClick={onOpenSearch}>
+              {t('filePreview.search')}
             </button>
             <button
               className={tab.isEditing ? 'active' : ''}
               type="button"
-              title={`编辑 ${tab.name}`}
+              title={t('filePreview.titleEdit', { name: tab.name })}
               onClick={() => onSetEditMode(tab.id, true)}
             >
-              编辑
+              {t('filePreview.edit')}
             </button>
             <button
               disabled={!tab.isEditing || tab.saveState === 'loading'}
               type="button"
-              title={`保存 ${tab.name}`}
+              title={t('filePreview.titleSave', { name: tab.name })}
               onClick={() => void onSaveFile(tab)}
             >
-              {tab.saveState === 'loading' ? '保存中' : '保存'}
+              {tab.saveState === 'loading' ? t('filePreview.saving') : t('filePreview.save')}
             </button>
             {tab.saveMessage ? (
               <span className={`file-save-message file-save-${(tab.saveState ?? 'idle') as LoadState}`}>
@@ -112,7 +119,7 @@ function FilePreviewHeader({
         ) : null}
         <button
           type="button"
-          title={`下载 ${tab.name}`}
+          title={t('filePreview.titleDownload', { name: tab.name })}
           onClick={() => void onDownloadFile({
             name: tab.name,
             path: tab.path,
@@ -121,7 +128,7 @@ function FilePreviewHeader({
             modifiedAt: tab.modifiedAt,
           })}
         >
-          下载
+          {t('filePreview.download')}
         </button>
       </div>
     </div>
@@ -140,6 +147,8 @@ export function FilePreviewPanel({
   onSetEditMode,
   onUpdateDraft,
 }: FilePreviewPanelProps) {
+  const { t, i18n } = useTranslation()
+  const kindLabel = t(`fileBrowser.kind.${tab.kind === 'binary' ? 'binary' : tab.kind}`)
   const meta = `${tab.hostName} · ${tab.path} · ${formatBytes(tab.size)}`
 
   let content: React.ReactNode
@@ -147,20 +156,20 @@ export function FilePreviewPanel({
     content = (
       <div className="file-preview-empty">
         <span className="file-loading-spinner" />
-        <strong>正在加载 {tab.name}</strong>
+        <strong>{t('filePreview.loading', { name: tab.name })}</strong>
         <small>{meta}</small>
       </div>
     )
   } else if (tab.status === 'error') {
     content = (
-      <FilePreviewEmptyState meta={meta} title="预览失败">
-        <small>{tab.error ?? '无法读取远程文件'}</small>
-        <button type="button" title={`以文本方式打开 ${tab.name}`} onClick={() => void onOpenAsText(tab)}>
-          以文本方式打开
+      <FilePreviewEmptyState meta={meta} title={t('filePreview.loadFailed')}>
+        <small>{tab.error ?? t('filePreview.unableToRead')}</small>
+        <button type="button" title={t('filePreview.titleOpenAsText', { name: tab.name })} onClick={() => void onOpenAsText(tab)}>
+          {t('filePreview.openAsText')}
         </button>
         <button
           type="button"
-          title={`下载 ${tab.name}`}
+          title={t('filePreview.titleDownload', { name: tab.name })}
           onClick={() => void onDownloadFile({
             name: tab.name,
             path: tab.path,
@@ -169,7 +178,7 @@ export function FilePreviewPanel({
             modifiedAt: tab.modifiedAt,
           })}
         >
-          下载文件
+          {t('filePreview.downloadFile')}
         </button>
       </FilePreviewEmptyState>
     )
@@ -179,34 +188,34 @@ export function FilePreviewPanel({
       <div className={`file-text-preview ${tab.isEditing ? 'editing' : ''}`}>
         {tab.isEditing ? (
           <div className="codemirror-toolbar">
-            <span>编辑模式</span>
+            <span>{t('filePreview.editMode')}</span>
             <div className="codemirror-toolbar-actions">
-              <button type="button" title={`撤销 ${tab.name} 的上一步编辑`} onClick={() => codeMirrorRef.current?.runCommand(undo)}>
-                撤销
+              <button type="button" title={t('filePreview.titleUndo', { name: tab.name })} onClick={() => codeMirrorRef.current?.runCommand(undo)}>
+                {t('filePreview.undo')}
               </button>
-              <button type="button" title={`重做 ${tab.name} 的编辑`} onClick={() => codeMirrorRef.current?.runCommand(redo)}>
-                重做
+              <button type="button" title={t('filePreview.titleRedo', { name: tab.name })} onClick={() => codeMirrorRef.current?.runCommand(redo)}>
+                {t('filePreview.redo')}
               </button>
-              <button type="button" title={`全选 ${tab.name} 内容`} onClick={() => codeMirrorRef.current?.runCommand(selectAll)}>
-                全选
+              <button type="button" title={t('filePreview.titleSelectAll', { name: tab.name })} onClick={() => codeMirrorRef.current?.runCommand(selectAll)}>
+                {t('filePreview.selectAll')}
               </button>
-              <button type="button" title={`增加 ${tab.name} 选中行缩进`} onClick={() => codeMirrorRef.current?.runCommand(indentMore)}>
-                缩进
+              <button type="button" title={t('filePreview.titleIndentMore', { name: tab.name })} onClick={() => codeMirrorRef.current?.runCommand(indentMore)}>
+                {t('filePreview.indentMore')}
               </button>
-              <button type="button" title={`减少 ${tab.name} 选中行缩进`} onClick={() => codeMirrorRef.current?.runCommand(indentLess)}>
-                反缩进
+              <button type="button" title={t('filePreview.titleIndentLess', { name: tab.name })} onClick={() => codeMirrorRef.current?.runCommand(indentLess)}>
+                {t('filePreview.indentLess')}
               </button>
-              <button type="button" title={`切换 ${tab.name} 选中内容注释`} onClick={() => codeMirrorRef.current?.runCommand(toggleComment)}>
-                注释
+              <button type="button" title={t('filePreview.titleToggleComment', { name: tab.name })} onClick={() => codeMirrorRef.current?.runCommand(toggleComment)}>
+                {t('filePreview.toggleComment')}
               </button>
-              <button type="button" title={`格式化 ${tab.name}`} onClick={() => onFormatDraft(tab)}>
-                格式化
+              <button type="button" title={t('filePreview.titleFormat', { name: tab.name })} onClick={() => onFormatDraft(tab)}>
+                {t('filePreview.format')}
               </button>
-              <button type="button" title={`还原 ${tab.name} 到已保存内容`} onClick={() => onResetDraft(tab)}>
-                还原
+              <button type="button" title={t('filePreview.titleReset', { name: tab.name })} onClick={() => onResetDraft(tab)}>
+                {t('filePreview.reset')}
               </button>
-              <button type="button" title={`复制 ${tab.name} 当前内容`} onClick={() => void onCopyDraft(tab)}>
-                复制
+              <button type="button" title={t('filePreview.titleCopy', { name: tab.name })} onClick={() => void onCopyDraft(tab)}>
+                {t('filePreview.copy')}
               </button>
             </div>
           </div>
@@ -234,13 +243,13 @@ export function FilePreviewPanel({
     )
   } else {
     content = (
-      <FilePreviewEmptyState meta={meta} title="暂不支持直接预览这种文件">
-        <button type="button" title={`以文本方式打开 ${tab.name}`} onClick={() => void onOpenAsText(tab)}>
-          以文本方式打开
+      <FilePreviewEmptyState meta={meta} title={t('filePreview.unsupported')}>
+        <button type="button" title={t('filePreview.titleOpenAsText', { name: tab.name })} onClick={() => void onOpenAsText(tab)}>
+          {t('filePreview.openAsText')}
         </button>
         <button
           type="button"
-          title={`下载 ${tab.name}`}
+          title={t('filePreview.titleDownload', { name: tab.name })}
           onClick={() => void onDownloadFile({
             name: tab.name,
             path: tab.path,
@@ -249,7 +258,7 @@ export function FilePreviewPanel({
             modifiedAt: tab.modifiedAt,
           })}
         >
-          下载文件
+          {t('filePreview.downloadFile')}
         </button>
       </FilePreviewEmptyState>
     )
@@ -259,6 +268,9 @@ export function FilePreviewPanel({
     <>
       <FilePreviewHeader
         tab={tab}
+        locale={i18n.language}
+        kindLabel={kindLabel}
+        t={t}
         onDownloadFile={onDownloadFile}
         onOpenSearch={() => codeMirrorRef.current?.runCommand(openSearchPanel)}
         onSaveFile={onSaveFile}
