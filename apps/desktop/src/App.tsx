@@ -940,6 +940,7 @@ export function App() {
   const {
     currentConversationContext,
     ensureAIConversation,
+    recentConversationContext,
     resolveAgentGoal,
     selectAIConversation,
   } = useAIConversationStrategy({
@@ -3663,7 +3664,7 @@ export function App() {
       predictionCount: normalized.aiPredictionCount,
       includeThinking: normalized.aiPredictionThinkingEnabled,
       terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
-      commandHistory: history.slice(0, normalized.aiCommandHistoryLimit),
+      commandHistory: history.slice(0, normalized.aiCommandHistoryLimit).reverse(),
       currentCommand: commandBufferRef.current,
       hostName: session.hostName,
       hostAddress: host.address,
@@ -3833,7 +3834,7 @@ export function App() {
       terminalContext: session
         ? terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit)
         : '',
-      commandHistory: commandHistoryRef.current.slice(0, normalized.aiCommandHistoryLimit),
+      commandHistory: commandHistoryRef.current.slice(0, normalized.aiCommandHistoryLimit).reverse(),
     }
   }
 
@@ -3877,7 +3878,10 @@ export function App() {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
     const { conversationId, ignoreAmbientContext, ignoreConversationContext, suppressStreamingMessages, ...requestOptions } = options
-    const conversationContext = ignoreConversationContext ? '' : currentConversationContext(conversationId || activeAIConversationIdRef.current)
+    const activeConversation = conversationId || activeAIConversationIdRef.current
+    const conversationContext = ignoreConversationContext ? '' : currentConversationContext(activeConversation)
+    const recentContext = ignoreConversationContext ? '' : recentConversationContext(activeConversation)
+    const agentSteps = [...(requestOptions.agentSteps ?? getAgentStepsForSession(sessionId))].reverse()
     const payload: AIAssistRequest = {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
@@ -3891,7 +3895,10 @@ export function App() {
       terminalContext,
       selectedText: [
         ignoreAmbientContext ? '' : window.getSelection()?.toString() ?? '',
-        conversationContext ? `当前对话上下文：\n${conversationContext}` : '',
+        conversationContext ? `????:
+${conversationContext}` : '',
+        recentContext ? `????:
+${recentContext}` : '',
       ]
         .filter((item) => item.trim())
         .join('\n\n'),
@@ -3903,7 +3910,7 @@ export function App() {
       username: host?.username,
       agentMode: requestOptions.agentMode ?? getSessionAgentState(sessionId).mode,
       agentGoal: requestOptions.agentGoal ?? resolveAgentGoal(prompt, sessionId),
-      agentSteps: requestOptions.agentSteps ?? getAgentStepsForSession(sessionId),
+      agentSteps,
       ...requestOptions,
     }
     const response = await apiFetch(AI_ASSIST_STREAM_API_PATH, {

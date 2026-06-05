@@ -106,6 +106,27 @@ export function useAIConversationStrategy({
       .join('\n')
   }
 
+  const recentConversationContext = (conversationId = activeConversationIdRef.current || '', recentCount = 8) => {
+    return aiMessagesRef.current
+      .filter(
+        (message) =>
+          message.conversationId === conversationId &&
+          !message.pending &&
+          ['user', 'assistant', 'command', 'agent_step', 'agent_result'].includes(message.kind),
+      )
+      .slice(-Math.max(1, recentCount))
+      .map((message) => {
+        const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
+        if (message.kind === 'agent_step' && message.step) {
+          const output = message.step.output ? `\n输出摘要: ${message.step.output.slice(-1200)}` : ''
+          const exitCode = typeof message.step.exitCode === 'number' ? `\n退出码: ${message.step.exitCode}` : ''
+          return `${label}: ${message.step.command || message.content}\n状态: ${message.step.status}${exitCode}${output}`
+        }
+        return `${label}: ${message.content}`
+      })
+      .join('\n')
+  }
+
   const resolveAgentGoal = (fallback = '', sessionId = activeSessionIdRef.current || '') => {
     return (
       (sessionId ? getSessionAgentState(sessionId).goal.trim() : '') ||
@@ -119,6 +140,7 @@ export function useAIConversationStrategy({
   return {
     currentConversationContext,
     ensureAIConversation,
+    recentConversationContext,
     resolveAgentGoal,
     selectAIConversation,
   }
