@@ -252,7 +252,7 @@
       "thinkingControl": {
         "name": "思考控制",
         "description": "可关闭 Agent 思考以减少 Qwen/Ollama 长时间推理。",
-        "usage": "设置 > AI 中关闭"开启 Agent 思考"。"
+        "usage": "设置 > AI 中关闭【开启 Agent 思考】。"
       },
       "commandPrediction": {
         "name": "命令预测",
