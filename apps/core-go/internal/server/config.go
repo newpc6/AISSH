@@ -50,6 +50,7 @@ type AIModelConfig struct {
 	BaseURL  string `json:"baseUrl"`
 	APIKey   string `json:"apiKey"`
 	Model    string `json:"model"`
+	ThinkingEnabled bool `json:"thinkingEnabled"`
 }
 
 func DefaultCoreConfig() CoreConfig {

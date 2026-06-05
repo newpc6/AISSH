@@ -53,6 +53,50 @@ type openAIChatStreamResponse struct {
 	} `json:"choices"`
 }
 
+type anthropicMessageRequest struct {
+	Model       string                    `json:"model"`
+	System      string                    `json:"system,omitempty"`
+	Messages    []anthropicMessage        `json:"messages"`
+	MaxTokens   int                       `json:"max_tokens"`
+	Temperature float64                   `json:"temperature"`
+	Stream      bool                      `json:"stream,omitempty"`
+	Thinking    *anthropicThinkingOptions `json:"thinking,omitempty"`
+}
+
+type anthropicMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type anthropicThinkingOptions struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+type anthropicMessageResponse struct {
+	Content    []anthropicContentBlock `json:"content"`
+	StopReason string                  `json:"stop_reason"`
+}
+
+type anthropicContentBlock struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
+}
+
+type anthropicStreamResponse struct {
+	Type         string                `json:"type"`
+	Delta        anthropicStreamDelta  `json:"delta"`
+	ContentBlock anthropicContentBlock `json:"content_block"`
+}
+
+type anthropicStreamDelta struct {
+	Type       string `json:"type"`
+	Text       string `json:"text,omitempty"`
+	Thinking   string `json:"thinking,omitempty"`
+	StopReason string `json:"stop_reason,omitempty"`
+}
+
 type aiStreamEvent struct {
 	Type         string            `json:"type"`
 	Text         string            `json:"text,omitempty"`
@@ -73,6 +117,10 @@ type assistContentStreamExtractor struct {
 }
 
 const (
+	aiProviderOpenAICompatible = "openai-compatible"
+	aiProviderOllama           = "ollama"
+	aiProviderAnthropicClaude  = "anthropic-claude"
+	anthropicAPIVersion        = "2023-06-01"
 	aiDefaultPredictionCount = 3
 	aiMaxPredictionCount     = 8
 	aiTerminalContextLimit   = 50000
@@ -95,12 +143,16 @@ func predictCommands(ctx context.Context, request aiPredictionRequest, logger *a
 		return aiPredictionResponse{}, err
 	}
 
+	if normalized.Provider == aiProviderAnthropicClaude {
+		return predictCommandsWithAnthropic(ctx, normalized, logger)
+	}
+
 	endpoint, err := chatCompletionsURL(normalized.BaseURL)
 	if err != nil {
 		return aiPredictionResponse{}, err
 	}
 
-	body, err := json.Marshal(openAIChatRequest{
+	chatRequest := openAIChatRequest{
 		Model:          normalized.Model,
 		Temperature:    0,
 		MaxTokens:      aiMaxTokens,
@@ -115,7 +167,9 @@ func predictCommands(ctx context.Context, request aiPredictionRequest, logger *a
 				Content: buildPredictionPrompt(normalized),
 			},
 		},
-	})
+	}
+	applyPredictionThinkingOptions(&chatRequest, normalized)
+	body, err := json.Marshal(chatRequest)
 	if err != nil {
 		return aiPredictionResponse{}, err
 	}
@@ -263,6 +317,10 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 	normalized, err := normalizeAIAssistRequest(request)
 	if err != nil {
 		return aiAssistResponse{}, err
+	}
+
+	if normalized.Provider == aiProviderAnthropicClaude {
+		return assistWithAnthropic(ctx, normalized, logger)
 	}
 
 	endpoint, err := chatCompletionsURL(normalized.BaseURL)
@@ -421,11 +479,14 @@ func streamPredictedCommands(ctx context.Context, request aiPredictionRequest, l
 	if err != nil {
 		return err
 	}
+	if normalized.Provider == aiProviderAnthropicClaude {
+		return streamPredictedCommandsWithAnthropic(ctx, normalized, logger, write)
+	}
 	endpoint, err := chatCompletionsURL(normalized.BaseURL)
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(openAIChatRequest{
+	chatRequest := openAIChatRequest{
 		Model:          normalized.Model,
 		Temperature:    0,
 		MaxTokens:      aiMaxTokens,
@@ -441,7 +502,9 @@ func streamPredictedCommands(ctx context.Context, request aiPredictionRequest, l
 				Content: buildPredictionPrompt(normalized),
 			},
 		},
-	})
+	}
+	applyPredictionThinkingOptions(&chatRequest, normalized)
+	body, err := json.Marshal(chatRequest)
 	if err != nil {
 		return err
 	}
@@ -494,6 +557,9 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 	normalized, err := normalizeAIAssistRequest(request)
 	if err != nil {
 		return err
+	}
+	if normalized.Provider == aiProviderAnthropicClaude {
+		return streamAssistWithAnthropic(ctx, normalized, logger, write)
 	}
 	endpoint, err := chatCompletionsURL(normalized.BaseURL)
 	if err != nil {
@@ -568,6 +634,271 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 			"riskLevel":    result.RiskLevel,
 			"durationMs":   time.Since(started).Milliseconds(),
 		})
+	}
+	return write(aiStreamEvent{Type: "done", Response: &result, FinishReason: finishReason})
+}
+
+func predictCommandsWithAnthropic(ctx context.Context, request aiPredictionRequest, logger *appLogger) (aiPredictionResponse, error) {
+	endpoint, err := anthropicMessagesURL(request.BaseURL)
+	if err != nil {
+		return aiPredictionResponse{}, err
+	}
+	body, err := json.Marshal(anthropicMessageRequest{
+		Model:       request.Model,
+		System:      buildPredictionSystemPrompt(),
+		Messages:    []anthropicMessage{{Role: "user", Content: buildPredictionPrompt(request)}},
+		MaxTokens:   aiMaxTokens,
+		Temperature: 0,
+		Thinking:    anthropicThinkingOptionsForPrediction(aiPredictionThinkingEnabled(request)),
+	})
+	if err != nil {
+		return aiPredictionResponse{}, err
+	}
+
+	started := time.Now()
+	responseBody, statusCode, bodyTruncated, err := doAIJSONRequest(ctx, endpoint, request.APIKey, request.Model, request.TimeoutSeconds, body, logger, "provider request failed", "provider response read failed")
+	if err != nil {
+		return aiPredictionResponse{}, err
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		bodySnippet := logTextSnippet(string(responseBody))
+		if logger != nil {
+			logger.error("ai", "provider returned non-success status", map[string]any{
+				"endpoint":      endpoint,
+				"model":         request.Model,
+				"status":        statusCode,
+				"bodySnippet":   bodySnippet,
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		if bodySnippet != "" {
+			return aiPredictionResponse{}, fmt.Errorf("ai provider returned status %d: %s", statusCode, bodySnippet)
+		}
+		return aiPredictionResponse{}, fmt.Errorf("ai provider returned status %d", statusCode)
+	}
+
+	var messageResponse anthropicMessageResponse
+	if err := json.Unmarshal(responseBody, &messageResponse); err != nil {
+		if logger != nil {
+			logger.error("ai", "provider response decode failed", map[string]any{
+				"endpoint":      endpoint,
+				"model":         request.Model,
+				"status":        statusCode,
+				"error":         err.Error(),
+				"bodySnippet":   logTextSnippet(string(responseBody)),
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		return aiPredictionResponse{}, err
+	}
+
+	content, reasoning := anthropicContentAndThinking(messageResponse.Content)
+	commands := parsePredictedCommands(content, request.PredictionCount)
+	if len(commands) == 0 {
+		if logger != nil {
+			logger.error("ai", "provider returned no commands", map[string]any{
+				"endpoint":              endpoint,
+				"model":                 request.Model,
+				"status":                statusCode,
+				"finishReason":          messageResponse.StopReason,
+				"contentChars":          len(content),
+				"contentSnippet":        logTextSnippet(content),
+				"reasoningContentChars": len(reasoning),
+				"reasoningSnippet":      logTextSnippet(reasoning),
+				"bodySnippet":           logTextSnippet(string(responseBody)),
+				"bodyTruncated":         bodyTruncated,
+				"durationMs":            time.Since(started).Milliseconds(),
+			})
+		}
+		if messageResponse.StopReason == "max_tokens" {
+			return aiPredictionResponse{}, errors.New("ai provider output was truncated before final commands; see run logs for provider reasoning")
+		}
+		return aiPredictionResponse{}, errors.New("ai provider returned no commands; see run logs for provider content")
+	}
+	return aiPredictionResponse{Commands: commands}, nil
+}
+
+func assistWithAnthropic(ctx context.Context, request aiAssistRequest, logger *appLogger) (aiAssistResponse, error) {
+	endpoint, err := anthropicMessagesURL(request.BaseURL)
+	if err != nil {
+		return aiAssistResponse{}, err
+	}
+	body, err := json.Marshal(anthropicMessageRequest{
+		Model:       request.Model,
+		System:      buildAssistSystemPrompt(request),
+		Messages:    []anthropicMessage{{Role: "user", Content: buildAssistPrompt(request)}},
+		MaxTokens:   aiAssistMaxTokens,
+		Temperature: 0,
+		Thinking:    anthropicThinkingOptionsForAgent(aiAgentThinkingEnabled(request)),
+	})
+	if err != nil {
+		return aiAssistResponse{}, err
+	}
+
+	started := time.Now()
+	responseBody, statusCode, bodyTruncated, err := doAIJSONRequest(ctx, endpoint, request.APIKey, request.Model, request.TimeoutSeconds, body, logger, "assist provider request failed", "assist provider response read failed")
+	if err != nil {
+		return aiAssistResponse{}, err
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		bodySnippet := logTextSnippet(string(responseBody))
+		if logger != nil {
+			logger.error("ai", "assist provider returned non-success status", map[string]any{
+				"endpoint":      endpoint,
+				"model":         request.Model,
+				"status":        statusCode,
+				"bodySnippet":   bodySnippet,
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		if bodySnippet != "" {
+			return aiAssistResponse{}, fmt.Errorf("ai provider returned status %d: %s", statusCode, bodySnippet)
+		}
+		return aiAssistResponse{}, fmt.Errorf("ai provider returned status %d", statusCode)
+	}
+
+	var messageResponse anthropicMessageResponse
+	if err := json.Unmarshal(responseBody, &messageResponse); err != nil {
+		if logger != nil {
+			logger.error("ai", "assist provider response decode failed", map[string]any{
+				"endpoint":      endpoint,
+				"model":         request.Model,
+				"status":        statusCode,
+				"error":         err.Error(),
+				"bodySnippet":   logTextSnippet(string(responseBody)),
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		return aiAssistResponse{}, err
+	}
+
+	content, reasoning := anthropicContentAndThinking(messageResponse.Content)
+	result, err := parseAssistResponse(content)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "assist provider returned invalid content", map[string]any{
+				"endpoint":              endpoint,
+				"model":                 request.Model,
+				"status":                statusCode,
+				"finishReason":          messageResponse.StopReason,
+				"contentChars":          len(content),
+				"contentSnippet":        logTextSnippet(content),
+				"reasoningContentChars": len(reasoning),
+				"reasoningSnippet":      logTextSnippet(reasoning),
+				"bodySnippet":           logTextSnippet(string(responseBody)),
+				"bodyTruncated":         bodyTruncated,
+				"durationMs":            time.Since(started).Milliseconds(),
+			})
+		}
+		if messageResponse.StopReason == "max_tokens" {
+			return aiAssistResponse{}, errors.New("ai provider output was truncated before final answer; see run logs")
+		}
+		return aiAssistResponse{}, err
+	}
+	return finalizeAssistResponse(result), nil
+}
+
+func streamPredictedCommandsWithAnthropic(ctx context.Context, request aiPredictionRequest, logger *appLogger, write aiStreamWriter) error {
+	endpoint, err := anthropicMessagesURL(request.BaseURL)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(anthropicMessageRequest{
+		Model:       request.Model,
+		System:      buildPredictionSystemPrompt(),
+		Messages:    []anthropicMessage{{Role: "user", Content: buildPredictionPrompt(request)}},
+		MaxTokens:   aiMaxTokens,
+		Temperature: 0,
+		Stream:      true,
+		Thinking:    anthropicThinkingOptionsForPrediction(aiPredictionThinkingEnabled(request)),
+	})
+	if err != nil {
+		return err
+	}
+	content, reasoning, finishReason, err := streamAnthropicMessages(ctx, endpoint, request.APIKey, request.Model, request.TimeoutSeconds, body, logger, func(event aiStreamEvent) error {
+		if event.Type == "thinking" && !request.IncludeThinking {
+			return nil
+		}
+		return write(event)
+	})
+	if err != nil {
+		return err
+	}
+	commands := parsePredictedCommands(content, request.PredictionCount)
+	if len(commands) == 0 {
+		if logger != nil {
+			logger.error("ai", "stream prediction returned no commands", map[string]any{
+				"endpoint":              endpoint,
+				"model":                 request.Model,
+				"finishReason":          finishReason,
+				"contentChars":          len(content),
+				"contentSnippet":        logTextSnippet(content),
+				"reasoningContentChars": len(reasoning),
+				"reasoningSnippet":      logTextSnippet(reasoning),
+			})
+		}
+		return errors.New("ai provider returned no commands; see run logs for streamed content")
+	}
+	return write(aiStreamEvent{Type: "done", Commands: commands, FinishReason: finishReason})
+}
+
+func streamAssistWithAnthropic(ctx context.Context, request aiAssistRequest, logger *appLogger, write aiStreamWriter) error {
+	endpoint, err := anthropicMessagesURL(request.BaseURL)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(anthropicMessageRequest{
+		Model:       request.Model,
+		System:      buildAssistSystemPrompt(request),
+		Messages:    []anthropicMessage{{Role: "user", Content: buildAssistPrompt(request)}},
+		MaxTokens:   aiAssistMaxTokens,
+		Temperature: 0,
+		Stream:      true,
+		Thinking:    anthropicThinkingOptionsForAgent(aiAgentThinkingEnabled(request)),
+	})
+	if err != nil {
+		return err
+	}
+
+	contentExtractor := &assistContentStreamExtractor{}
+	content, reasoning, finishReason, err := streamAnthropicMessages(ctx, endpoint, request.APIKey, request.Model, request.TimeoutSeconds, body, logger, func(event aiStreamEvent) error {
+		if event.Type == "thinking" {
+			return write(event)
+		}
+		if event.Type == "content" && event.Text != "" {
+			if text := contentExtractor.Append(event.Text); text != "" {
+				return write(aiStreamEvent{Type: "content", Text: text})
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	result, err := parseAssistResponse(content)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "stream assist returned invalid content", map[string]any{
+				"endpoint":              endpoint,
+				"model":                 request.Model,
+				"finishReason":          finishReason,
+				"contentChars":          len(content),
+				"contentSnippet":        logTextSnippet(content),
+				"reasoningContentChars": len(reasoning),
+				"reasoningSnippet":      logTextSnippet(reasoning),
+			})
+		}
+		return err
+	}
+	result = finalizeAssistResponse(result)
+	if text := contentExtractor.Finalize(result); text != "" {
+		if err := write(aiStreamEvent{Type: "content", Text: text}); err != nil {
+			return err
+		}
 	}
 	return write(aiStreamEvent{Type: "done", Response: &result, FinishReason: finishReason})
 }
@@ -664,6 +995,103 @@ func streamOpenAIChat(ctx context.Context, endpoint string, apiKey string, model
 			if choice.FinishReason != "" {
 				finishReason = choice.FinishReason
 			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
+	}
+	return contentBuilder.String(), reasoningBuilder.String(), finishReason, nil
+}
+
+func streamAnthropicMessages(ctx context.Context, endpoint string, apiKey string, model string, timeoutSeconds int, body []byte, logger *appLogger, write aiStreamWriter) (string, string, string, error) {
+	started := time.Now()
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", "", "", err
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("anthropic-version", anthropicAPIVersion)
+	httpRequest.Header.Set("Accept", "text/event-stream")
+	if apiKey != "" {
+		httpRequest.Header.Set("x-api-key", apiKey)
+	}
+	client := &http.Client{Timeout: aiRequestTimeout(timeoutSeconds)}
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", "stream provider request failed", map[string]any{
+				"endpoint":   endpoint,
+				"model":      model,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
+		return "", "", "", err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		responseBody, bodyTruncated, readErr := readLimitedAIResponseBody(response.Body)
+		if readErr != nil {
+			return "", "", "", readErr
+		}
+		bodySnippet := logTextSnippet(string(responseBody))
+		if logger != nil {
+			logger.error("ai", "stream provider returned non-success status", map[string]any{
+				"endpoint":      endpoint,
+				"model":         model,
+				"status":        response.StatusCode,
+				"bodySnippet":   bodySnippet,
+				"bodyTruncated": bodyTruncated,
+				"durationMs":    time.Since(started).Milliseconds(),
+			})
+		}
+		if bodySnippet != "" {
+			return "", "", "", fmt.Errorf("ai provider returned status %d: %s", response.StatusCode, bodySnippet)
+		}
+		return "", "", "", fmt.Errorf("ai provider returned status %d", response.StatusCode)
+	}
+
+	var contentBuilder strings.Builder
+	var reasoningBuilder strings.Builder
+	finishReason := ""
+	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), aiProviderBodyReadLimit)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var chunk anthropicStreamResponse
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			if logger != nil {
+				logger.warn("ai", "stream provider chunk decode failed", map[string]any{
+					"endpoint": endpoint,
+					"model":    model,
+					"chunk":    logTextSnippet(payload),
+					"error":    err.Error(),
+				})
+			}
+			continue
+		}
+		if text := firstNonEmpty(chunk.Delta.Thinking, chunk.ContentBlock.Thinking); text != "" {
+			reasoningBuilder.WriteString(text)
+			if err := write(aiStreamEvent{Type: "thinking", Text: text}); err != nil {
+				return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
+			}
+		}
+		if text := firstNonEmpty(chunk.Delta.Text, chunk.ContentBlock.Text); text != "" {
+			contentBuilder.WriteString(text)
+			if err := write(aiStreamEvent{Type: "content", Text: text}); err != nil {
+				return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
+			}
+		}
+		if chunk.Delta.StopReason != "" {
+			finishReason = chunk.Delta.StopReason
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -800,6 +1228,7 @@ func decodePartialJSONString(value string) string {
 func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error) {
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
+	request.Provider = normalizeAIProvider(request.Provider)
 	request.TimeoutSeconds = normalizeAIRequestTimeoutSeconds(request.TimeoutSeconds)
 	if request.BaseURL == "" {
 		return request, errors.New("ai base url is required")
@@ -819,13 +1248,17 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 	if len(request.CommandHistory) > aiCommandHistoryLimit {
 		request.CommandHistory = request.CommandHistory[:aiCommandHistoryLimit]
 	}
+	if request.ThinkingEnabled == nil {
+		enabled := true
+		request.ThinkingEnabled = &enabled
+	}
 	return request, nil
 }
 
 func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) {
 	request.BaseURL = strings.TrimSpace(request.BaseURL)
 	request.Model = strings.TrimSpace(request.Model)
-	request.Provider = strings.TrimSpace(request.Provider)
+	request.Provider = normalizeAIProvider(request.Provider)
 	request.TimeoutSeconds = normalizeAIRequestTimeoutSeconds(request.TimeoutSeconds)
 	request.SystemPrompt = trimToLastRunes(strings.TrimSpace(request.SystemPrompt), aiAssistPromptLimit)
 	request.Prompt = trimToLastRunes(strings.TrimSpace(request.Prompt), aiAssistPromptLimit)
@@ -888,6 +1321,22 @@ func aiAgentThinkingEnabled(request aiAssistRequest) bool {
 	return request.AgentThinkingEnabled == nil || *request.AgentThinkingEnabled
 }
 
+func aiPredictionThinkingEnabled(request aiPredictionRequest) bool {
+	return request.ThinkingEnabled == nil || *request.ThinkingEnabled
+}
+
+func applyPredictionThinkingOptions(request *openAIChatRequest, prediction aiPredictionRequest) {
+	if aiPredictionThinkingEnabled(prediction) {
+		return
+	}
+	disabled := false
+	request.EnableThinking = &disabled
+	request.ReasoningEffort = "none"
+	if prediction.Provider == aiProviderOllama {
+		request.Think = &disabled
+	}
+}
+
 func applyAgentThinkingOptions(request *openAIChatRequest, assist aiAssistRequest) {
 	if aiAgentThinkingEnabled(assist) {
 		return
@@ -897,6 +1346,37 @@ func applyAgentThinkingOptions(request *openAIChatRequest, assist aiAssistReques
 	request.ReasoningEffort = "none"
 	if strings.EqualFold(assist.Provider, "ollama") {
 		request.Think = &disabled
+	}
+}
+
+func normalizeAIProvider(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case aiProviderOllama:
+		return aiProviderOllama
+	case aiProviderAnthropicClaude:
+		return aiProviderAnthropicClaude
+	default:
+		return aiProviderOpenAICompatible
+	}
+}
+
+func anthropicThinkingOptionsForPrediction(enabled bool) *anthropicThinkingOptions {
+	if !enabled {
+		return nil
+	}
+	return &anthropicThinkingOptions{
+		Type:         "enabled",
+		BudgetTokens: minInt(2048, aiMaxTokens/2),
+	}
+}
+
+func anthropicThinkingOptionsForAgent(enabled bool) *anthropicThinkingOptions {
+	if !enabled {
+		return nil
+	}
+	return &anthropicThinkingOptions{
+		Type:         "enabled",
+		BudgetTokens: minInt(4096, aiAssistMaxTokens/2),
 	}
 }
 
@@ -1169,6 +1649,101 @@ func logTextSnippet(value string) string {
 		return value
 	}
 	return string(runes[:aiLogSnippetLimit]) + "...(truncated)"
+}
+
+func doAIJSONRequest(ctx context.Context, endpoint string, apiKey string, model string, timeoutSeconds int, body []byte, logger *appLogger, requestErrorMessage string, readErrorMessage string) ([]byte, int, bool, error) {
+	started := time.Now()
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, false, err
+	}
+	setAIRequestHeaders(httpRequest, endpoint, apiKey)
+	client := &http.Client{Timeout: aiRequestTimeout(timeoutSeconds)}
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", requestErrorMessage, map[string]any{
+				"endpoint":   endpoint,
+				"model":      model,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
+		return nil, 0, false, err
+	}
+	defer response.Body.Close()
+
+	responseBody, bodyTruncated, err := readLimitedAIResponseBody(response.Body)
+	if err != nil {
+		if logger != nil {
+			logger.error("ai", readErrorMessage, map[string]any{
+				"endpoint":   endpoint,
+				"model":      model,
+				"status":     response.StatusCode,
+				"error":      err.Error(),
+				"durationMs": time.Since(started).Milliseconds(),
+			})
+		}
+		return nil, response.StatusCode, false, err
+	}
+	return responseBody, response.StatusCode, bodyTruncated, nil
+}
+
+func setAIRequestHeaders(request *http.Request, endpoint string, apiKey string) {
+	request.Header.Set("Content-Type", "application/json")
+	if strings.Contains(endpoint, "/v1/messages") {
+		request.Header.Set("anthropic-version", anthropicAPIVersion)
+		if apiKey != "" {
+			request.Header.Set("x-api-key", apiKey)
+		}
+		return
+	}
+	if apiKey != "" {
+		request.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+}
+
+func anthropicMessagesURL(baseURL string) (string, error) {
+	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if trimmed == "" {
+		return "", errors.New("ai base url is required")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("invalid ai base url")
+	}
+	if strings.HasSuffix(parsed.Path, "/messages") {
+		return trimmed, nil
+	}
+	if strings.HasSuffix(parsed.Path, "/v1") {
+		return trimmed + "/messages", nil
+	}
+	return trimmed + "/v1/messages", nil
+}
+
+func anthropicContentAndThinking(blocks []anthropicContentBlock) (string, string) {
+	var contentBuilder strings.Builder
+	var reasoningBuilder strings.Builder
+	for _, block := range blocks {
+		if block.Type == "thinking" && block.Thinking != "" {
+			reasoningBuilder.WriteString(block.Thinking)
+		}
+		if block.Text != "" {
+			contentBuilder.WriteString(block.Text)
+		}
+	}
+	return contentBuilder.String(), reasoningBuilder.String()
+}
+
+func buildPredictionSystemPrompt() string {
+	return "浣犳槸 SSH 缁堢鍛戒护棰勬祴鍔╂墜銆傚繀椤婚娴嬬敤鎴锋帴涓嬫潵鏈€鍙兘浜哄伐纭鎵ц鐨?shell 鍛戒护锛屽洜涓烘渶缁堟槸鍚﹀簲鐢ㄧ敱鐢ㄦ埛纭銆備綘鍙兘鍦ㄦ渶缁?content 涓繑鍥炰弗鏍?JSON锛屼笉鑳借繑鍥?Markdown銆佽В閲娿€佹€濊€冭繃绋嬫垨绌哄唴瀹广€傚嵆浣夸笉纭畾锛屼篃瑕佺粰鍑轰繚瀹堢殑鏌ョ湅鍨嬪懡浠ゃ€備笉瑕佹墽琛屼换浣曟搷浣滐紝涓嶈杩斿洖鍗遍櫓鎴栫牬鍧忔€у懡浠ゃ€傚搷搴旀牸寮忓繀椤绘槸 {\"commands\":[\"鍛戒护1\",\"鍛戒护2\"]}銆?"
+}
+
+func minInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func chatCompletionsURL(baseURL string) (string, error) {

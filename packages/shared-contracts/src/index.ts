@@ -63,7 +63,7 @@ export interface AuthSettingsUpdateRequest {
   webAccessEnabled?: boolean
 }
 
-export type AIModelProvider = 'openai-compatible' | 'ollama'
+export type AIModelProvider = 'openai-compatible' | 'ollama' | 'anthropic-claude'
 
 export interface AIModelConfig {
   id: string
@@ -72,6 +72,7 @@ export interface AIModelConfig {
   baseUrl: string
   apiKey: string
   model: string
+  thinkingEnabled: boolean
 }
 
 export interface AppSettings {
@@ -252,6 +253,8 @@ export interface AIPredictionRequest {
   baseUrl: string
   apiKey?: string
   model: string
+  provider?: AIModelProvider
+  thinkingEnabled?: boolean
   timeoutSeconds?: number
   predictionCount: number
   includeThinking?: boolean

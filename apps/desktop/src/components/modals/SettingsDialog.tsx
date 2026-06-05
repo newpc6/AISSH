@@ -2,6 +2,40 @@ import type { ChangeEvent } from 'react'
 import type { AIModelProvider, AppSettings } from '@ai-ssh/shared-contracts'
 import type { SettingsSection } from '../../types'
 
+const AI_PROVIDER_OPTIONS: Array<{ value: AIModelProvider; label: string }> = [
+  { value: 'openai-compatible', label: 'OpenAI 兼容' },
+  { value: 'anthropic-claude', label: 'Anthropic Claude' },
+  { value: 'ollama', label: 'Ollama' },
+]
+
+function aiProviderLabel(provider: AIModelProvider) {
+  return AI_PROVIDER_OPTIONS.find((item) => item.value === provider)?.label ?? provider
+}
+
+function aiModelPlaceholder(provider: AIModelProvider) {
+  if (provider === 'ollama') return 'llama3.1'
+  if (provider === 'anthropic-claude') return 'claude-sonnet-4-0'
+  return 'gpt-4.1-mini'
+}
+
+function aiBaseUrlPlaceholder(provider: AIModelProvider, defaultOllamaBaseUrl: string) {
+  if (provider === 'ollama') return defaultOllamaBaseUrl
+  if (provider === 'anthropic-claude') return 'https://api.anthropic.com/v1'
+  return 'https://api.openai.com/v1'
+}
+
+function aiKeyPlaceholder(provider: AIModelProvider) {
+  if (provider === 'ollama') return 'Ollama 通常可留空'
+  if (provider === 'anthropic-claude') return 'sk-ant-...'
+  return 'sk-...'
+}
+
+function aiProviderHelp(provider: AIModelProvider) {
+  if (provider === 'ollama') return '使用 Ollama 的 OpenAI 兼容接口。'
+  if (provider === 'anthropic-claude') return '使用 Claude 原生 Messages API，走 x-api-key 与事件流。'
+  return '适用于 OpenAI、DeepSeek、通义千问等兼容接口。'
+}
+
 type ChangePasswordForm = {
   oldPassword: string
   newPassword: string
@@ -297,7 +331,7 @@ export function SettingsDialog({
                   />
                   <span>开启 Agent 思考</span>
                 </label>
-                <p className="ai-model-help">关闭后会尽量让 OpenAI 兼容接口和 Ollama 跳过深度思考；Qwen/Ollama 会额外发送 `/no_think`，适合 qwen3 系列思考太久的场景。</p>
+                <p className="ai-model-help">全局开关控制 Agent 是否允许思考；每个模型还可以单独开启或关闭思考。Claude 原生协议会走独立的 thinking 参数与事件流。</p>
                 <label>
                   <span>预测命令数量</span>
                   <input min="1" max="8" type="number" value={settings.aiPredictionCount} onChange={updateNumber('aiPredictionCount', 3)} />
@@ -384,68 +418,98 @@ export function SettingsDialog({
                     <span>AI 模型配置</span>
                     <div className="ai-model-actions">
                       <button type="button" title="新增 OpenAI 兼容模型" onClick={() => onAddAIModelConfig('openai-compatible')}>+ OpenAI</button>
+                      <button type="button" title="新增 Anthropic Claude 模型" onClick={() => onAddAIModelConfig('anthropic-claude')}>+ Claude</button>
                       <button type="button" title="新增 Ollama 模型" onClick={() => onAddAIModelConfig('ollama')}>+ Ollama</button>
                     </div>
                   </div>
-                  <p className="ai-model-help">Ollama 请填写 OpenAI 兼容地址，例如 `http://111.4.141.154:41000/v1`；不要只填 host:port。模型名填写 `ollama list` 中的名称。</p>
+                  <p className="ai-model-help">改成紧凑表格后，一屏能看更多模型。OpenAI/Ollama 走 `/chat/completions`；Claude 原生协议走 `/v1/messages`，需要 `x-api-key`。</p>
                   {settings.aiModels.length === 0 ? <p className="hint-text">尚未配置 AI 模型。</p> : null}
-                  {settings.aiModels.map((model) => (
-                    <div className={`ai-model-config-row${model.id === settings.activeAIModelId ? ' active' : ''}`} key={model.id}>
-                      <label className="checkbox-row">
-                        <input
-                          checked={model.id === settings.activeAIModelId}
-                          name="active-ai-model"
-                          type="radio"
-                          onChange={() => onSettingsChange((current) => normalizeSettings({ ...current, activeAIModelId: model.id }))}
-                        />
-                        <span>启用</span>
-                      </label>
-                      <label>
-                        <span>名称</span>
-                        <input
-                          value={model.name}
-                          onChange={(event) => onUpdateAIModelConfig(model.id, { name: event.target.value })}
-                          placeholder={model.provider === 'ollama' ? 'Ollama' : 'OpenAI Compatible'}
-                        />
-                      </label>
-                      <label>
-                        <span>类型</span>
-                        <select value={model.provider} onChange={(event) => onUpdateAIModelConfig(model.id, { provider: event.target.value as AIModelProvider })}>
-                          <option value="openai-compatible">OpenAI 兼容</option>
-                          <option value="ollama">Ollama</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>地址</span>
-                        <input
-                          value={model.baseUrl}
-                          onChange={(event) => onUpdateAIModelConfig(model.id, { baseUrl: event.target.value })}
-                          placeholder={model.provider === 'ollama' ? defaultOllamaBaseUrl : 'https://api.openai.com/v1'}
-                        />
-                      </label>
-                      <label>
-                        <span>API Key</span>
-                        <input
-                          type="password"
-                          value={model.apiKey}
-                          onChange={(event) => onUpdateAIModelConfig(model.id, { apiKey: event.target.value })}
-                          placeholder={model.provider === 'ollama' ? 'Ollama 通常可留空' : 'sk-...'}
-                        />
-                      </label>
-                      <label>
-                        <span>模型</span>
-                        <input
-                          value={model.model}
-                          onChange={(event) => onUpdateAIModelConfig(model.id, { model: event.target.value })}
-                          placeholder={model.provider === 'ollama' ? 'llama3.1' : 'gpt-4.1-mini'}
-                        />
-                      </label>
-                      <div className="ai-model-row-footer">
-                        <small>{model.provider === 'ollama' ? '使用 Ollama 的 OpenAI 兼容接口 /v1/chat/completions。' : '适用于 OpenAI、DeepSeek、通义千问等兼容接口。'}</small>
-                        <button type="button" title="删除这个模型配置" onClick={() => onRemoveAIModelConfig(model.id)}>删除</button>
-                      </div>
+                  {settings.aiModels.length > 0 ? (
+                    <div className="ai-model-table-wrap">
+                      <table className="ai-model-table">
+                        <thead>
+                          <tr>
+                            <th>启用</th>
+                            <th>名称</th>
+                            <th>类型</th>
+                            <th>地址</th>
+                            <th>Key</th>
+                            <th>模型</th>
+                            <th>思考</th>
+                            <th>说明</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {settings.aiModels.map((model) => (
+                            <tr className={model.id === settings.activeAIModelId ? 'active' : ''} key={model.id}>
+                              <td>
+                                <label className="checkbox-row compact">
+                                  <input
+                                    checked={model.id === settings.activeAIModelId}
+                                    name="active-ai-model"
+                                    type="radio"
+                                    onChange={() => onSettingsChange((current) => normalizeSettings({ ...current, activeAIModelId: model.id }))}
+                                  />
+                                </label>
+                              </td>
+                              <td>
+                                <input
+                                  value={model.name}
+                                  onChange={(event) => onUpdateAIModelConfig(model.id, { name: event.target.value })}
+                                  placeholder={aiProviderLabel(model.provider)}
+                                />
+                              </td>
+                              <td>
+                                <select value={model.provider} onChange={(event) => onUpdateAIModelConfig(model.id, { provider: event.target.value as AIModelProvider })}>
+                                  {AI_PROVIDER_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td>
+                                <input
+                                  value={model.baseUrl}
+                                  onChange={(event) => onUpdateAIModelConfig(model.id, { baseUrl: event.target.value })}
+                                  placeholder={aiBaseUrlPlaceholder(model.provider, defaultOllamaBaseUrl)}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="password"
+                                  value={model.apiKey}
+                                  onChange={(event) => onUpdateAIModelConfig(model.id, { apiKey: event.target.value })}
+                                  placeholder={aiKeyPlaceholder(model.provider)}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  value={model.model}
+                                  onChange={(event) => onUpdateAIModelConfig(model.id, { model: event.target.value })}
+                                  placeholder={aiModelPlaceholder(model.provider)}
+                                />
+                              </td>
+                              <td>
+                                <label className="checkbox-row compact">
+                                  <input
+                                    checked={model.thinkingEnabled}
+                                    type="checkbox"
+                                    onChange={(event) => onUpdateAIModelConfig(model.id, { thinkingEnabled: event.target.checked })}
+                                  />
+                                </label>
+                              </td>
+                              <td>
+                                <small>{aiProviderHelp(model.provider)}</small>
+                              </td>
+                              <td>
+                                <button type="button" title="删除这个模型配置" onClick={() => onRemoveAIModelConfig(model.id)}>删除</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  ))}
+                  ) : null}
                 </div>
                 <label>
                   <span>系统提示词</span>

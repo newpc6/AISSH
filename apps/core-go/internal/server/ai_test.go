@@ -103,6 +103,75 @@ func TestAssistThinkingCanBeDisabled(t *testing.T) {
 	}
 }
 
+func TestNormalizeAIRequestDefaultsThinkingEnabled(t *testing.T) {
+	request, err := normalizeAIRequest(aiPredictionRequest{
+		BaseURL:         "https://api.anthropic.com/v1",
+		Model:           "claude-sonnet-4-0",
+		Provider:        "anthropic-claude",
+		PredictionCount: 3,
+		TerminalContext: "ls -la",
+		CommandHistory:  []string{"pwd"},
+	})
+	if err != nil {
+		t.Fatalf("normalize prediction request: %v", err)
+	}
+	if request.ThinkingEnabled == nil || !*request.ThinkingEnabled {
+		t.Fatalf("expected prediction thinking to default to enabled, got %#v", request.ThinkingEnabled)
+	}
+}
+
+func TestApplyPredictionThinkingOptionsCanBeDisabled(t *testing.T) {
+	disabled := false
+	request := aiPredictionRequest{
+		Provider:        "ollama",
+		ThinkingEnabled: &disabled,
+	}
+	chatRequest := openAIChatRequest{}
+	applyPredictionThinkingOptions(&chatRequest, request)
+	if chatRequest.EnableThinking == nil || *chatRequest.EnableThinking {
+		t.Fatalf("expected enable_thinking false, got %#v", chatRequest.EnableThinking)
+	}
+	if chatRequest.Think == nil || *chatRequest.Think {
+		t.Fatalf("expected ollama think false, got %#v", chatRequest.Think)
+	}
+	if chatRequest.ReasoningEffort != "none" {
+		t.Fatalf("expected reasoning_effort none, got %q", chatRequest.ReasoningEffort)
+	}
+}
+
+func TestAnthropicMessagesURL(t *testing.T) {
+	tests := []struct {
+		base string
+		want string
+	}{
+		{base: "https://api.anthropic.com", want: "https://api.anthropic.com/v1/messages"},
+		{base: "https://api.anthropic.com/v1", want: "https://api.anthropic.com/v1/messages"},
+		{base: "https://api.anthropic.com/v1/messages", want: "https://api.anthropic.com/v1/messages"},
+	}
+	for _, tt := range tests {
+		got, err := anthropicMessagesURL(tt.base)
+		if err != nil {
+			t.Fatalf("anthropicMessagesURL(%q): %v", tt.base, err)
+		}
+		if got != tt.want {
+			t.Fatalf("anthropicMessagesURL(%q) = %q, want %q", tt.base, got, tt.want)
+		}
+	}
+}
+
+func TestAnthropicContentAndThinking(t *testing.T) {
+	content, thinking := anthropicContentAndThinking([]anthropicContentBlock{
+		{Type: "thinking", Thinking: "step1"},
+		{Type: "text", Text: `{"commands":["pwd"]}`},
+	})
+	if content != `{"commands":["pwd"]}` {
+		t.Fatalf("expected content, got %q", content)
+	}
+	if thinking != "step1" {
+		t.Fatalf("expected thinking, got %q", thinking)
+	}
+}
+
 func TestAssistContentStreamExtractorReturnsReadableAnswerDelta(t *testing.T) {
 	extractor := &assistContentStreamExtractor{}
 	var streamed string

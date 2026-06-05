@@ -655,18 +655,62 @@ code {
   padding: 0 10px;
 }
 
-.ai-model-config-row {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
+.ai-model-table-wrap {
+  overflow: auto;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.72);
 }
 
-.ai-model-config-row.active {
-  border-color: rgba(79, 140, 255, 0.48);
-  box-shadow: 0 0 0 1px rgba(79, 140, 255, 0.12);
+.ai-model-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.ai-model-table th,
+.ai-model-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+
+.ai-model-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(9, 14, 22, 0.96);
+  color: #a8b6ca;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.ai-model-table tbody tr.active {
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.ai-model-table td input,
+.ai-model-table td select {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.ai-model-table td small {
+  display: block;
+  color: #8ca0b8;
+  font-size: 11px;
+  line-height: 1.5;
+  min-width: 180px;
+}
+
+.ai-model-table td:last-child {
+  width: 72px;
+}
+
+.ai-model-table td:last-child button {
+  min-height: 30px;
+  padding: 0 9px;
 }
 
 .ai-model-row-footer small {
@@ -885,6 +929,11 @@ code {
   display: flex !important;
   align-items: center;
   gap: 8px;
+}
+
+.checkbox-row.compact {
+  justify-content: center;
+  gap: 0;
 }
 
 .checkbox-row input {

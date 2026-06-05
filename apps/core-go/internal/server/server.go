@@ -117,6 +117,8 @@ type aiPredictionRequest struct {
 	BaseURL         string   `json:"baseUrl"`
 	APIKey          string   `json:"apiKey,omitempty"`
 	Model           string   `json:"model"`
+	Provider        string   `json:"provider,omitempty"`
+	ThinkingEnabled *bool    `json:"thinkingEnabled,omitempty"`
 	TimeoutSeconds  int      `json:"timeoutSeconds,omitempty"`
 	PredictionCount int      `json:"predictionCount"`
 	IncludeThinking bool     `json:"includeThinking,omitempty"`

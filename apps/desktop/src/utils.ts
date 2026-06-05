@@ -149,6 +149,19 @@ export function newOpenAICompatibleModelConfig(): AIModelConfig {
     baseUrl: '',
     apiKey: '',
     model: '',
+    thinkingEnabled: true,
+  }
+}
+
+export function newAnthropicClaudeModelConfig(): AIModelConfig {
+  return {
+    id: createAIModelId(),
+    name: 'Anthropic Claude',
+    provider: 'anthropic-claude',
+    baseUrl: 'https://api.anthropic.com/v1',
+    apiKey: '',
+    model: 'claude-sonnet-4-0',
+    thinkingEnabled: true,
   }
 }
 
@@ -160,11 +173,13 @@ export function newOllamaModelConfig(): AIModelConfig {
     baseUrl: DEFAULT_OLLAMA_BASE_URL,
     apiKey: '',
     model: 'llama3.1',
+    thinkingEnabled: true,
   }
 }
 
 function normalizeAIModelProvider(value: unknown): AIModelProvider {
-  return value === 'ollama' ? 'ollama' : 'openai-compatible'
+  if (value === 'ollama' || value === 'anthropic-claude') return value
+  return 'openai-compatible'
 }
 
 export function normalizeAIModelConfigs(value: unknown, legacy?: Pick<AppSettings, 'aiBaseUrl' | 'aiApiKey' | 'aiModel'>): AIModelConfig[] {
@@ -174,16 +189,25 @@ export function normalizeAIModelConfigs(value: unknown, legacy?: Pick<AppSetting
       if (!item || typeof item !== 'object') return null
       const raw = item as Record<string, unknown>
       const provider = normalizeAIModelProvider(raw.provider)
+      const defaultName = provider === 'ollama'
+        ? 'Ollama'
+        : provider === 'anthropic-claude'
+          ? 'Anthropic Claude'
+          : `OpenAI Compatible ${index + 1}`
       const config: AIModelConfig = {
         id: String(raw.id ?? '').trim() || createAIModelId(),
-        name: String(raw.name ?? '').trim() || (provider === 'ollama' ? 'Ollama' : `OpenAI Compatible ${index + 1}`),
+        name: String(raw.name ?? '').trim() || defaultName,
         provider,
         baseUrl: String(raw.baseUrl ?? '').trim(),
         apiKey: String(raw.apiKey ?? ''),
         model: String(raw.model ?? '').trim(),
+        thinkingEnabled: raw.thinkingEnabled === undefined ? true : Boolean(raw.thinkingEnabled),
       }
       if (config.provider === 'ollama' && !config.baseUrl) {
         config.baseUrl = DEFAULT_OLLAMA_BASE_URL
+      }
+      if (config.provider === 'anthropic-claude' && !config.baseUrl) {
+        config.baseUrl = 'https://api.anthropic.com/v1'
       }
       return config
     })
@@ -197,6 +221,7 @@ export function normalizeAIModelConfigs(value: unknown, legacy?: Pick<AppSetting
       baseUrl: String(legacy.aiBaseUrl ?? '').trim(),
       apiKey: String(legacy.aiApiKey ?? ''),
       model: String(legacy.aiModel ?? '').trim(),
+      thinkingEnabled: true,
     })
   }
 

@@ -159,6 +159,7 @@ import {
   normalizeHostGroups,
   normalizeRequestPath,
   newOllamaModelConfig,
+  newAnthropicClaudeModelConfig,
   newOpenAICompatibleModelConfig,
   parentPath,
   previewMimeType,
@@ -2808,7 +2809,11 @@ export function App() {
   }
 
   const addAIModelConfig = (provider: AIModelProvider) => {
-    const nextModel = provider === 'ollama' ? newOllamaModelConfig() : newOpenAICompatibleModelConfig()
+    const nextModel = provider === 'ollama'
+      ? newOllamaModelConfig()
+      : provider === 'anthropic-claude'
+        ? newAnthropicClaudeModelConfig()
+        : newOpenAICompatibleModelConfig()
     setSettings((current) => ({
       ...current,
       aiModels: [...current.aiModels, nextModel],
@@ -2823,6 +2828,9 @@ export function App() {
         const next = { ...model, ...patch }
         if (patch.provider === 'ollama' && !next.baseUrl.trim()) {
           next.baseUrl = DEFAULT_OLLAMA_BASE_URL
+        }
+        if (patch.provider === 'anthropic-claude' && !next.baseUrl.trim()) {
+          next.baseUrl = 'https://api.anthropic.com/v1'
         }
         return next
       })
@@ -3660,6 +3668,8 @@ export function App() {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
       model: activeModel.model,
+      provider: activeModel.provider,
+      thinkingEnabled: activeModel.thinkingEnabled,
       timeoutSeconds: normalized.aiProviderTimeoutSeconds,
       predictionCount: normalized.aiPredictionCount,
       includeThinking: normalized.aiPredictionThinkingEnabled,
@@ -3887,7 +3897,7 @@ export function App() {
       apiKey: activeModel.apiKey,
       model: activeModel.model,
       provider: activeModel.provider,
-      agentThinkingEnabled: normalized.aiAgentThinkingEnabled,
+      agentThinkingEnabled: normalized.aiAgentThinkingEnabled && activeModel.thinkingEnabled,
       timeoutSeconds: normalized.aiProviderTimeoutSeconds,
       systemPrompt: normalized.aiSystemPrompt,
       systemPromptOverride: normalized.aiSystemPromptOverride,
