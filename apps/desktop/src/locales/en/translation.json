@@ -18,6 +18,19 @@
     "chinese": "Chinese",
     "english": "English"
   },
+  "settings": {
+    "title": "Settings",
+    "preferences": "Preferences",
+    "closePreferences": "Close preferences window",
+    "savePreferences": "Save preferences",
+    "switchToSection": "Switch to {{section}} settings",
+    "sections": {
+      "general": "General",
+      "security": "Security",
+      "metrics": "Server Metrics",
+      "ai": "AI"
+    }
+  },
   "menu": {
     "file": "File",
     "edit": "Edit",

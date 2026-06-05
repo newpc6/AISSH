@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react'
 import type { AIModelProvider, AppSettings } from '@ai-ssh/shared-contracts'
 import type { SettingsSection } from '../../types'
+import { useTranslation } from 'react-i18next'
 import { LanguageSwitcher } from '../common/LanguageSwitcher'
 
 const AI_PROVIDER_OPTIONS: Array<{ value: AIModelProvider; label: string }> = [
@@ -132,6 +133,8 @@ export function SettingsDialog({
   onSave,
   normalizeSettings,
 }: SettingsDialogProps) {
+  const { t } = useTranslation()
+
   if (!open) {
     return null
   }
@@ -148,25 +151,25 @@ export function SettingsDialog({
       <section className="settings-modal">
         <div className="modal-header">
           <div>
-            <p className="section-label">设置</p>
-            <h3>偏好设置</h3>
+            <p className="section-label">{t('settings.title')}</p>
+            <h3>{t('settings.preferences')}</h3>
           </div>
-          <button type="button" title="关闭偏好设置窗口" onClick={onClose}>×</button>
+          <button type="button" title={t('settings.closePreferences')} onClick={onClose}>×</button>
         </div>
 
         <div className="settings-layout">
           <nav className="settings-nav">
             {[
-              ['general', '通用'],
-              ['security', '安全'],
-              ['metrics', '服务器指标'],
-              ['ai', 'AI'],
+              ['general', t('settings.sections.general')],
+              ['security', t('settings.sections.security')],
+              ['metrics', t('settings.sections.metrics')],
+              ['ai', t('settings.sections.ai')],
             ].map(([key, label]) => (
               <button
                 className={settingsSection === key ? 'active' : ''}
                 key={key}
                 type="button"
-                title={`切换到${label}设置`}
+                title={t('settings.switchToSection', { section: label })}
                 onClick={() => onSettingsSectionChange(key as SettingsSection)}
               >
                 {label}
@@ -537,8 +540,8 @@ export function SettingsDialog({
 
         {settingsSavedMessage ? <p className="success-text">{settingsSavedMessage}</p> : null}
         <div className="modal-actions">
-          <button type="button" title="关闭偏好设置窗口" onClick={onClose}>关闭</button>
-          <button className="primary-button" type="button" title="保存偏好设置" onClick={onSave}>保存</button>
+          <button type="button" title={t('settings.closePreferences')} onClick={onClose}>{t('app.close')}</button>
+          <button className="primary-button" type="button" title={t('settings.savePreferences')} onClick={onSave}>{t('app.save')}</button>
         </div>
       </section>
     </div>

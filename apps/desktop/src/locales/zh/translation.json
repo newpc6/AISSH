@@ -18,6 +18,19 @@
     "chinese": "中文",
     "english": "English"
   },
+  "settings": {
+    "title": "设置",
+    "preferences": "偏好设置",
+    "closePreferences": "关闭偏好设置窗口",
+    "savePreferences": "保存偏好设置",
+    "switchToSection": "切换到{{section}}设置",
+    "sections": {
+      "general": "通用",
+      "security": "安全",
+      "metrics": "服务器指标",
+      "ai": "AI"
+    }
+  },
   "menu": {
     "file": "文件",
     "edit": "编辑",
