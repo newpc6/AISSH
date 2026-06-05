@@ -29,6 +29,45 @@
       "security": "Security",
       "metrics": "Server Metrics",
       "ai": "AI"
+    },
+    "general": {
+      "healthCheckInterval": "Health Check Interval (seconds)",
+      "terminalRetainedLines": "Terminal Retained Lines per SSH Tab",
+      "rightServerInfoHeight": "Default Right Server Info Height (pixels)",
+      "rightPanelWidth": "Default Right Panel Width (pixels)"
+    },
+    "ai": {
+      "enableAI": "Enable AI Features",
+      "enablePrediction": "Enable AI Command Prediction",
+      "showPredictionThinking": "Show Prediction Thinking",
+      "enableAgentThinking": "Enable Agent Thinking",
+      "agentThinkingHelp": "Global switch controls whether Agent is allowed to think; each model can also enable or disable thinking individually. Claude native protocol uses independent thinking parameters and event streams.",
+      "predictionCount": "Prediction Command Count",
+      "terminalContextLimit": "Terminal Context Characters",
+      "commandHistoryLimit": "Command History Count",
+      "conversationContextLimit": "Conversation Context Messages",
+      "agentCommandTimeout": "Agent Command Wait Timeout (seconds)",
+      "aiProviderTimeout": "AI Request Timeout (seconds)",
+      "predictionTriggerDelay": "Prediction Trigger Delay (ms)",
+      "modelBaseUrl": "Model Base URL",
+      "modelApiKey": "API Key",
+      "modelName": "Model",
+      "modelConfigTitle": "AI Model Configuration",
+      "addOpenAI": "+ OpenAI",
+      "addClaude": "+ Claude",
+      "addOllama": "+ Ollama",
+      "modelHelp": "OpenAI/Ollama uses /chat/completions; Claude native protocol uses /v1/messages with x-api-key.",
+      "noModels": "No AI models configured yet.",
+      "modelTable": {
+        "enable": "Enable",
+        "name": "Name",
+        "type": "Type",
+        "baseUrl": "Base URL",
+        "key": "Key",
+        "model": "Model",
+        "thinking": "Thinking",
+        "description": "Description"
+      }
     }
   },
   "menu": {

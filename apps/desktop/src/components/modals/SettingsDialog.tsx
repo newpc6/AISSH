@@ -182,7 +182,7 @@ export function SettingsDialog({
               <>
                 <LanguageSwitcher />
                 <label>
-                  <span>健康检查间隔（秒）</span>
+                  <span>{t('settings.general.healthCheckInterval')}</span>
                   <input
                     min="3"
                     max="300"
@@ -192,7 +192,7 @@ export function SettingsDialog({
                   />
                 </label>
                 <label>
-                  <span>每个 SSH 标签保留终端行数</span>
+                  <span>{t('settings.general.terminalRetainedLines')}</span>
                   <input
                     min="100"
                     type="number"
@@ -201,7 +201,7 @@ export function SettingsDialog({
                   />
                 </label>
                 <label>
-                  <span>右侧服务器信息默认高度（像素）</span>
+                  <span>{t('settings.general.rightServerInfoHeight')}</span>
                   <input
                     min={minRightServerInfoHeight}
                     max={maxRightServerInfoHeight}
@@ -211,7 +211,7 @@ export function SettingsDialog({
                   />
                 </label>
                 <label>
-                  <span>右侧区域默认宽度（像素）</span>
+                  <span>{t('settings.general.rightPanelWidth')}</span>
                   <input
                     min={minRightPanelWidth}
                     max={maxRightPanelWidth}
@@ -307,7 +307,7 @@ export function SettingsDialog({
                       }
                     }}
                   />
-                  <span>开启 AI 功能</span>
+                  <span>{t('settings.ai.enableAI')}</span>
                 </label>
                 <label className="checkbox-row">
                   <input
@@ -316,7 +316,7 @@ export function SettingsDialog({
                     type="checkbox"
                     onChange={(event) => onSettingsChange((current) => ({ ...current, aiPredictionEnabled: event.target.checked }))}
                   />
-                  <span>开启 AI 命令预测</span>
+                  <span>{t('settings.ai.enablePrediction')}</span>
                 </label>
                 <label className="checkbox-row">
                   <input
@@ -325,7 +325,7 @@ export function SettingsDialog({
                     type="checkbox"
                     onChange={(event) => onSettingsChange((current) => ({ ...current, aiPredictionThinkingEnabled: event.target.checked }))}
                   />
-                  <span>显示预测 thinking</span>
+                  <span>{t('settings.ai.showPredictionThinking')}</span>
                 </label>
                 <label className="checkbox-row">
                   <input
@@ -334,16 +334,16 @@ export function SettingsDialog({
                     type="checkbox"
                     onChange={(event) => onSettingsChange((current) => ({ ...current, aiAgentThinkingEnabled: event.target.checked }))}
                   />
-                  <span>开启 Agent 思考</span>
+                  <span>{t('settings.ai.enableAgentThinking')}</span>
                 </label>
-                <p className="ai-model-help">全局开关控制 Agent 是否允许思考；每个模型还可以单独开启或关闭思考。Claude 原生协议会走独立的 thinking 参数与事件流。</p>
+                <p className="ai-model-help">{t('settings.ai.agentThinkingHelp')}</p>
                 <label>
-                  <span>预测命令数量</span>
+                  <span>{t('settings.ai.predictionCount')}</span>
                   <input min="1" max="8" type="number" value={settings.aiPredictionCount} onChange={updateNumber('aiPredictionCount', 3)} />
                 </label>
                 <div className="form-row settings-pair">
                   <label>
-                    <span>终端上下文字符数</span>
+                    <span>{t('settings.ai.terminalContextLimit')}</span>
                     <input
                       min="500"
                       max="50000"
@@ -354,7 +354,7 @@ export function SettingsDialog({
                     />
                   </label>
                   <label>
-                    <span>历史命令条数</span>
+                    <span>{t('settings.ai.commandHistoryLimit')}</span>
                     <input
                       min="1"
                       max="200"
@@ -365,7 +365,7 @@ export function SettingsDialog({
                   </label>
                 </div>
                 <label>
-                  <span>对话上下文消息数</span>
+                  <span>{t('settings.ai.conversationContextLimit')}</span>
                   <input
                     min="1"
                     max="100"
@@ -375,7 +375,7 @@ export function SettingsDialog({
                   />
                 </label>
                 <label>
-                  <span>Agent 命令等待超时（秒）</span>
+                  <span>{t('settings.ai.agentCommandTimeout')}</span>
                   <input
                     min="10"
                     max="1800"
@@ -385,7 +385,7 @@ export function SettingsDialog({
                   />
                 </label>
                 <label>
-                  <span>AI 请求超时（秒）</span>
+                  <span>{t('settings.ai.aiProviderTimeout')}</span>
                   <input
                     min="10"
                     max="1800"
@@ -396,7 +396,7 @@ export function SettingsDialog({
                   <small>远程 Ollama 或大模型首次加载较慢时可调大，例如 120-300 秒。</small>
                 </label>
                 <label>
-                  <span>预测触发延迟（毫秒）</span>
+                  <span>{t('settings.ai.predictionTriggerDelay')}</span>
                   <input
                     min="0"
                     max="10000"
@@ -407,41 +407,41 @@ export function SettingsDialog({
                   />
                 </label>
                 <label>
-                  <span>大模型地址</span>
+                  <span>{t('settings.ai.modelBaseUrl')}</span>
                   <input value={activeAIModelBaseUrl} readOnly placeholder="https://api.openai.com/v1" />
                 </label>
                 <label>
-                  <span>API Key</span>
+                  <span>{t('settings.ai.modelApiKey')}</span>
                   <input type="password" value={activeAIModelApiKey} readOnly placeholder="sk-..." />
                 </label>
                 <label>
-                  <span>模型</span>
+                  <span>{t('settings.ai.modelName')}</span>
                   <input value={activeAIModelModel} readOnly placeholder="gpt-4.1-mini" />
                 </label>
                 <div className="ai-model-settings">
                   <div className="ai-model-settings-head">
-                    <span>AI 模型配置</span>
+                    <span>{t('settings.ai.modelConfigTitle')}</span>
                     <div className="ai-model-actions">
-                      <button type="button" title="新增 OpenAI 兼容模型" onClick={() => onAddAIModelConfig('openai-compatible')}>+ OpenAI</button>
-                      <button type="button" title="新增 Anthropic Claude 模型" onClick={() => onAddAIModelConfig('anthropic-claude')}>+ Claude</button>
-                      <button type="button" title="新增 Ollama 模型" onClick={() => onAddAIModelConfig('ollama')}>+ Ollama</button>
+                      <button type="button" title="新增 OpenAI 兼容模型" onClick={() => onAddAIModelConfig('openai-compatible')}>{t('settings.ai.addOpenAI')}</button>
+                      <button type="button" title="新增 Anthropic Claude 模型" onClick={() => onAddAIModelConfig('anthropic-claude')}>{t('settings.ai.addClaude')}</button>
+                      <button type="button" title="新增 Ollama 模型" onClick={() => onAddAIModelConfig('ollama')}>{t('settings.ai.addOllama')}</button>
                     </div>
                   </div>
-                  <p className="ai-model-help">改成紧凑表格后，一屏能看更多模型。OpenAI/Ollama 走 `/chat/completions`；Claude 原生协议走 `/v1/messages`，需要 `x-api-key`。</p>
-                  {settings.aiModels.length === 0 ? <p className="hint-text">尚未配置 AI 模型。</p> : null}
+                  <p className="ai-model-help">{t('settings.ai.modelHelp')}</p>
+                  {settings.aiModels.length === 0 ? <p className="hint-text">{t('settings.ai.noModels')}</p> : null}
                   {settings.aiModels.length > 0 ? (
                     <div className="ai-model-table-wrap">
                       <table className="ai-model-table">
                         <thead>
                           <tr>
-                            <th>启用</th>
-                            <th>名称</th>
-                            <th>类型</th>
-                            <th>地址</th>
-                            <th>Key</th>
-                            <th>模型</th>
-                            <th>思考</th>
-                            <th>说明</th>
+                            <th>{t('settings.ai.modelTable.enable')}</th>
+                            <th>{t('settings.ai.modelTable.name')}</th>
+                            <th>{t('settings.ai.modelTable.type')}</th>
+                            <th>{t('settings.ai.modelTable.baseUrl')}</th>
+                            <th>{t('settings.ai.modelTable.key')}</th>
+                            <th>{t('settings.ai.modelTable.model')}</th>
+                            <th>{t('settings.ai.modelTable.thinking')}</th>
+                            <th>{t('settings.ai.modelTable.description')}</th>
                             <th />
                           </tr>
                         </thead>

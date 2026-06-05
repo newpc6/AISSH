@@ -29,6 +29,45 @@
       "security": "安全",
       "metrics": "服务器指标",
       "ai": "AI"
+    },
+    "general": {
+      "healthCheckInterval": "健康检查间隔（秒）",
+      "terminalRetainedLines": "每个 SSH 标签保留终端行数",
+      "rightServerInfoHeight": "右侧服务器信息默认高度（像素）",
+      "rightPanelWidth": "右侧区域默认宽度（像素）"
+    },
+    "ai": {
+      "enableAI": "开启 AI 功能",
+      "enablePrediction": "开启 AI 命令预测",
+      "showPredictionThinking": "显示预测 thinking",
+      "enableAgentThinking": "开启 Agent 思考",
+      "agentThinkingHelp": "全局开关控制 Agent 是否允许思考；每个模型还可以单独开启或关闭思考。Claude 原生协议会走独立的 thinking 参数与事件流。",
+      "predictionCount": "预测命令数量",
+      "terminalContextLimit": "终端上下文字符数",
+      "commandHistoryLimit": "历史命令条数",
+      "conversationContextLimit": "对话上下文消息数",
+      "agentCommandTimeout": "Agent 命令等待超时（秒）",
+      "aiProviderTimeout": "AI 请求超时（秒）",
+      "predictionTriggerDelay": "预测触发延迟（毫秒）",
+      "modelBaseUrl": "大模型地址",
+      "modelApiKey": "API Key",
+      "modelName": "模型",
+      "modelConfigTitle": "AI 模型配置",
+      "addOpenAI": "+ OpenAI",
+      "addClaude": "+ Claude",
+      "addOllama": "+ Ollama",
+      "modelHelp": "OpenAI/Ollama 走 /chat/completions；Claude 原生协议走 /v1/messages，需要 x-api-key。",
+      "noModels": "尚未配置 AI 模型。",
+      "modelTable": {
+        "enable": "启用",
+        "name": "名称",
+        "type": "类型",
+        "baseUrl": "地址",
+        "key": "Key",
+        "model": "模型",
+        "thinking": "思考",
+        "description": "说明"
+      }
     }
   },
   "menu": {
