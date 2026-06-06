@@ -518,7 +518,9 @@
       "collapseInput": "收起 AI 输入区域"
     },
     "skills": {
-      "label": "技能"
+      "label": "技能",
+      "openMenu": "选择 AI 技能",
+      "menuHint": "可多选一个或多个工作技能提示"
     }
   },
   "serversPanel": {

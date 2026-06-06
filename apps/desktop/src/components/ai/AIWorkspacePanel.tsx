@@ -1,4 +1,4 @@
-import type { RefObject, ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AIAgentMode, AIChatConversation, AISkill } from '@ai-ssh/shared-contracts'
 import type { AIChatMessageDraft, BatchHostResult, LoadState } from '../../types'
@@ -119,6 +119,43 @@ export function AIWorkspacePanel({
   onCloseBatchHostCard,
 }: AIWorkspacePanelProps) {
   const { t, i18n } = useTranslation()
+  const [isSkillMenuOpen, setIsSkillMenuOpen] = useState(false)
+  const skillMenuRef = useRef<HTMLDivElement | null>(null)
+  const selectedSkills = useMemo(
+    () => selectedAISkillIds
+      .map((skillId) => aiSkills.find((skill) => skill.id === skillId) ?? null)
+      .filter((skill): skill is AISkill => Boolean(skill)),
+    [aiSkills, selectedAISkillIds],
+  )
+
+  useEffect(() => {
+    if (!isSkillMenuOpen) {
+      return undefined
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      if (skillMenuRef.current?.contains(event.target as Node)) {
+        return
+      }
+      setIsSkillMenuOpen(false)
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSkillMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isSkillMenuOpen])
+
+  useEffect(() => {
+    if (isAIInputCollapsed || aiSkills.length === 0) {
+      setIsSkillMenuOpen(false)
+    }
+  }, [aiSkills.length, isAIInputCollapsed])
 
   const batchStatusText = (result: BatchHostResult) => {
     if (result.status === 'pending') return t('aiWorkspace.batch.status.pending')
@@ -224,28 +261,6 @@ export function AIWorkspacePanel({
           />
         ) : null}
 
-        {!isAIInputCollapsed && aiSkills.length > 0 ? (
-          <div className="ai-skill-picker">
-            <span className="ai-skill-picker-label">{t('aiWorkspace.skills.label')}</span>
-            <div className="ai-skill-tags">
-              {aiSkills.map((skill) => {
-                const selected = selectedAISkillIds.includes(skill.id)
-                return (
-                  <button
-                    key={skill.id}
-                    type="button"
-                    className={`ai-skill-tag${selected ? ' selected' : ''}`}
-                    title={skill.prompt || skill.name}
-                    onClick={() => onToggleAISkill(skill.id)}
-                  >
-                    {skill.name}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ) : null}
-
         {!isAIInputCollapsed ? (
           <div className="agent-mode-row">
             {batchMode && batchSelectedHosts.length > 0 ? (
@@ -310,6 +325,51 @@ export function AIWorkspacePanel({
               <button className="ai-icon-button" type="button" title={t('aiWorkspace.actions.clearInput')} onClick={onClearAiInput}>
                 ×
               </button>
+              {aiSkills.length > 0 ? (
+                <div className={`ai-skill-menu-wrap${isSkillMenuOpen ? ' open' : ''}`} ref={skillMenuRef}>
+                  <button
+                    className={`ai-icon-button ai-skill-menu-trigger${selectedSkills.length > 0 ? ' active' : ''}`}
+                    type="button"
+                    title={t('aiWorkspace.skills.openMenu')}
+                    aria-haspopup="menu"
+                    aria-expanded={isSkillMenuOpen}
+                    onClick={() => setIsSkillMenuOpen((current) => !current)}
+                  >
+                    <span aria-hidden="true">✦</span>
+                    {selectedSkills.length > 0 ? <span className="ai-skill-trigger-count">{selectedSkills.length}</span> : null}
+                  </button>
+                  {isSkillMenuOpen ? (
+                    <div className="ai-skill-menu" role="menu" aria-label={t('aiWorkspace.skills.label')}>
+                      <div className="ai-skill-menu-head">
+                        <strong>{t('aiWorkspace.skills.label')}</strong>
+                        <small>{t('aiWorkspace.skills.menuHint')}</small>
+                      </div>
+                      <div className="ai-skill-menu-list">
+                        {aiSkills.map((skill) => {
+                          const selected = selectedAISkillIds.includes(skill.id)
+                          return (
+                            <button
+                              key={skill.id}
+                              type="button"
+                              role="menuitemcheckbox"
+                              aria-checked={selected}
+                              className={`ai-skill-menu-item${selected ? ' selected' : ''}`}
+                              title={skill.prompt || skill.name}
+                              onClick={() => onToggleAISkill(skill.id)}
+                            >
+                              <span className="ai-skill-menu-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+                              <span className="ai-skill-menu-copy">
+                                <strong>{skill.name}</strong>
+                                {skill.prompt ? <small>{skill.prompt}</small> : null}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="agent-actions-group agent-actions-group-primary">
               <button className="ai-icon-button" disabled={agentState === 'loading'} type="button" title={t('aiWorkspace.actions.continueTask')} onClick={onContinueAgentTask}>
@@ -370,12 +430,23 @@ export function AIWorkspacePanel({
         </div>
       ) : null}
 
-      <div
-        className={`ai-model-corner-badge${isAIProviderConfigured ? '' : ' unconfigured'}`}
-        title={activeSessionName ? `${activeAIModelTitle} | ${activeSessionName}` : activeAIModelTitle}
-      >
-        <span>{activeAIModelLabel}</span>
-        {activeSessionName ? <span className="ai-model-session-tag">{activeSessionName}</span> : null}
+      <div className="ai-corner-badges">
+        {selectedSkills.length > 0 ? (
+          <div
+            className="ai-skill-corner-badge"
+            title={selectedSkills.map((skill) => skill.name).join('\n')}
+          >
+            <span>{selectedSkills[0].name}</span>
+            {selectedSkills.length > 1 ? <span className="ai-skill-corner-count">{selectedSkills.length}</span> : null}
+          </div>
+        ) : null}
+        <div
+          className={`ai-model-corner-badge${isAIProviderConfigured ? '' : ' unconfigured'}`}
+          title={activeSessionName ? `${activeAIModelTitle} | ${activeSessionName}` : activeAIModelTitle}
+        >
+          <span>{activeAIModelLabel}</span>
+          {activeSessionName ? <span className="ai-model-session-tag">{activeSessionName}</span> : null}
+        </div>
       </div>
     </div>
   )

@@ -480,7 +480,9 @@
       "batchPlaceholder": "Batch task: describe the task in natural language, such as updating apt or checking disk space, then click Send on the right to start."
     },
     "skills": {
-      "label": "Skills"
+      "label": "Skills",
+      "openMenu": "Choose AI skills",
+      "menuHint": "Select one or more reusable skill prompts"
     },
     "batch": {
       "modeSummary": "Batch mode - {{count}} selected",
