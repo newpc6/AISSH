@@ -439,7 +439,7 @@ export function App() {
     openAddHostDialog,
     openEditHostDialog,
   } = useHostDialogState({
-    defaultGroupName: hostGroups[0]?.name ?? '榛樿',
+    defaultGroupName: hostGroups[0]?.name ?? '默认',
     setEditingHostId,
     setHostDialogError,
     setHostDialogMode,
@@ -1943,7 +1943,7 @@ export function App() {
   const loadAISkills = async () => {
     const response = await apiFetch('/ai/skills')
     if (!response.ok) {
-      throw new Error(`?? AI skill ???${response.status}`)
+      throw new Error(`加载 AI skill 失败：${response.status}`)
     }
     const data = (await response.json()) as AISkillListResponse
     const skills = Array.isArray(data.skills) ? data.skills : []
@@ -4027,9 +4027,9 @@ export function App() {
       terminalContext,
       selectedText: [
         ignoreAmbientContext ? '' : window.getSelection()?.toString() ?? '',
-        conversationContext ? `????:
+        conversationContext ? `当前对话:
 ${conversationContext}` : '',
-        recentContext ? `????:
+        recentContext ? `最近对话:
 ${recentContext}` : '',
       ]
         .filter((item) => item.trim())

@@ -116,14 +116,14 @@ export function useAIConversationStrategy({
       )
       .slice(-Math.max(1, recentCount))
       .map((message) => {
-        const label = message.kind === 'user' ? '???' : message.kind === 'command' ? 'AI???' : message.kind === 'agent_step' ? '??????' : 'AI'
+        const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
         if (message.kind === 'agent_step' && message.step) {
           const output = message.step.output ? `
-??????: ${message.step.output.slice(-1200)}` : ''
+输出摘要: ${message.step.output.slice(-1200)}` : ''
           const exitCode = typeof message.step.exitCode === 'number' ? `
-?????: ${message.step.exitCode}` : ''
+退出码: ${message.step.exitCode}` : ''
           return `${label}: ${message.step.command || message.content}
-???? ${message.step.status}${exitCode}${output}`
+状态: ${message.step.status}${exitCode}${output}`
         }
         return `${label}: ${message.content}`
       })
