@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -633,6 +634,77 @@ func TestAIPredictEndpointUsesOpenAICompatibleProvider(t *testing.T) {
 	}
 	if len(response.Commands) != 2 || response.Commands[0] != "ls -lah" || response.Commands[1] != "pwd" {
 		t.Fatalf("expected two predicted commands, got %#v", response.Commands)
+	}
+}
+
+func TestAIPredictEndpointUsesStoredActiveModel(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("expected chat completions path, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer stored-key" {
+			t.Fatalf("expected stored bearer token, got %q", r.Header.Get("Authorization"))
+		}
+		writeJSON(w, map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]string{
+						"role":    "assistant",
+						"content": `{"commands":["hostname","pwd"]}`,
+					},
+				},
+			},
+		})
+	}))
+	defer provider.Close()
+
+	srv := newTestServer(t)
+	replaceReq := httptest.NewRequest(http.MethodPut, "/api/ai/models", bytes.NewBufferString(fmt.Sprintf(`{
+		"models":[
+			{
+				"id":"stored-model",
+				"name":"Stored Model",
+				"provider":"openai-compatible",
+				"baseUrl":"%s/v1",
+				"apiKey":"stored-key",
+				"model":"stored-model-name",
+				"thinkingEnabled":true
+			}
+		],
+		"activeModelId":"stored-model"
+	}`, provider.URL)))
+	replaceReq.Header.Set("Content-Type", "application/json")
+	replaceRecorder := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(replaceRecorder, replaceReq)
+	if replaceRecorder.Code != http.StatusOK {
+		t.Fatalf("expected replace models 200, got %d body=%s", replaceRecorder.Code, replaceRecorder.Body.String())
+	}
+
+	body, err := json.Marshal(aiPredictionRequest{
+		ModelID:         "stored-model",
+		PredictionCount: 2,
+		TerminalContext: "$ cd /srv/app",
+		CommandHistory:  []string{"cd /srv/app"},
+	})
+	if err != nil {
+		t.Fatalf("expected request json, got error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/predict", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	srv.Handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%q", recorder.Code, recorder.Body.String())
+	}
+
+	var response aiPredictionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected valid json response, got error: %v", err)
+	}
+	if len(response.Commands) != 2 || response.Commands[0] != "hostname" || response.Commands[1] != "pwd" {
+		t.Fatalf("expected stored model prediction commands, got %#v", response.Commands)
 	}
 }
 

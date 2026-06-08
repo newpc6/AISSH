@@ -114,6 +114,7 @@ type sessionResizeRequest struct {
 }
 
 type aiPredictionRequest struct {
+	ModelID         string   `json:"modelId,omitempty"`
 	BaseURL         string   `json:"baseUrl"`
 	APIKey          string   `json:"apiKey,omitempty"`
 	Model           string   `json:"model"`

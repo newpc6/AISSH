@@ -253,6 +253,16 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
+		if model, err := aiModels.resolveModel(request.ModelID); err == nil {
+			request.BaseURL = model.BaseURL
+			request.APIKey = model.APIKey
+			request.Model = model.Model
+			request.Provider = model.Provider
+			request.ThinkingEnabled = &model.ThinkingEnabled
+		} else if strings.TrimSpace(request.BaseURL) == "" || strings.TrimSpace(request.Model) == "" {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		response, err := predictCommands(r.Context(), request, logger)
 		if err != nil {
@@ -272,6 +282,16 @@ func newServer(port string, manager *sessionManager) *http.Server {
 		var request aiPredictionRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if model, err := aiModels.resolveModel(request.ModelID); err == nil {
+			request.BaseURL = model.BaseURL
+			request.APIKey = model.APIKey
+			request.Model = model.Model
+			request.Provider = model.Provider
+			request.ThinkingEnabled = &model.ThinkingEnabled
+		} else if strings.TrimSpace(request.BaseURL) == "" || strings.TrimSpace(request.Model) == "" {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 

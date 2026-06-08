@@ -282,6 +282,7 @@ export interface SessionResizeRequest {
 }
 
 export interface AIPredictionRequest {
+  modelId?: string
   baseUrl: string
   apiKey?: string
   model: string

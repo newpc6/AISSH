@@ -311,10 +311,12 @@ export function App() {
   const codeMirrorRef = useRef<CodeMirrorEditorHandle | null>(null)
   const commandBufferRef = useRef('')
   const activeSessionIdRef = useRef('')
+  const activeAIModelIdRef = useRef('')
   const sessionSettingsRef = useRef(defaultSettings)
   const configLoadedRef = useRef(false)
   const hostsRef = useRef<HostRecord[]>([])
   const sessionsRef = useRef<SessionRecord[]>([])
+  const aiModelConfigsRef = useRef<AIModelConfig[]>([])
   const filePreviewTabsRef = useRef<FilePreviewTab[]>([])
   const aiEnabledRef = useRef(true)
   const commandHistoryRef = useRef<string[]>([])
@@ -1770,6 +1772,14 @@ export function App() {
   useEffect(() => {
     aiEnabledRef.current = normalizeAppSettings(settings).aiEnabled
   }, [settings])
+
+  useEffect(() => {
+    activeAIModelIdRef.current = activeAIModelId
+  }, [activeAIModelId])
+
+  useEffect(() => {
+    aiModelConfigsRef.current = aiModelConfigs
+  }, [aiModelConfigs])
 
   useEffect(() => {
     const normalized = normalizeAppSettings(settings)
@@ -3761,7 +3771,7 @@ export function App() {
     if (inFlightRequestID) {
       return
     }
-    const activeModel = activeAIModelConfig
+    const activeModel = aiModelConfigsRef.current.find((model) => model.id === activeAIModelIdRef.current) ?? aiModelConfigsRef.current[0] ?? null
     if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       updateAIPredictionForSession(sessionId, {
         predictions: [],
@@ -3787,6 +3797,7 @@ export function App() {
     })
 
     const payload: AIPredictionRequest = {
+      modelId: activeModel.id,
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
       model: activeModel.model,

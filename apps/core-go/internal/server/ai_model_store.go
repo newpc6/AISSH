@@ -187,6 +187,28 @@ func containsAIModelID(models []AIModelConfig, id string) bool {
 	return false
 }
 
+func (s *aiModelStore) resolveModel(modelID string) (AIModelConfig, error) {
+	state, err := s.listModels()
+	if err != nil {
+		return AIModelConfig{}, err
+	}
+	targetID := strings.TrimSpace(modelID)
+	if targetID == "" {
+		targetID = strings.TrimSpace(state.ActiveModelID)
+	}
+	if targetID != "" {
+		for _, model := range state.Models {
+			if model.ID == targetID {
+				return model, nil
+			}
+		}
+	}
+	if len(state.Models) > 0 {
+		return state.Models[0], nil
+	}
+	return AIModelConfig{}, errors.New("no ai models configured")
+}
+
 func normalizeAIModelStoreConfigs(models []AIModelConfig) []AIModelConfig {
 	normalized := make([]AIModelConfig, 0, len(models))
 	seen := map[string]struct{}{}
