@@ -44,6 +44,6 @@ tasks
 .git-commit-msg
 push-all-master.bat
 docs/image-detail
-docs/ai-ssh-csdn-intro.md
+*intro.md
 *.doc
 *.docx
