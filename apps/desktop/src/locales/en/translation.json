@@ -151,6 +151,9 @@
       },
       "modelTable": {
         "enable": "Enable",
+        "default": "Default",
+        "agent": "AI / Agent",
+        "prediction": "Prediction",
         "name": "Name",
         "type": "Type",
         "baseUrl": "Base URL",
@@ -660,7 +663,7 @@
     "heading": "Model configuration",
     "close": "Close AI models dialog",
     "save": "Save AI models",
-    "help": "Manage multiple AI model endpoints in one table. Choose the active model used by chat, prediction, and agent workflows.",
+    "help": "Manage multiple AI model endpoints in one table. You can choose a default model, a dedicated AI/Agent model, and a separate command prediction model.",
     "tableTitle": "Model list",
     "table": {
       "actions": "Actions"

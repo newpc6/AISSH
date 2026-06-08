@@ -151,6 +151,9 @@
       },
       "modelTable": {
         "enable": "启用",
+        "default": "默认",
+        "agent": "AI / Agent",
+        "prediction": "命令预测",
         "name": "名称",
         "type": "类型",
         "baseUrl": "地址",
@@ -660,7 +663,7 @@
     "heading": "模型配置",
     "close": "关闭 AI 模型窗口",
     "save": "保存 AI 模型",
-    "help": "在一个表格里维护多个模型端点，并选择聊天、预测和 Agent 默认使用的活动模型。",
+    "help": "???????????????????????????AI / Agent ????????????",
     "tableTitle": "模型列表",
     "table": {
       "actions": "操作"

@@ -274,6 +274,8 @@ export function App() {
   const [aiModelConfigs, setAIModelConfigs] = useState<AIModelConfig[]>([])
   const [aiModelDrafts, setAIModelDrafts] = useState<AIModelConfig[]>([])
   const [activeAIModelId, setActiveAIModelId] = useState('')
+  const [activeAIAgentModelId, setActiveAIAgentModelId] = useState('')
+  const [activeAIPredictionModelId, setActiveAIPredictionModelId] = useState('')
   const [aiAssistantState, setAiAssistantState] = useState<LoadState>('idle')
   const [aiAssistantResponse, setAiAssistantResponse] = useState<AIAssistResponse | null>(null)
   const [aiAssistantError, setAiAssistantError] = useState('')
@@ -312,6 +314,8 @@ export function App() {
   const commandBufferRef = useRef('')
   const activeSessionIdRef = useRef('')
   const activeAIModelIdRef = useRef('')
+  const activeAIAgentModelIdRef = useRef('')
+  const activeAIPredictionModelIdRef = useRef('')
   const sessionSettingsRef = useRef(defaultSettings)
   const configLoadedRef = useRef(false)
   const hostsRef = useRef<HostRecord[]>([])
@@ -1778,6 +1782,14 @@ export function App() {
   }, [activeAIModelId])
 
   useEffect(() => {
+    activeAIAgentModelIdRef.current = activeAIAgentModelId
+  }, [activeAIAgentModelId])
+
+  useEffect(() => {
+    activeAIPredictionModelIdRef.current = activeAIPredictionModelId
+  }, [activeAIPredictionModelId])
+
+  useEffect(() => {
     aiModelConfigsRef.current = aiModelConfigs
   }, [aiModelConfigs])
 
@@ -1909,8 +1921,8 @@ export function App() {
   const recentHosts = useMemo(() => hosts.filter((host) => host.id !== 'local-demo').slice(0, 5), [hosts])
   const latestMetricSample = metricHistory[metricHistory.length - 1] ?? null
   const primaryDisk = serverMetrics?.disks?.find((disk) => disk.mount === '/') ?? serverMetrics?.disks?.[0] ?? null
-  const activeAIModelConfig = aiModelConfigs.find((model) => model.id === activeAIModelId) ?? aiModelConfigs[0] ?? null
-  const isAIProviderConfigured = Boolean(activeAIModelConfig?.baseUrl.trim() && activeAIModelConfig.model.trim())
+  const activeAIAgentModelConfig = aiModelConfigs.find((model) => model.id === activeAIAgentModelId) ?? aiModelConfigs[0] ?? null
+  const isAIProviderConfigured = Boolean(activeAIAgentModelConfig?.baseUrl.trim() && activeAIAgentModelConfig.model.trim())
   const visibleLogs = useVisibleLogs(logs, logLevel, logSearch)
   const selectedAISkills = useMemo(
     () => selectedAISkillIds
@@ -1971,11 +1983,21 @@ export function App() {
     const data = (await response.json()) as AIModelListResponse
     const models = Array.isArray(data.models) ? data.models : []
     const nextActiveModelId = typeof data.activeModelId === 'string' ? data.activeModelId : ''
+    const nextAgentModelId = typeof data.activeAgentModelId === 'string' ? data.activeAgentModelId : nextActiveModelId
+    const nextPredictionModelId = typeof data.activePredictionModelId === 'string' ? data.activePredictionModelId : nextActiveModelId
     setAIModelConfigs(models)
     setAIModelDrafts(models.map((model) => ({ ...model })))
     setActiveAIModelId(nextActiveModelId)
-    setSettings((current) => normalizeAppSettings({ ...current, aiModels: models, activeAIModelId: nextActiveModelId }))
-    return { models, activeModelId: nextActiveModelId }
+    setActiveAIAgentModelId(nextAgentModelId)
+    setActiveAIPredictionModelId(nextPredictionModelId)
+    setSettings((current) => normalizeAppSettings({
+      ...current,
+      aiModels: models,
+      activeAIModelId: nextActiveModelId,
+      activeAIAgentModelId: nextAgentModelId,
+      activeAIPredictionModelId: nextPredictionModelId,
+    }))
+    return { models, activeModelId: nextActiveModelId, activeAgentModelId: nextAgentModelId, activePredictionModelId: nextPredictionModelId }
   }
 
   const createAISkill = () => {
@@ -2008,6 +2030,8 @@ export function App() {
         : newOpenAICompatibleModelConfig()
     setAIModelDrafts((current) => [...current, nextModel])
     setActiveAIModelId((current) => current || nextModel.id)
+    setActiveAIAgentModelId((current) => current || nextModel.id)
+    setActiveAIPredictionModelId((current) => current || nextModel.id)
   }
 
   const updateAIModelConfig = (id: string, patch: Partial<AIModelConfig>) => {
@@ -2027,6 +2051,8 @@ export function App() {
   const removeAIModelConfig = (id: string) => {
     setAIModelDrafts((current) => current.filter((model) => model.id !== id))
     setActiveAIModelId((current) => current === id ? '' : current)
+    setActiveAIAgentModelId((current) => current === id ? '' : current)
+    setActiveAIPredictionModelId((current) => current === id ? '' : current)
   }
 
   const selectPrivateKeyFile = async (file: File | null) => {
@@ -2920,6 +2946,8 @@ export function App() {
     const payload: AIModelReplaceRequest = {
       models: aiModelDrafts,
       activeModelId: activeAIModelId,
+      activeAgentModelId: activeAIAgentModelId,
+      activePredictionModelId: activeAIPredictionModelId,
     }
     const response = await apiFetch('/ai/models', {
       method: 'PUT',
@@ -2933,10 +2961,20 @@ export function App() {
     const data = (await response.json()) as AIModelListResponse
     const models = Array.isArray(data.models) ? data.models : []
     const nextActiveModelId = typeof data.activeModelId === 'string' ? data.activeModelId : ''
+    const nextAgentModelId = typeof data.activeAgentModelId === 'string' ? data.activeAgentModelId : nextActiveModelId
+    const nextPredictionModelId = typeof data.activePredictionModelId === 'string' ? data.activePredictionModelId : nextActiveModelId
     setAIModelConfigs(models)
     setAIModelDrafts(models.map((model) => ({ ...model })))
     setActiveAIModelId(nextActiveModelId)
-    setSettings((current) => normalizeAppSettings({ ...current, aiModels: models, activeAIModelId: nextActiveModelId }))
+    setActiveAIAgentModelId(nextAgentModelId)
+    setActiveAIPredictionModelId(nextPredictionModelId)
+    setSettings((current) => normalizeAppSettings({
+      ...current,
+      aiModels: models,
+      activeAIModelId: nextActiveModelId,
+      activeAIAgentModelId: nextAgentModelId,
+      activeAIPredictionModelId: nextPredictionModelId,
+    }))
     setSettingsSavedMessage(t('messages.modelsSaved'))
     window.setTimeout(() => setSettingsSavedMessage(''), 2200)
   }
@@ -3771,7 +3809,7 @@ export function App() {
     if (inFlightRequestID) {
       return
     }
-    const activeModel = aiModelConfigsRef.current.find((model) => model.id === activeAIModelIdRef.current) ?? aiModelConfigsRef.current[0] ?? null
+    const activeModel = aiModelConfigsRef.current.find((model) => model.id === activeAIPredictionModelIdRef.current) ?? aiModelConfigsRef.current[0] ?? null
     if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       updateAIPredictionForSession(sessionId, {
         predictions: [],
@@ -4016,7 +4054,7 @@ export function App() {
     if (!normalized.aiEnabled) {
       throw new Error('AI 功能已关闭，请先在设置中开启')
     }
-    const activeModel = activeAIModelConfig
+    const activeModel = activeAIAgentModelConfig
     if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
       throw new Error('请先在设置中填写大模型地址和模型')
     }
@@ -5660,9 +5698,9 @@ ${recentContext}` : '',
                 activeAIConversationId={activeAIConversationId}
                 liveAIConversationId={liveAIConversationId}
                 isPreviewingHistory={isPreviewingAIHistory}
-                activeAIModelLabel={activeAIModelConfig?.model || activeAIModelConfig?.name || t('appMenu.unconfigured')}
-                activeAIModelTitle={activeAIModelConfig
-                  ? t('appMenu.currentModel', { model: activeAIModelConfig.model || activeAIModelConfig.name })
+                activeAIModelLabel={activeAIAgentModelConfig?.model || activeAIAgentModelConfig?.name || t('appMenu.unconfigured')}
+                activeAIModelTitle={activeAIAgentModelConfig
+                  ? t('appMenu.currentModel', { model: activeAIAgentModelConfig.model || activeAIAgentModelConfig.name })
                   : t('appMenu.unconfiguredModel')}
                 agentMode={activeAgentMode}
                 agentState={agentState}
@@ -5861,11 +5899,15 @@ ${recentContext}` : '',
 
       <AIModelsDialog
         activeModelId={activeAIModelId}
+        activeAgentModelId={activeAIAgentModelId}
+        activePredictionModelId={activeAIPredictionModelId}
         defaultOllamaBaseUrl={DEFAULT_OLLAMA_BASE_URL}
         models={aiModelDrafts}
         onActiveChange={setActiveAIModelId}
+        onAgentModelChange={setActiveAIAgentModelId}
         onAdd={addAIModelConfig}
         onClose={() => setIsModelDialogOpen(false)}
+        onPredictionModelChange={setActiveAIPredictionModelId}
         onRemove={removeAIModelConfig}
         onSave={() => { void saveAIModels() }}
         onUpdate={updateAIModelConfig}

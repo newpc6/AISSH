@@ -38,6 +38,8 @@ type AIModelsDialogProps = {
   open: boolean
   models: AIModelConfig[]
   activeModelId: string
+  activeAgentModelId: string
+  activePredictionModelId: string
   savedMessage: string
   defaultOllamaBaseUrl: string
   onClose: () => void
@@ -45,6 +47,8 @@ type AIModelsDialogProps = {
   onUpdate: (id: string, patch: Partial<AIModelConfig>) => void
   onRemove: (id: string) => void
   onActiveChange: (id: string) => void
+  onAgentModelChange: (id: string) => void
+  onPredictionModelChange: (id: string) => void
   onSave: () => void
 }
 
@@ -52,6 +56,8 @@ export function AIModelsDialog({
   open,
   models,
   activeModelId,
+  activeAgentModelId,
+  activePredictionModelId,
   savedMessage,
   defaultOllamaBaseUrl,
   onClose,
@@ -59,6 +65,8 @@ export function AIModelsDialog({
   onUpdate,
   onRemove,
   onActiveChange,
+  onAgentModelChange,
+  onPredictionModelChange,
   onSave,
 }: AIModelsDialogProps) {
   const { t } = useTranslation()
@@ -105,7 +113,9 @@ export function AIModelsDialog({
               <table className="ai-model-table">
                 <thead>
                   <tr>
-                    <th>{t('settings.ai.modelTable.enable')}</th>
+                    <th>{t('settings.ai.modelTable.default')}</th>
+                    <th>{t('settings.ai.modelTable.agent')}</th>
+                    <th>{t('settings.ai.modelTable.prediction')}</th>
                     <th>{t('settings.ai.modelTable.name')}</th>
                     <th>{t('settings.ai.modelTable.type')}</th>
                     <th>{t('settings.ai.modelTable.baseUrl')}</th>
@@ -118,14 +128,34 @@ export function AIModelsDialog({
                 </thead>
                 <tbody>
                   {models.map((model) => (
-                    <tr className={model.id === activeModelId ? 'active' : ''} key={model.id}>
+                    <tr className={model.id === activeAgentModelId || model.id === activePredictionModelId ? 'active' : ''} key={model.id}>
                       <td>
                         <label className="checkbox-row compact">
                           <input
                             checked={model.id === activeModelId}
-                            name="active-ai-model"
+                            name="default-ai-model"
                             type="radio"
                             onChange={() => onActiveChange(model.id)}
+                          />
+                        </label>
+                      </td>
+                      <td>
+                        <label className="checkbox-row compact">
+                          <input
+                            checked={model.id === activeAgentModelId}
+                            name="active-agent-model"
+                            type="radio"
+                            onChange={() => onAgentModelChange(model.id)}
+                          />
+                        </label>
+                      </td>
+                      <td>
+                        <label className="checkbox-row compact">
+                          <input
+                            checked={model.id === activePredictionModelId}
+                            name="active-prediction-model"
+                            type="radio"
+                            onChange={() => onPredictionModelChange(model.id)}
                           />
                         </label>
                       </td>

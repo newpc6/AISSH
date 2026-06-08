@@ -120,6 +120,9 @@ func TestMergeCoreConfigPayloadMergesAIModelList(t *testing.T) {
 	if merged.App.ActiveAIModelID != "ollama" {
 		t.Fatalf("expected active model id ollama, got %q", merged.App.ActiveAIModelID)
 	}
+	if merged.App.ActiveAIAgentModelID != "" || merged.App.ActiveAIPredictionModelID != "" {
+		t.Fatalf("expected split model ids to remain empty when omitted, got agent=%q prediction=%q", merged.App.ActiveAIAgentModelID, merged.App.ActiveAIPredictionModelID)
+	}
 	if len(merged.App.AIModels) != 1 || merged.App.AIModels[0].Provider != "ollama" || merged.App.AIModels[0].Model != "llama3.1" {
 		t.Fatalf("unexpected ai models: %#v", merged.App.AIModels)
 	}
@@ -223,7 +226,9 @@ func TestAIModelEndpointsReplaceAndList(t *testing.T) {
 				"thinkingEnabled":false
 			}
 		],
-		"activeModelId":"claude-main"
+		"activeModelId":"claude-main",
+		"activeAgentModelId":"claude-main",
+		"activePredictionModelId":"openai-main"
 	}`))
 	replaceReq.Header.Set("Content-Type", "application/json")
 	replaceRecorder := httptest.NewRecorder()
@@ -241,6 +246,9 @@ func TestAIModelEndpointsReplaceAndList(t *testing.T) {
 	body := listRecorder.Body.String()
 	if !strings.Contains(body, `"activeModelId":"claude-main"`) {
 		t.Fatalf("expected active model in body, got %s", body)
+	}
+	if !strings.Contains(body, `"activeAgentModelId":"claude-main"`) || !strings.Contains(body, `"activePredictionModelId":"openai-main"`) {
+		t.Fatalf("expected split active model ids in body, got %s", body)
 	}
 	if !strings.Contains(body, `"provider":"anthropic-claude"`) || !strings.Contains(body, `"provider":"openai-compatible"`) {
 		t.Fatalf("expected persisted models in body, got %s", body)

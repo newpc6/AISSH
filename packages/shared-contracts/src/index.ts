@@ -86,11 +86,15 @@ export interface AISkill {
 export interface AIModelListResponse {
   models: AIModelConfig[]
   activeModelId: string
+  activeAgentModelId: string
+  activePredictionModelId: string
 }
 
 export interface AIModelReplaceRequest {
   models: AIModelConfig[]
   activeModelId: string
+  activeAgentModelId: string
+  activePredictionModelId: string
 }
 
 export interface AISkillListResponse {
@@ -122,6 +126,8 @@ export interface AppSettings {
   aiModel: string
   aiModels: AIModelConfig[]
   activeAIModelId: string
+  activeAIAgentModelId: string
+  activeAIPredictionModelId: string
   aiPredictionEnabled: boolean
   aiPredictionThinkingEnabled: boolean
   aiPredictionCount: number

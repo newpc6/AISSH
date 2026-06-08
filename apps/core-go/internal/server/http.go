@@ -534,26 +534,32 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				return
 			}
 			writeJSON(w, map[string]any{
-				"models":        state.Models,
-				"activeModelId": state.ActiveModelID,
+				"models":                  state.Models,
+				"activeModelId":           state.ActiveModelID,
+				"activeAgentModelId":      state.ActiveAgentModelID,
+				"activePredictionModelId": state.ActivePredictionModelID,
 			})
 		case http.MethodPut:
 			var request struct {
-				Models        []AIModelConfig `json:"models"`
-				ActiveModelID string          `json:"activeModelId"`
+				Models                  []AIModelConfig `json:"models"`
+				ActiveModelID           string          `json:"activeModelId"`
+				ActiveAgentModelID      string          `json:"activeAgentModelId"`
+				ActivePredictionModelID string          `json:"activePredictionModelId"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
 				return
 			}
-			state, err := aiModels.replaceModels(request.Models, request.ActiveModelID)
+			state, err := aiModels.replaceModels(request.Models, request.ActiveModelID, request.ActiveAgentModelID, request.ActivePredictionModelID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, map[string]any{
-				"models":        state.Models,
-				"activeModelId": state.ActiveModelID,
+				"models":                  state.Models,
+				"activeModelId":           state.ActiveModelID,
+				"activeAgentModelId":      state.ActiveAgentModelID,
+				"activePredictionModelId": state.ActivePredictionModelID,
 			})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -29,6 +29,8 @@ type CoreAppConfig struct {
 	AIModel                       string          `json:"aiModel,omitempty"`
 	AIModels                      []AIModelConfig `json:"aiModels,omitempty"`
 	ActiveAIModelID               string          `json:"activeAIModelId,omitempty"`
+	ActiveAIAgentModelID          string          `json:"activeAIAgentModelId,omitempty"`
+	ActiveAIPredictionModelID     string          `json:"activeAIPredictionModelId,omitempty"`
 	AIPredictionEnabled           bool            `json:"aiPredictionEnabled,omitempty"`
 	AIPredictionThinkingEnabled   bool            `json:"aiPredictionThinkingEnabled,omitempty"`
 	AIPredictionCount             int             `json:"aiPredictionCount,omitempty"`
@@ -180,6 +182,12 @@ func mergeCoreAppConfig(target *CoreAppConfig, incoming *CoreAppConfig, fields m
 	}
 	if _, ok := fields["activeAIModelId"]; ok {
 		target.ActiveAIModelID = incoming.ActiveAIModelID
+	}
+	if _, ok := fields["activeAIAgentModelId"]; ok {
+		target.ActiveAIAgentModelID = incoming.ActiveAIAgentModelID
+	}
+	if _, ok := fields["activeAIPredictionModelId"]; ok {
+		target.ActiveAIPredictionModelID = incoming.ActiveAIPredictionModelID
 	}
 	if _, ok := fields["aiPredictionEnabled"]; ok {
 		target.AIPredictionEnabled = incoming.AIPredictionEnabled

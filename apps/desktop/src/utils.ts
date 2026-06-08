@@ -121,6 +121,8 @@ export const defaultSettings: AppSettings = {
   aiModel: '',
   aiModels: [],
   activeAIModelId: '',
+  activeAIAgentModelId: '',
+  activeAIPredictionModelId: '',
   aiPredictionEnabled: true,
   aiPredictionThinkingEnabled: false,
   aiPredictionCount: 3,
@@ -230,7 +232,11 @@ export function normalizeAIModelConfigs(value: unknown, legacy?: Pick<AppSetting
 }
 
 export function getActiveAIModelConfig(settings: AppSettings): AIModelConfig | null {
-  return settings.aiModels.find((model) => model.id === settings.activeAIModelId) ?? settings.aiModels[0] ?? null
+  return settings.aiModels.find((model) => model.id === settings.activeAIAgentModelId || model.id === settings.activeAIModelId) ?? settings.aiModels[0] ?? null
+}
+
+export function getActiveAIPredictionModelConfig(settings: AppSettings): AIModelConfig | null {
+  return settings.aiModels.find((model) => model.id === settings.activeAIPredictionModelId || model.id === settings.activeAIModelId) ?? settings.aiModels[0] ?? null
 }
 
 export const emptySetupForm = {
@@ -600,7 +606,13 @@ export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSetti
   const activeAIModelId = aiModels.some((model) => model.id === value.activeAIModelId)
     ? String(value.activeAIModelId)
     : (aiModels[0]?.id ?? '')
-  const activeAIModel = aiModels.find((model) => model.id === activeAIModelId) ?? aiModels[0]
+  const activeAIAgentModelId = aiModels.some((model) => model.id === value.activeAIAgentModelId)
+    ? String(value.activeAIAgentModelId)
+    : activeAIModelId
+  const activeAIPredictionModelId = aiModels.some((model) => model.id === value.activeAIPredictionModelId)
+    ? String(value.activeAIPredictionModelId)
+    : activeAIModelId
+  const activeAIModel = aiModels.find((model) => model.id === activeAIAgentModelId) ?? aiModels[0]
   return {
     ...defaultSettings,
     ...value,
@@ -621,6 +633,8 @@ export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSetti
     aiModel: activeAIModel?.model ?? '',
     aiModels,
     activeAIModelId,
+    activeAIAgentModelId,
+    activeAIPredictionModelId,
     aiPredictionEnabled: value.aiPredictionEnabled ?? defaultSettings.aiPredictionEnabled,
     aiPredictionThinkingEnabled: value.aiPredictionThinkingEnabled ?? defaultSettings.aiPredictionThinkingEnabled,
     aiPredictionCount: Math.max(1, Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3)),
