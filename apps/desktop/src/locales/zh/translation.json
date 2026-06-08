@@ -103,7 +103,8 @@
       "expandedPoints": "大图点数"
     },
     "ai": {
-      "enableAI": "启用 AI 功能",
+      "enableAI": "启用 AI 能力总开关",
+      "enableAgent": "启用 AI Agent / 对话",
       "enablePrediction": "启用 AI 命令预测",
       "showPredictionThinking": "显示预测思考过程",
       "enableAgentThinking": "启用 Agent 思考",
@@ -470,7 +471,7 @@
     "loadMore": "加载更多...",
     "viewingHistory": "当前正在查看历史对话，实时任务仍会继续写入当前 SSH 的任务对话。",
     "returnToLive": "返回当前任务",
-    "aiDisabled": "AI 功能已关闭，可在设置中开启。",
+    "aiDisabled": "AI Agent 已关闭，可在设置中开启。",
     "providerMissing": "请先在设置里填写大模型地址和模型，保存后再使用 AI。",
     "emptyConversation": "当前对话暂无消息，可以直接输入问题或目标。",
     "streaming": "AI 正在实时返回，消息会按时间顺序继续追加。",

@@ -24,6 +24,7 @@ type CoreAppConfig struct {
 	LeftRailWidth                 int             `json:"leftRailWidth,omitempty"`
 	PredictionPanelHeight         int             `json:"predictionPanelHeight,omitempty"`
 	AIEnabled                     bool            `json:"aiEnabled,omitempty"`
+	AIAgentEnabled                bool            `json:"aiAgentEnabled,omitempty"`
 	AIBaseUrl                     string          `json:"aiBaseUrl,omitempty"`
 	AIApiKey                      string          `json:"aiApiKey,omitempty"`
 	AIModel                       string          `json:"aiModel,omitempty"`
@@ -167,6 +168,9 @@ func mergeCoreAppConfig(target *CoreAppConfig, incoming *CoreAppConfig, fields m
 	}
 	if _, ok := fields["aiEnabled"]; ok {
 		target.AIEnabled = incoming.AIEnabled
+	}
+	if _, ok := fields["aiAgentEnabled"]; ok {
+		target.AIAgentEnabled = incoming.AIAgentEnabled
 	}
 	if _, ok := fields["aiBaseUrl"]; ok {
 		target.AIBaseUrl = incoming.AIBaseUrl

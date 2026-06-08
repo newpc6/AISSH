@@ -103,7 +103,8 @@
       "expandedPoints": "Expanded Chart Points"
     },
     "ai": {
-      "enableAI": "Enable AI Features",
+      "enableAI": "Enable AI Core",
+      "enableAgent": "Enable AI Agent / Chat",
       "enablePrediction": "Enable AI Command Prediction",
       "showPredictionThinking": "Show Prediction Thinking",
       "enableAgentThinking": "Enable Agent Thinking",
@@ -470,7 +471,7 @@
     "loadMore": "Load more...",
     "viewingHistory": "You are viewing history. Live tasks continue writing into the current SSH task conversation.",
     "returnToLive": "Return to current task",
-    "aiDisabled": "AI is turned off. You can enable it in Settings.",
+    "aiDisabled": "AI Agent is turned off. You can enable it in Settings.",
     "providerMissing": "Configure a model endpoint and model in Settings, then save before using AI.",
     "emptyConversation": "No messages in this conversation yet. You can directly enter a question or a goal.",
     "streaming": "AI is streaming a reply in real time. Messages continue appearing in order.",

@@ -10,6 +10,7 @@ import type { AIChatMessageDraft } from '../types'
 type UseAIMessageStoreArgs = {
   activeConversationIdRef: RefObject<string>
   aiMessageListRef: RefObject<HTMLDivElement | null>
+  isPinnedToBottomRef: RefObject<boolean>
   appendLog: (level: 'debug' | 'info' | 'warn' | 'error', source: string, message: string, details?: Record<string, unknown>) => void
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>
   loadAIConversations: () => void | Promise<void>
@@ -19,6 +20,7 @@ type UseAIMessageStoreArgs = {
 export function useAIMessageStore({
   activeConversationIdRef,
   aiMessageListRef,
+  isPinnedToBottomRef,
   appendLog,
   apiFetch,
   loadAIConversations,
@@ -34,6 +36,14 @@ export function useAIMessageStore({
   const aiStreamThinkingMessageIdRef = useRef('')
   const aiStreamContentMessageIdRef = useRef('')
   const thinkingScrollFrameRef = useRef<number | undefined>(undefined)
+
+  const scrollMessageListToBottom = () => {
+    const element = aiMessageListRef.current
+    if (!element || !isPinnedToBottomRef.current) {
+      return
+    }
+    element.scrollTop = element.scrollHeight
+  }
 
   useEffect(() => {
     aiMessagesRef.current = aiMessages
@@ -66,12 +76,12 @@ export function useAIMessageStore({
     thinkingScrollFrameRef.current = window.requestAnimationFrame(() => {
       thinkingScrollFrameRef.current = undefined
       const card = aiMessageListRef.current?.querySelector<HTMLElement>(`[data-ai-message-id="${messageId}"] .markdown-body`)
-      if (!card) {
-        return
+      if (card) {
+        card.scrollTop = card.scrollHeight
       }
-      card.scrollTop = card.scrollHeight
+      scrollMessageListToBottom()
     })
-  }, [aiMessageListRef, aiStreamThinking])
+  }, [aiMessageListRef, aiStreamThinking, isPinnedToBottomRef])
 
   const makeLocalAIMessage = (
     kind: AIChatMessageKind,
@@ -177,6 +187,9 @@ export function useAIMessageStore({
     }
     const messageId = aiStreamThinkingMessageIdRef.current
     setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
+    if (isPinnedToBottomRef.current) {
+      window.requestAnimationFrame(scrollMessageListToBottom)
+    }
   }
 
   const startStreamingContentMessage = (conversationId = activeConversationIdRef.current || '') => {
@@ -195,6 +208,9 @@ export function useAIMessageStore({
     }
     const messageId = aiStreamContentMessageIdRef.current
     setAiMessages((current) => current.map((item) => (item.id === messageId ? { ...item, content: `${item.content}${text}` } : item)))
+    if (isPinnedToBottomRef.current) {
+      window.requestAnimationFrame(scrollMessageListToBottom)
+    }
   }
 
   const removeStreamingContentMessage = () => {

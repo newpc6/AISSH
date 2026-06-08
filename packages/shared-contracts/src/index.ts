@@ -121,6 +121,7 @@ export interface AppSettings {
   rightServerInfoPanelHeight: number
   rightPanelWidth: number
   aiEnabled: boolean
+  aiAgentEnabled: boolean
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string

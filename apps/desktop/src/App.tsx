@@ -331,6 +331,7 @@ export function App() {
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
   const leftModeRef = useRef<LeftMode>('servers')
   const trackTerminalPathRef = useRef(true)
+  const aiAgentEnabledRef = useRef(true)
   const inputQueuesRef = useRef<Record<string, Promise<void>>>({})
   const pendingResizeRef = useRef<Record<string, number>>({})
   const pendingAIPredictionTimerRef = useRef<Record<string, number>>({})
@@ -338,6 +339,7 @@ export function App() {
   const aiPredictionRequestRef = useRef<Record<string, number>>({})
   const aiPredictionInFlightRef = useRef<Record<string, number>>({})
   const aiPredictionIgnoredRequestRef = useRef<Record<string, number>>({})
+  const aiPredictionCacheRef = useRef<Record<string, { key: string; commands: string[]; thinking: string; content: string }>>({})
   const aiPredictionCursorRef = useRef<Record<string, number>>({})
   const aiPredictionCycleStartedRef = useRef<Record<string, boolean>>({})
   const terminalLineBufferRef = useRef<Record<string, string>>({})
@@ -553,6 +555,7 @@ export function App() {
     updateAIPredictionForSession(sessionId, EMPTY_AI_PREDICTION_STATE)
     delete aiPredictionCursorRef.current[sessionId]
     delete aiPredictionCycleStartedRef.current[sessionId]
+    delete aiPredictionCacheRef.current[sessionId]
     if (options.resetGhost !== false && sessionId === activeSessionIdRef.current) {
       predictionGhostVisibleRef.current = false
       setPredictionGhostPosition(null)
@@ -884,6 +887,7 @@ export function App() {
     delete pendingAIPredictionTimerRef.current[sessionId]
     delete pendingAIPredictionCommandRef.current[sessionId]
     delete aiPredictionRequestRef.current[sessionId]
+    delete aiPredictionCacheRef.current[sessionId]
     delete terminalLineBufferRef.current[sessionId]
   }
 
@@ -952,6 +956,7 @@ export function App() {
   } = useAIMessageStore({
     activeConversationIdRef: activeAIConversationIdRef,
     aiMessageListRef,
+    isPinnedToBottomRef: aiMessageListPinnedToBottomRef,
     appendLog,
     apiFetch,
     loadAIConversations: () => {
@@ -1310,6 +1315,7 @@ export function App() {
       leftRailWidth: overrides?.leftRailWidth ?? leftRailWidth,
       predictionPanelHeight: overrides?.predictionPanelHeight ?? predictionPanelHeight,
       aiEnabled: normalized.aiEnabled,
+      aiAgentEnabled: normalized.aiAgentEnabled,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
@@ -1385,6 +1391,7 @@ export function App() {
             rightServerInfoPanelHeight: app.rightServerInfoPanelHeight as number,
             rightPanelWidth: app.rightPanelWidth as number,
             aiEnabled: app.aiEnabled as boolean,
+            aiAgentEnabled: app.aiAgentEnabled as boolean,
             aiPredictionEnabled: app.aiPredictionEnabled as boolean,
             aiPredictionThinkingEnabled: app.aiPredictionThinkingEnabled as boolean,
             aiPredictionCount: app.aiPredictionCount as number,
@@ -1663,7 +1670,7 @@ export function App() {
       return
     }
     const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight
-    aiMessageListPinnedToBottomRef.current = distanceToBottom <= 24
+    aiMessageListPinnedToBottomRef.current = distanceToBottom <= 72
   }
 
   useEffect(() => {
@@ -1674,7 +1681,14 @@ export function App() {
     if (!aiMessageListPinnedToBottomRef.current) {
       return
     }
-    element.scrollTop = element.scrollHeight
+    const frame = window.requestAnimationFrame(() => {
+      const current = aiMessageListRef.current
+      if (!current || !aiMessageListPinnedToBottomRef.current) {
+        return
+      }
+      current.scrollTop = current.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, activeSessionId, agentStateBySession, isAIHistoryOpen])
 
   useEffect(() => {
@@ -1775,6 +1789,7 @@ export function App() {
 
   useEffect(() => {
     aiEnabledRef.current = normalizeAppSettings(settings).aiEnabled
+    aiAgentEnabledRef.current = normalizeAppSettings(settings).aiAgentEnabled
   }, [settings])
 
   useEffect(() => {
@@ -2445,6 +2460,7 @@ export function App() {
       rightServerInfoPanelHeight: normalized.rightServerInfoPanelHeight,
       rightPanelWidth: normalized.rightPanelWidth,
       aiEnabled: normalized.aiEnabled,
+      aiAgentEnabled: normalized.aiAgentEnabled,
       aiPredictionEnabled: normalized.aiPredictionEnabled,
       aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
@@ -3834,6 +3850,7 @@ export function App() {
       streamingContent: '',
     })
 
+    const compactHistory = compactCommandHistoryForAI(history, normalized.aiCommandHistoryLimit).reverse()
     const payload: AIPredictionRequest = {
       modelId: activeModel.id,
       baseUrl: activeModel.baseUrl,
@@ -3845,11 +3862,38 @@ export function App() {
       predictionCount: normalized.aiPredictionCount,
       includeThinking: normalized.aiPredictionThinkingEnabled,
       terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
-      commandHistory: compactCommandHistoryForAI(history, normalized.aiCommandHistoryLimit).reverse(),
+      commandHistory: compactHistory,
       currentCommand: commandBufferRef.current,
       hostName: session.hostName,
       hostAddress: host.address,
       username: host.username,
+    }
+    const predictionCacheKey = JSON.stringify({
+      modelId: payload.modelId,
+      thinkingEnabled: payload.thinkingEnabled,
+      includeThinking: payload.includeThinking,
+      predictionCount: payload.predictionCount,
+      hostName: payload.hostName,
+      currentCommand: (payload.currentCommand ?? '').trim(),
+      commandHistory: compactHistory,
+      terminalContext: payload.terminalContext,
+    })
+    const cachedPrediction = aiPredictionCacheRef.current[sessionId]
+    if (cachedPrediction && cachedPrediction.key === predictionCacheKey && cachedPrediction.commands.length > 0) {
+      aiPredictionCursorRef.current[sessionId] = 0
+      aiPredictionCycleStartedRef.current[sessionId] = false
+      updateAIPredictionForSession(sessionId, {
+        predictions: cachedPrediction.commands,
+        index: 0,
+        state: 'success',
+        error: '',
+        thinking: cachedPrediction.thinking,
+        streamingContent: '',
+      })
+      if (activeSessionIdRef.current === sessionId) {
+        schedulePredictionGhostPositionUpdate()
+      }
+      return
     }
     const requestCommand = history[0] ?? ''
     const hasNewerPredictionCommand = () => {
@@ -3916,6 +3960,12 @@ export function App() {
       }
       aiPredictionCursorRef.current[sessionId] = 0
       aiPredictionCycleStartedRef.current[sessionId] = false
+      aiPredictionCacheRef.current[sessionId] = {
+        key: predictionCacheKey,
+        commands,
+        thinking: rawPredictionThinking,
+        content: rawPredictionContent,
+      }
       updateAIPredictionForSession(sessionId, {
         predictions: commands,
         index: 0,
@@ -4051,8 +4101,8 @@ export function App() {
     sessionId = activeSessionIdRef.current,
   ): Promise<AIAssistResponse> => {
     const { normalized, session, host, terminalContext, commandHistory } = buildAIContextPayload(sessionId)
-    if (!normalized.aiEnabled) {
-      throw new Error('AI 功能已关闭，请先在设置中开启')
+    if (!normalized.aiEnabled || !normalized.aiAgentEnabled || !aiAgentEnabledRef.current) {
+      throw new Error('AI Agent 已关闭，请先在设置中开启')
     }
     const activeModel = activeAIAgentModelConfig
     if (!activeModel?.baseUrl.trim() || !activeModel.model.trim()) {
@@ -4062,6 +4112,7 @@ export function App() {
     const activeConversation = conversationId || activeAIConversationIdRef.current
     const recentContext = ignoreConversationContext ? '' : recentConversationContext(activeConversation, 6)
     const agentSteps = [...(requestOptions.agentSteps ?? getAgentStepsForSession(sessionId))].reverse()
+    const selectedInlineText = ignoreAmbientContext ? '' : (window.getSelection()?.toString() ?? '').trim().slice(0, 4000)
     const payload: AIAssistRequest = {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
@@ -4074,7 +4125,7 @@ export function App() {
       prompt,
       terminalContext,
       selectedText: [
-        ignoreAmbientContext ? '' : window.getSelection()?.toString() ?? '',
+        selectedInlineText,
         recentContext ? `最近对话:
 ${recentContext}` : '',
       ]
@@ -4217,7 +4268,7 @@ ${recentContext}` : '',
   }
 
   const runUnifiedAI = async () => {
-    if (aiAssistantState === 'loading' || !settings.aiEnabled) {
+    if (aiAssistantState === 'loading' || !settings.aiEnabled || !settings.aiAgentEnabled) {
       return
     }
     const sessionId = activeSessionIdRef.current
@@ -5725,7 +5776,7 @@ ${recentContext}` : '',
                 renderAIMessage={renderAIMessage}
                 renderMarkdown={renderMarkdown}
                 selectedAISkillIds={selectedAISkillIds}
-                settingsAiEnabled={settings.aiEnabled}
+                settingsAiEnabled={settings.aiEnabled && settings.aiAgentEnabled}
                 shouldRenderAgentMessageCard={shouldRenderAgentMessageCard}
                 onClearAiInput={() => { updateAiUnifiedInputValue(''); setAiAssistantError('') }}
                 onCloseBatchHostCard={closeBatchHostCard}
@@ -5964,7 +6015,7 @@ ${recentContext}` : '',
 
       <AIInputExpandModal
         open={isAIInputExpanded}
-        canSubmit={!(aiAssistantState === 'loading' || !settings.aiEnabled)}
+        canSubmit={!(aiAssistantState === 'loading' || !settings.aiEnabled || !settings.aiAgentEnabled)}
         placeholder={aiUnifiedInputPlaceholder}
         value={aiUnifiedInputValue}
         onChange={updateAiUnifiedInputValue}

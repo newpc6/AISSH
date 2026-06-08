@@ -261,6 +261,15 @@ export function SettingsDialog({
                 </label>
                 <label className="checkbox-row">
                   <input
+                    checked={settings.aiAgentEnabled}
+                    disabled={!settings.aiEnabled}
+                    type="checkbox"
+                    onChange={(event) => onSettingsChange((current) => ({ ...current, aiAgentEnabled: event.target.checked }))}
+                  />
+                  <span>{t('settings.ai.enableAgent')}</span>
+                </label>
+                <label className="checkbox-row">
+                  <input
                     checked={settings.aiPredictionEnabled}
                     disabled={!settings.aiEnabled}
                     type="checkbox"
