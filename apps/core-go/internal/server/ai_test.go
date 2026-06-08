@@ -286,3 +286,33 @@ func TestNormalizeAIRequestRedactsAndTrimsPredictionInputs(t *testing.T) {
 			len([]rune(request.HostName)), len([]rune(request.HostAddress)), len([]rune(request.Username)))
 	}
 }
+
+func TestNormalizeAIAssistRequestStabilizesSkillsAndTextBlocks(t *testing.T) {
+	request, err := normalizeAIAssistRequest(aiAssistRequest{
+		BaseURL:        "http://127.0.0.1:11434/v1",
+		Model:          "deepseek-v4-pro",
+		Prompt:         "check service",
+		SelectedText:   "line1\r\n\r\n\r\nline2\t \n",
+		TerminalContext:"prompt\r\n\r\n\r\noutput",
+		SelectedSkills: []aiSkill{
+			{ID: "2", Name: "GPU Check", Prompt: "check nvidia-smi\r\n\r\n"},
+			{ID: "1", Name: "Alpha", Prompt: "read-only first"},
+			{ID: "2", Name: "GPU Check", Prompt: "check nvidia-smi\r\n\r\n"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("normalize assist request: %v", err)
+	}
+	if request.SelectedText != "line1\n\nline2" {
+		t.Fatalf("expected normalized selected text, got %q", request.SelectedText)
+	}
+	if request.TerminalContext != "prompt\n\noutput" {
+		t.Fatalf("expected normalized terminal context, got %q", request.TerminalContext)
+	}
+	if len(request.SelectedSkills) != 2 {
+		t.Fatalf("expected deduped skills, got %#v", request.SelectedSkills)
+	}
+	if request.SelectedSkills[0].Name != "Alpha" || request.SelectedSkills[1].Name != "GPU Check" {
+		t.Fatalf("expected skills to be sorted stably, got %#v", request.SelectedSkills)
+	}
+}

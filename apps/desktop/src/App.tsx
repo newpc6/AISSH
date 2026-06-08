@@ -182,6 +182,7 @@ import {
   stripAgentMarker,
   stripTerminalControlSequences,
   compactCommandHistoryForAI,
+  normalizeAITextBlock,
   terminalContextTail,
   truncateErrorDetail,
   updateTerminalDraft,
@@ -1942,7 +1943,12 @@ export function App() {
   const selectedAISkills = useMemo(
     () => selectedAISkillIds
       .map((id) => aiSkills.find((skill) => skill.id === id) ?? null)
-      .filter((skill): skill is AISkill => Boolean(skill)),
+      .filter((skill): skill is AISkill => Boolean(skill))
+      .sort((left, right) => {
+        const leftKey = `${left.name}\u0000${left.id}`.toLocaleLowerCase()
+        const rightKey = `${right.name}\u0000${right.id}`.toLocaleLowerCase()
+        return leftKey.localeCompare(rightKey)
+      }),
     [aiSkills, selectedAISkillIds],
   )
   useEffect(() => {
@@ -4110,9 +4116,9 @@ export function App() {
     }
     const { conversationId, ignoreAmbientContext, ignoreConversationContext, suppressStreamingMessages, ...requestOptions } = options
     const activeConversation = conversationId || activeAIConversationIdRef.current
-    const recentContext = ignoreConversationContext ? '' : recentConversationContext(activeConversation, 6)
+    const recentContext = ignoreConversationContext ? '' : normalizeAITextBlock(recentConversationContext(activeConversation, 6), 4000)
     const agentSteps = [...(requestOptions.agentSteps ?? getAgentStepsForSession(sessionId))].reverse()
-    const selectedInlineText = ignoreAmbientContext ? '' : (window.getSelection()?.toString() ?? '').trim().slice(0, 4000)
+    const selectedInlineText = ignoreAmbientContext ? '' : normalizeAITextBlock(window.getSelection()?.toString() ?? '', 4000)
     const payload: AIAssistRequest = {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
@@ -4124,13 +4130,15 @@ export function App() {
       systemPromptOverride: normalized.aiSystemPromptOverride,
       prompt,
       terminalContext,
-      selectedText: [
-        selectedInlineText,
-        recentContext ? `最近对话:
-${recentContext}` : '',
-      ]
-        .filter((item) => item.trim())
-        .join('\n\n'),
+      selectedText: normalizeAITextBlock(
+        [
+          selectedInlineText,
+          recentContext ? `Recent conversation:\n${recentContext}` : '',
+        ]
+          .filter((item) => item.trim())
+          .join('\n\n'),
+        8000,
+      ),
       commandHistory: ignoreAmbientContext ? [] : commandHistory,
       currentCommand: ignoreAmbientContext ? '' : commandBufferRef.current,
       cwd: ignoreAmbientContext ? '' : filePathRef.current,

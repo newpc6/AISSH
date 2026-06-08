@@ -635,6 +635,16 @@ export function compactCommandHistoryForAI(history: string[], limit: number) {
   return compacted
 }
 
+export function normalizeAITextBlock(value: string, limit = 4000) {
+  return stripTerminalControlSequences(value)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, Math.max(0, limit))
+}
+
 export function emptyTerminalCache(): TerminalCache {
   return { chunks: [], lineCount: 0, commandDraft: '' }
 }

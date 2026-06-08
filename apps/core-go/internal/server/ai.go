@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1276,8 +1277,8 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	if request.Prompt == "" && request.AgentGoal == "" && request.SelectedText == "" && request.TerminalContext == "" {
 		return request, errors.New("ai prompt or context is required")
 	}
-	request.TerminalContext = redactSensitiveText(trimToLastRunes(request.TerminalContext, aiAssistContextLimit))
-	request.SelectedText = redactSensitiveText(trimToLastRunes(request.SelectedText, aiAssistPromptLimit))
+	request.TerminalContext = normalizeAITextBlock(redactSensitiveText(trimToLastRunes(request.TerminalContext, aiAssistContextLimit)))
+	request.SelectedText = normalizeAITextBlock(redactSensitiveText(trimToLastRunes(request.SelectedText, aiAssistPromptLimit)))
 	request.CurrentCommand = redactSensitiveText(trimToLastRunes(request.CurrentCommand, 2000))
 	if len(request.CommandHistory) > aiCommandHistoryLimit {
 		request.CommandHistory = request.CommandHistory[:aiCommandHistoryLimit]
@@ -1291,6 +1292,7 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	for index, step := range request.AgentSteps {
 		step.Command = redactSensitiveText(trimToLastRunes(step.Command, 2000))
 		step.Output = redactSensitiveText(trimOutputSmart(step.Output, 2000, 6000))
+		step.Output = normalizeAITextBlock(step.Output)
 		request.AgentSteps[index] = step
 	}
 	if len(request.SelectedSkills) > 20 {
@@ -1299,9 +1301,10 @@ func normalizeAIAssistRequest(request aiAssistRequest) (aiAssistRequest, error) 
 	for index, skill := range request.SelectedSkills {
 		skill.ID = strings.TrimSpace(skill.ID)
 		skill.Name = trimToLastRunes(strings.TrimSpace(skill.Name), 120)
-		skill.Prompt = redactSensitiveText(trimToLastRunes(strings.TrimSpace(skill.Prompt), aiAssistPromptLimit))
+		skill.Prompt = normalizeAITextBlock(redactSensitiveText(trimToLastRunes(strings.TrimSpace(skill.Prompt), aiAssistPromptLimit)))
 		request.SelectedSkills[index] = skill
 	}
+	request.SelectedSkills = dedupeAndSortAISkills(request.SelectedSkills)
 	request.AgentGoal = trimToLastRunes(strings.TrimSpace(request.AgentGoal), aiAssistPromptLimit)
 	if request.AgentMode == "" {
 		request.AgentMode = "review"
@@ -1333,6 +1336,39 @@ func aiRequestTimeout(timeoutSeconds int) time.Duration {
 
 func aiAgentThinkingEnabled(request aiAssistRequest) bool {
 	return request.AgentThinkingEnabled == nil || *request.AgentThinkingEnabled
+}
+
+func normalizeAITextBlock(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	value = regexp.MustCompile(`[ \t]+\n`).ReplaceAllString(value, "\n")
+	value = regexp.MustCompile(`\n{3,}`).ReplaceAllString(value, "\n\n")
+	return strings.TrimSpace(value)
+}
+
+func dedupeAndSortAISkills(skills []aiSkill) []aiSkill {
+	if len(skills) <= 1 {
+		return skills
+	}
+	seen := make(map[string]bool, len(skills))
+	result := make([]aiSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skill.Name == "" || skill.Prompt == "" {
+			continue
+		}
+		key := strings.ToLower(skill.Name) + "\x00" + skill.ID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, skill)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		left := strings.ToLower(result[i].Name) + "\x00" + result[i].ID
+		right := strings.ToLower(result[j].Name) + "\x00" + result[j].ID
+		return left < right
+	})
+	return result
 }
 
 func aiPredictionThinkingEnabled(request aiPredictionRequest) bool {
