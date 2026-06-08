@@ -91,11 +91,21 @@ The screenshot above shows an English-mode workspace with a live SSH session, bu
 
 Browse remote directories, follow the terminal working path, and switch between terminal work and file operations without leaving the same workspace.
 
+### Server Context Panel
+
+![Server Details](docs/images/detail/05-server-info.jpg)
+
+The server details panel keeps the current host, account, and connection target visible, which is especially useful when you are switching between multiple SSH sessions and want the AI assistant to stay grounded in the right machine context.
+
 ### AI Conversation & History
 
 ![AI History](docs/images/readme/03-history.jpg)
 
 The AI workspace keeps conversation history tied to operational context, so you can review previous troubleshooting or infrastructure Q&A while staying inside the same SSH session.
+
+![AI History List](docs/images/detail/12-ai-history-list.jpg)
+
+The history drawer supports expand/collapse behavior and makes it easier to revisit long troubleshooting sessions, deployment walkthroughs, and prior operational discussions.
 
 ### Favorite Commands
 
@@ -103,11 +113,67 @@ The AI workspace keeps conversation history tied to operational context, so you 
 
 Save repeatable commands for one-click reuse, copy, or execution. This is especially useful for routine inspections, deployment helpers, and standardized operational workflows.
 
+![Command History](docs/images/detail/13-command-history.jpg)
+
+Command history and favorites work together so teams can quickly replay known-good operational steps without manually reconstructing them each time.
+
+![Command Favorites Detail](docs/images/detail/14-command-favorites.jpg)
+
 ### Preferences & AI Configuration
+
+![Settings Menu](docs/images/detail/01-settings-menu.jpg)
+
+The Settings menu now separates application settings, AI model management, and AI skill management, making it easier to maintain workspace preferences and reusable AI assets independently.
 
 ![Preferences](docs/images/readme/05-settings.jpg)
 
 Configure language, workspace behavior, server metrics, and AI provider settings from one compact preferences surface.
+
+![Model Configuration Table](docs/images/detail/02-models-table.jpg)
+
+Maintain multiple provider entries in one table, then decide which model should power the AI agent and which one should power command prediction.
+
+![Skill Configuration](docs/images/detail/03-skill-config.jpg)
+
+Skills are reusable operational prompt packs. You can store deployment, inspection, or troubleshooting guidance once and attach it to future AI conversations.
+
+![Skill Picker](docs/images/detail/04-skill-picker.jpg)
+
+Selected skills are attached through a compact multi-select menu in the AI toolbar, keeping the main input area clean even when you maintain many skills.
+
+### Command Prediction & Thinking Mode
+
+![Command Prediction](docs/images/detail/07-command-prediction.jpg)
+
+AI SSH can predict terminal commands as you work, helping with repetitive inspections, deployment steps, and operational follow-up commands.
+
+![Prediction Thinking Toggle](docs/images/detail/08-prediction-thinking-toggle.jpg)
+
+Thinking mode can be enabled specifically for the prediction model when you want deeper reasoning before a command suggestion is returned.
+
+![Prediction Thinking Result](docs/images/detail/09-prediction-thinking-result.jpg)
+
+This is particularly useful when the next command depends on prior terminal output, current machine state, or a partially completed maintenance workflow.
+
+### Review Mode & Execution Results
+
+![Review Mode](docs/images/detail/10-review-mode.jpg)
+
+In review mode, AI-generated commands must be approved before execution, which fits production operations, controlled changes, and any workflow that needs human sign-off.
+
+![AI Execution Result](docs/images/detail/11-ai-execution-result.jpg)
+
+After execution, AI summarizes what happened and helps interpret success, failure, or the next recommended step.
+
+### Metrics & Long Input Workflow
+
+![Metrics Zoom](docs/images/detail/06-metrics-zoom.jpg)
+
+Operational charts can be expanded for easier inspection of CPU, memory, disk, and network trends during a live SSH session.
+
+![Expanded Input](docs/images/detail/15-expanded-input.jpg)
+
+The enlarged input mode is useful when you need to describe a large deployment task, detailed troubleshooting context, or a longer operational objective in one pass.
 
 ## 🚀 Getting Started
 
