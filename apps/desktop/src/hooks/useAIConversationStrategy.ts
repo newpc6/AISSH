@@ -93,7 +93,7 @@ export function useAIConversationStrategy({
           !message.pending &&
           ['user', 'assistant', 'command', 'agent_step', 'agent_result'].includes(message.kind),
       )
-      .slice(-limit)
+      .slice(-Math.max(1, Math.min(limit, 6)))
       .map((message) => {
         const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
         if (message.kind === 'agent_step' && message.step) {
@@ -128,11 +128,7 @@ export function useAIConversationStrategy({
         return `${label}: ${message.content}`
       })
       .join('\n')
-    const summary = currentConversationContext(conversationId)
-    if (!summary) {
-      return recent
-    }
-    return recent.startsWith(summary) ? recent.slice(summary.length).trimStart() : recent
+    return recent
   }
 
   const resolveAgentGoal = (fallback = '', sessionId = activeSessionIdRef.current || '') => {

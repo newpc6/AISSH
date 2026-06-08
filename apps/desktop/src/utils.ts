@@ -569,8 +569,69 @@ export function stripTerminalControlSequences(data: string) {
     .replace(/\x1b[@-Z\\-_]/g, '')
 }
 
+function normalizeTerminalContextForAI(data: string) {
+  const promptLikeLine = /^(?:\([^)]+\)\s*)?[\w.%+-]+@[^:\s]+:[^$#\r\n]*[$#]\s*.*$/
+  const lines = stripTerminalControlSequences(data)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/g, ''))
+
+  const normalized: string[] = []
+  let previousBlank = false
+  for (const line of lines) {
+    const isPromptLine = promptLikeLine.test(line.trim())
+    if (isPromptLine) {
+      continue
+    }
+    const compactLine = line.length > 600 ? `${line.slice(0, 200)} ... ${line.slice(-200)}` : line
+    const isBlank = compactLine.trim() === ''
+    if (isBlank && previousBlank) {
+      continue
+    }
+    previousBlank = isBlank
+    normalized.push(compactLine)
+  }
+  return normalized.join('\n').trim()
+}
+
 export function terminalContextTail(cache: TerminalCache | undefined, limit: number) {
-  return stripTerminalControlSequences(cache?.chunks.join('') ?? '').slice(-Math.max(500, limit))
+  const normalized = normalizeTerminalContextForAI(cache?.chunks.join('') ?? '')
+  const maxChars = Math.max(500, limit)
+  if (normalized.length <= maxChars) {
+    return normalized
+  }
+  const lines = normalized.split('\n')
+  const selected: string[] = []
+  let total = 0
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]
+    const cost = line.length + (selected.length > 0 ? 1 : 0)
+    if (selected.length > 0 && total+ cost > maxChars) {
+      break
+    }
+    selected.unshift(line)
+    total += cost
+  }
+  return selected.join('\n')
+}
+
+export function compactCommandHistoryForAI(history: string[], limit: number) {
+  const maxItems = Math.max(1, Math.min(200, Math.floor(limit || 1)))
+  const seen = new Set<string>()
+  const compacted: string[] = []
+  for (const raw of history) {
+    const command = stripTerminalControlSequences(raw).replace(/\s+/g, ' ').trim()
+    if (!command || seen.has(command)) {
+      continue
+    }
+    seen.add(command)
+    compacted.push(command.length > 400 ? `${command.slice(0, 180)} ... ${command.slice(-120)}` : command)
+    if (compacted.length >= maxItems) {
+      break
+    }
+  }
+  return compacted
 }
 
 export function emptyTerminalCache(): TerminalCache {

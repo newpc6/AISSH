@@ -181,6 +181,7 @@ import {
   statusToLabel,
   stripAgentMarker,
   stripTerminalControlSequences,
+  compactCommandHistoryForAI,
   terminalContextTail,
   truncateErrorDetail,
   updateTerminalDraft,
@@ -992,7 +993,6 @@ export function App() {
     setSessionStepsFromMessages: setAgentStepsForSession,
   })
   const {
-    currentConversationContext,
     ensureAIConversation,
     recentConversationContext,
     resolveAgentGoal,
@@ -3845,7 +3845,7 @@ export function App() {
       predictionCount: normalized.aiPredictionCount,
       includeThinking: normalized.aiPredictionThinkingEnabled,
       terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
-      commandHistory: history.slice(0, normalized.aiCommandHistoryLimit).reverse(),
+      commandHistory: compactCommandHistoryForAI(history, normalized.aiCommandHistoryLimit).reverse(),
       currentCommand: commandBufferRef.current,
       hostName: session.hostName,
       hostAddress: host.address,
@@ -4015,7 +4015,7 @@ export function App() {
       terminalContext: session
         ? terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit)
         : '',
-      commandHistory: commandHistoryRef.current.slice(0, normalized.aiCommandHistoryLimit).reverse(),
+      commandHistory: compactCommandHistoryForAI(commandHistoryRef.current, normalized.aiCommandHistoryLimit).reverse(),
     }
   }
 
@@ -4060,8 +4060,7 @@ export function App() {
     }
     const { conversationId, ignoreAmbientContext, ignoreConversationContext, suppressStreamingMessages, ...requestOptions } = options
     const activeConversation = conversationId || activeAIConversationIdRef.current
-    const conversationContext = ignoreConversationContext ? '' : currentConversationContext(activeConversation)
-    const recentContext = ignoreConversationContext ? '' : recentConversationContext(activeConversation)
+    const recentContext = ignoreConversationContext ? '' : recentConversationContext(activeConversation, 6)
     const agentSteps = [...(requestOptions.agentSteps ?? getAgentStepsForSession(sessionId))].reverse()
     const payload: AIAssistRequest = {
       baseUrl: activeModel.baseUrl,
@@ -4076,8 +4075,6 @@ export function App() {
       terminalContext,
       selectedText: [
         ignoreAmbientContext ? '' : window.getSelection()?.toString() ?? '',
-        conversationContext ? `当前对话:
-${conversationContext}` : '',
         recentContext ? `最近对话:
 ${recentContext}` : '',
       ]

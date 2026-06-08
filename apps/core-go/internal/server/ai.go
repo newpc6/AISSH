@@ -1242,12 +1242,17 @@ func normalizeAIRequest(request aiPredictionRequest) (aiPredictionRequest, error
 	if request.PredictionCount > aiMaxPredictionCount {
 		request.PredictionCount = aiMaxPredictionCount
 	}
-	if len(request.TerminalContext) > aiTerminalContextLimit {
-		request.TerminalContext = request.TerminalContext[len(request.TerminalContext)-aiTerminalContextLimit:]
-	}
+	request.TerminalContext = redactSensitiveText(trimToLastRunes(strings.TrimSpace(request.TerminalContext), aiTerminalContextLimit))
 	if len(request.CommandHistory) > aiCommandHistoryLimit {
 		request.CommandHistory = request.CommandHistory[:aiCommandHistoryLimit]
 	}
+	for index, command := range request.CommandHistory {
+		request.CommandHistory[index] = redactSensitiveText(trimToLastRunes(strings.TrimSpace(command), 400))
+	}
+	request.CurrentCommand = redactSensitiveText(trimToLastRunes(strings.TrimSpace(request.CurrentCommand), 400))
+	request.HostName = trimToLastRunes(strings.TrimSpace(request.HostName), 120)
+	request.HostAddress = trimToLastRunes(strings.TrimSpace(request.HostAddress), 200)
+	request.Username = trimToLastRunes(strings.TrimSpace(request.Username), 120)
 	if request.ThinkingEnabled == nil {
 		enabled := true
 		request.ThinkingEnabled = &enabled
@@ -1511,7 +1516,7 @@ func finalizeAssistResponse(result aiAssistResponse) aiAssistResponse {
 func buildAssistPrompt(request aiAssistRequest) string {
 	history, _ := json.Marshal(request.CommandHistory)
 	steps, _ := json.Marshal(request.AgentSteps)
-	return fmt.Sprintf("当前主机：%s\n连接信息：%s@%s\n当前目录：%s\nAgent 模式：%s\n流程要求：如果 Agent 已执行步骤 JSON 中已有 output 和 exitCode，必须把它作为最新事实判断任务是否完成；不要只根据终端上下文或用户输入判断。执行结果能回答目标时直接返回 done 和 answer；不足时才返回下一步 command。\n最近命令历史 JSON（按时间从旧到新）：%s\nAgent 已执行步骤 JSON（按时间从旧到新）：%s\n\nAgent 目标：%s\n用户输入：%s\n当前命令草稿：%s\n\n用户选中文本：%s\n\n终端上下文（最新内容在末尾）：\n%s\n\n请严格按系统要求返回 JSON。",
+	return fmt.Sprintf("当前主机：%s\n连接信息：%s@%s\n当前目录：%s\nAgent 模式：%s\n流程要求：如果 Agent 已执行步骤 JSON 中已有 output 和 exitCode，必须把它作为最新事实判断任务是否完成；不要只根据终端上下文或用户输入判断。执行结果能回答目标时直接返回 done 和 answer；不足时才返回下一步 command。\n最近命令历史 JSON（去重后，按时间从旧到新）：%s\nAgent 已执行步骤 JSON（按时间从旧到新）：%s\n\nAgent 目标：%s\n用户输入：%s\n当前命令草稿：%s\n\n补充上下文：%s\n\n终端上下文摘要（最新内容在末尾）：\n%s\n\n请严格按系统要求返回 JSON。",
 		emptyAsDash(request.HostName),
 		emptyAsDash(request.Username),
 		emptyAsDash(request.HostAddress),
@@ -1522,7 +1527,7 @@ func buildAssistPrompt(request aiAssistRequest) string {
 		emptyAsDash(request.AgentGoal),
 		emptyAsDash(request.Prompt),
 		request.CurrentCommand,
-		request.SelectedText,
+		emptyAsDash(request.SelectedText),
 		request.TerminalContext,
 	)
 }
@@ -1754,7 +1759,7 @@ func anthropicContentAndThinking(blocks []anthropicContentBlock) (string, string
 }
 
 func buildPredictionSystemPrompt() string {
-	return "浣犳槸 SSH 缁堢鍛戒护棰勬祴鍔╂墜銆傚繀椤婚娴嬬敤鎴锋帴涓嬫潵鏈€鍙兘浜哄伐纭鎵ц鐨?shell 鍛戒护锛屽洜涓烘渶缁堟槸鍚﹀簲鐢ㄧ敱鐢ㄦ埛纭銆備綘鍙兘鍦ㄦ渶缁?content 涓繑鍥炰弗鏍?JSON锛屼笉鑳借繑鍥?Markdown銆佽В閲娿€佹€濊€冭繃绋嬫垨绌哄唴瀹广€傚嵆浣夸笉纭畾锛屼篃瑕佺粰鍑轰繚瀹堢殑鏌ョ湅鍨嬪懡浠ゃ€備笉瑕佹墽琛屼换浣曟搷浣滐紝涓嶈杩斿洖鍗遍櫓鎴栫牬鍧忔€у懡浠ゃ€傚搷搴旀牸寮忓繀椤绘槸 {\"commands\":[\"鍛戒护1\",\"鍛戒护2\"]}銆?"
+	return "你是 SSH 终端命令预测助手。必须预测用户接下来最可能人工确认执行的 shell 命令，因为最终是否应用由用户确认。你只能在最终 content 中返回严格 JSON，不能返回 Markdown、解释、思考过程或空内容。即使不确定，也要给出保守的查看型命令。不要执行任何操作，不要返回危险或破坏性命令。响应格式必须是 {\"commands\":[\"命令1\",\"命令2\"]}。"
 }
 
 func minInt(a int, b int) int {
@@ -1781,7 +1786,7 @@ func chatCompletionsURL(baseURL string) (string, error) {
 
 func buildPredictionPrompt(request aiPredictionRequest) string {
 	history, _ := json.Marshal(request.CommandHistory)
-	return fmt.Sprintf("当前主机：%s\n连接信息：%s@%s\n需要预测的命令数量：%d\n最近命令历史 JSON（按时间从旧到新）：%s\n\n终端上下文（最新内容在末尾）：\n%s\n\n回车前当前命令草稿：%s\n\n必须预测下一步命令。即使不确定，也返回保守的查看型命令。\n不要在 content 中输出解释、分析、Markdown 或空内容。请只返回严格 JSON：{\"commands\":[\"命令1\",\"命令2\"]}",
+	return fmt.Sprintf("当前主机：%s\n连接信息：%s@%s\n需要预测的命令数量：%d\n最近命令历史 JSON（去重后，按时间从旧到新）：%s\n\n终端上下文摘要（已清理控制字符、提示符和重复空行，最新内容在末尾）：\n%s\n\n回车前当前命令草稿：%s\n\n必须预测下一步命令。优先参考最近命令历史和当前命令草稿；只有终端上下文里存在关键错误、路径、服务状态或输出差异时，再参考终端上下文。即使不确定，也返回保守的查看型命令。\n不要在 content 中输出解释、分析、Markdown 或空内容。请只返回严格 JSON：{\"commands\":[\"命令1\",\"命令2\"]}",
 		emptyAsDash(request.HostName),
 		emptyAsDash(request.Username),
 		emptyAsDash(request.HostAddress),

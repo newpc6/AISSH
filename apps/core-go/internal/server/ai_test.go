@@ -246,3 +246,43 @@ func TestNormalizeAIRequestTimeoutSeconds(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildPredictionSystemPromptIsReadableChinese(t *testing.T) {
+	prompt := buildPredictionSystemPrompt()
+	if !strings.Contains(prompt, "SSH 终端命令预测助手") {
+		t.Fatalf("expected readable chinese prediction prompt, got %q", prompt)
+	}
+	if strings.Contains(prompt, "浣犳") {
+		t.Fatalf("expected mojibake to be removed, got %q", prompt)
+	}
+}
+
+func TestNormalizeAIRequestRedactsAndTrimsPredictionInputs(t *testing.T) {
+	request, err := normalizeAIRequest(aiPredictionRequest{
+		BaseURL:         "http://127.0.0.1:11434/v1",
+		Model:           "deepseek-v4-flash",
+		PredictionCount: 3,
+		TerminalContext: "token=secret-value\nlast line",
+		CommandHistory:  []string{" password=super-secret ", "pwd"},
+		CurrentCommand:  " api_key=abc123 ",
+		HostName:        strings.Repeat("h", 200),
+		HostAddress:     strings.Repeat("1", 300),
+		Username:        strings.Repeat("u", 200),
+	})
+	if err != nil {
+		t.Fatalf("normalize prediction request: %v", err)
+	}
+	if strings.Contains(request.TerminalContext, "secret-value") {
+		t.Fatalf("expected terminal context to be redacted, got %q", request.TerminalContext)
+	}
+	if strings.Contains(request.CommandHistory[0], "super-secret") {
+		t.Fatalf("expected command history to be redacted, got %#v", request.CommandHistory)
+	}
+	if strings.Contains(request.CurrentCommand, "abc123") {
+		t.Fatalf("expected current command to be redacted, got %q", request.CurrentCommand)
+	}
+	if len([]rune(request.HostName)) > 120 || len([]rune(request.HostAddress)) > 200 || len([]rune(request.Username)) > 120 {
+		t.Fatalf("expected host identity fields to be trimmed, got host=%d addr=%d user=%d",
+			len([]rune(request.HostName)), len([]rune(request.HostAddress)), len([]rune(request.Username)))
+	}
+}
