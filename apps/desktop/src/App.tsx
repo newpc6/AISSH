@@ -366,6 +366,7 @@ export function App() {
   } = useSessionAIConversationBinding()
   const {
     agentStateBySession,
+    agentStepsBySession,
     findAgentStepById,
     getAgentStepsForSession,
     getSessionAgentState,
@@ -1674,6 +1675,17 @@ export function App() {
     aiMessageListPinnedToBottomRef.current = distanceToBottom <= 72
   }
 
+  const scrollAIMessageListToBottomIfPinned = () => {
+    if (!aiMessageListPinnedToBottomRef.current) {
+      return
+    }
+    const current = aiMessageListRef.current
+    if (!current) {
+      return
+    }
+    current.scrollTop = current.scrollHeight
+  }
+
   useEffect(() => {
     const element = aiMessageListRef.current
     if (!element) {
@@ -1683,14 +1695,44 @@ export function App() {
       return
     }
     const frame = window.requestAnimationFrame(() => {
-      const current = aiMessageListRef.current
-      if (!current || !aiMessageListPinnedToBottomRef.current) {
-        return
-      }
-      current.scrollTop = current.scrollHeight
+      scrollAIMessageListToBottomIfPinned()
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, activeSessionId, agentStateBySession, isAIHistoryOpen])
+  }, [aiMessages, aiStreamThinking, aiStreamContent, rightTool, activeSessionId, agentStateBySession, agentStepsBySession, isAIHistoryOpen])
+
+  useEffect(() => {
+    const element = aiMessageListRef.current
+    if (!element || typeof MutationObserver === 'undefined') {
+      return
+    }
+    let frame: number | undefined
+    const scheduleScroll = () => {
+      if (!aiMessageListPinnedToBottomRef.current) {
+        return
+      }
+      if (frame) {
+        window.cancelAnimationFrame(frame)
+      }
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined
+        scrollAIMessageListToBottomIfPinned()
+      })
+    }
+    const observer = new MutationObserver(() => {
+      scheduleScroll()
+    })
+    observer.observe(element, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    })
+    return () => {
+      observer.disconnect()
+      if (frame) {
+        window.cancelAnimationFrame(frame)
+      }
+    }
+  }, [activeSessionId, activeAIConversationId, isAIHistoryOpen])
 
   useEffect(() => {
     aiMessageListPinnedToBottomRef.current = true
