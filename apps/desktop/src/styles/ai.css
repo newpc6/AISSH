@@ -543,6 +543,46 @@
   background: rgba(96, 165, 250, 0.08);
 }
 
+.message-thinking {
+  border-color: rgba(167, 139, 250, 0.28);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.message-content {
+  border-color: rgba(56, 189, 248, 0.24);
+  background: rgba(14, 165, 233, 0.07);
+}
+
+.message-assistant {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(51, 65, 85, 0.18);
+}
+
+.message-command {
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.message-agent-step {
+  border-color: rgba(250, 204, 21, 0.26);
+  background: rgba(234, 179, 8, 0.08);
+}
+
+.message-agent-result {
+  border-color: rgba(45, 212, 191, 0.22);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.message-status {
+  border-color: rgba(96, 165, 250, 0.22);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.message-error {
+  border-color: rgba(239, 68, 68, 0.32);
+  background: rgba(239, 68, 68, 0.08);
+}
+
 .user-message strong,
 .ai-message-card strong {
   color: #bfdbfe;
@@ -631,6 +671,36 @@
 .agent-step small {
   color: #8ca0b8;
   font-size: 11px;
+}
+
+.message-thinking .ai-message-toggle,
+.message-thinking .ai-message-header strong {
+  color: #ddd6fe;
+}
+
+.message-content .ai-message-toggle,
+.message-content .ai-message-header strong {
+  color: #bae6fd;
+}
+
+.message-command .ai-message-toggle,
+.message-command .ai-message-header strong {
+  color: #bbf7d0;
+}
+
+.message-agent-step .ai-message-toggle,
+.message-agent-step .ai-message-header strong {
+  color: #fde68a;
+}
+
+.message-agent-result .ai-message-toggle,
+.message-agent-result .ai-message-header strong {
+  color: #99f6e4;
+}
+
+.message-status .ai-message-toggle,
+.message-status .ai-message-header strong {
+  color: #bfdbfe;
 }
 
 .risk-badge,

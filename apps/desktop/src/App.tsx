@@ -4988,8 +4988,9 @@ ${recentContext}` : '',
     const response = message.response
     const commands = normalizeAssistCommands(response?.commands)
     const collapsed = isAIMessageCollapsed(message.id)
+    const messageKindClass = message.kind === 'command' ? 'message-command' : 'message-assistant'
     return (
-      <article className={`ai-response-card ai-message-card ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
+      <article className={`ai-response-card ai-message-card ${messageKindClass} ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
         {renderAIMessageHeader(message.id, label, message.createdAt)}
         {!collapsed ? (
           <>
@@ -5046,7 +5047,7 @@ ${recentContext}` : '',
     }
     if (message.kind === 'thinking') {
       return (
-        <article className="ai-stream-card ai-message-card" key={message.id} data-ai-message-id={message.id}>
+        <article className="ai-stream-card ai-message-card message-thinking" key={message.id} data-ai-message-id={message.id}>
           {renderAIMessageHeader(message.id, '思考', message.createdAt)}
           {!collapsed ? renderMarkdown(message.content, '思考中...') : null}
         </article>
@@ -5054,7 +5055,7 @@ ${recentContext}` : '',
     }
     if (message.kind === 'content') {
       return (
-        <article className="ai-stream-card ai-message-card" key={message.id}>
+        <article className="ai-stream-card ai-message-card message-content" key={message.id}>
           {renderAIMessageHeader(message.id, '实时输出', message.createdAt)}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
@@ -5065,7 +5066,7 @@ ${recentContext}` : '',
     }
     if (message.kind === 'agent_result') {
       return (
-        <article className="ai-response-card agent-final-card ai-message-card" key={message.id}>
+        <article className="ai-response-card agent-final-card ai-message-card message-agent-result" key={message.id}>
           {renderAIMessageHeader(message.id, '执行结论', message.createdAt)}
           {!collapsed ? (
             <>
@@ -5093,7 +5094,7 @@ ${recentContext}` : '',
         activeSession &&
         activeSession.status === 'connected'
       return (
-        <article className={`agent-step ai-message-card risk-${displayedStep?.riskLevel ?? 'low'}`} key={message.id}>
+        <article className={`agent-step ai-message-card message-agent-step risk-${displayedStep?.riskLevel ?? 'low'}`} key={message.id}>
           {renderAIMessageHeader(
             message.id,
             `执行步骤 · ${riskLabel(displayedStep?.riskLevel)}`,
@@ -5163,7 +5164,7 @@ ${recentContext}` : '',
     }
     if (message.kind === 'error') {
       return (
-        <article className="ai-message-card ai-error-card" key={message.id}>
+        <article className="ai-message-card ai-error-card message-error" key={message.id}>
           {renderAIMessageHeader(message.id, '错误', message.createdAt)}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
@@ -5171,7 +5172,7 @@ ${recentContext}` : '',
     }
     if (message.kind === 'status') {
       return (
-        <article className="ai-message-card ai-status-line" key={message.id}>
+        <article className="ai-message-card ai-status-line message-status" key={message.id}>
           {renderAIMessageHeader(message.id, '状态', message.createdAt)}
           {!collapsed ? (
             <div className="ai-status-content loading">
