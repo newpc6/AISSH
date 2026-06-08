@@ -4945,7 +4945,7 @@ ${recentContext}` : '',
     setCollapsedAIMessageIds((current) => ({ ...current, [messageId]: !current[messageId] }))
   }
 
-  const renderAIMessageHeader = (messageId: string, label: string, createdAt: string, extra?: ReactNode) => {
+  const renderAIMessageHeader = (messageId: string, label: string, createdAt: string, badge?: string, extra?: ReactNode) => {
     const collapsed = Boolean(collapsedAIMessageIds[messageId])
     return (
     <header className="ai-message-header">
@@ -4956,6 +4956,7 @@ ${recentContext}` : '',
         onClick={() => toggleAIMessageCollapsed(messageId)}
       >
         <span aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+        {badge ? <span className="ai-message-badge">{badge}</span> : null}
         <strong>{label}</strong>
       </button>
       <span className="ai-message-header-meta">
@@ -4991,7 +4992,7 @@ ${recentContext}` : '',
     const messageKindClass = message.kind === 'command' ? 'message-command' : 'message-assistant'
     return (
       <article className={`ai-response-card ai-message-card ${messageKindClass} ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
-        {renderAIMessageHeader(message.id, label, message.createdAt)}
+        {renderAIMessageHeader(message.id, label, message.createdAt, message.kind === 'command' ? 'CMD' : 'AI')}
         {!collapsed ? (
           <>
             {message.content ? renderMarkdown(message.content) : null}
@@ -5040,7 +5041,7 @@ ${recentContext}` : '',
     if (message.kind === 'user') {
       return (
         <article className="ai-message-card user-message" key={message.id}>
-          {renderAIMessageHeader(message.id, '我', message.createdAt)}
+          {renderAIMessageHeader(message.id, '我', message.createdAt, 'YOU')}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
@@ -5048,7 +5049,7 @@ ${recentContext}` : '',
     if (message.kind === 'thinking') {
       return (
         <article className="ai-stream-card ai-message-card message-thinking" key={message.id} data-ai-message-id={message.id}>
-          {renderAIMessageHeader(message.id, '思考', message.createdAt)}
+          {renderAIMessageHeader(message.id, '思考', message.createdAt, 'THINK')}
           {!collapsed ? renderMarkdown(message.content, '思考中...') : null}
         </article>
       )
@@ -5056,7 +5057,7 @@ ${recentContext}` : '',
     if (message.kind === 'content') {
       return (
         <article className="ai-stream-card ai-message-card message-content" key={message.id}>
-          {renderAIMessageHeader(message.id, '实时输出', message.createdAt)}
+          {renderAIMessageHeader(message.id, '实时输出', message.createdAt, 'LIVE')}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
@@ -5067,7 +5068,7 @@ ${recentContext}` : '',
     if (message.kind === 'agent_result') {
       return (
         <article className="ai-response-card agent-final-card ai-message-card message-agent-result" key={message.id}>
-          {renderAIMessageHeader(message.id, '执行结论', message.createdAt)}
+          {renderAIMessageHeader(message.id, '执行结论', message.createdAt, 'DONE')}
           {!collapsed ? (
             <>
               {renderMarkdown(message.content)}
@@ -5099,6 +5100,7 @@ ${recentContext}` : '',
             message.id,
             `执行步骤 · ${riskLabel(displayedStep?.riskLevel)}`,
             message.createdAt,
+            'STEP',
             <small>{stepMeta}</small>,
           )}
           {!collapsed ? (
@@ -5165,7 +5167,7 @@ ${recentContext}` : '',
     if (message.kind === 'error') {
       return (
         <article className="ai-message-card ai-error-card message-error" key={message.id}>
-          {renderAIMessageHeader(message.id, '错误', message.createdAt)}
+          {renderAIMessageHeader(message.id, '错误', message.createdAt, 'ERR')}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
@@ -5173,7 +5175,7 @@ ${recentContext}` : '',
     if (message.kind === 'status') {
       return (
         <article className="ai-message-card ai-status-line message-status" key={message.id}>
-          {renderAIMessageHeader(message.id, '状态', message.createdAt)}
+          {renderAIMessageHeader(message.id, '状态', message.createdAt, 'STAT')}
           {!collapsed ? (
             <div className="ai-status-content loading">
               <span aria-hidden="true" className="file-loading-spinner" />

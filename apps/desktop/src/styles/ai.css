@@ -279,6 +279,24 @@
   text-align: left;
 }
 
+.ai-message-badge {
+  flex: 0 0 auto;
+  min-width: 34px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.42);
+  color: #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
 .ai-message-toggle span {
   width: 12px;
   color: #8ca0b8;
@@ -678,13 +696,37 @@
   color: #ddd6fe;
 }
 
+.message-thinking .ai-message-badge {
+  border-color: rgba(167, 139, 250, 0.34);
+  background: rgba(139, 92, 246, 0.14);
+  color: #e9d5ff;
+}
+
 .message-content .ai-message-toggle,
 .message-content .ai-message-header strong {
   color: #bae6fd;
 }
 
+.message-content .ai-message-badge {
+  border-color: rgba(56, 189, 248, 0.32);
+  background: rgba(14, 165, 233, 0.14);
+  color: #bae6fd;
+}
+
+.message-assistant .ai-message-badge {
+  border-color: rgba(148, 163, 184, 0.26);
+  background: rgba(51, 65, 85, 0.28);
+  color: #cbd5e1;
+}
+
 .message-command .ai-message-toggle,
 .message-command .ai-message-header strong {
+  color: #bbf7d0;
+}
+
+.message-command .ai-message-badge {
+  border-color: rgba(74, 222, 128, 0.36);
+  background: rgba(34, 197, 94, 0.14);
   color: #bbf7d0;
 }
 
@@ -693,14 +735,44 @@
   color: #fde68a;
 }
 
+.message-agent-step .ai-message-badge {
+  border-color: rgba(250, 204, 21, 0.34);
+  background: rgba(234, 179, 8, 0.14);
+  color: #fde68a;
+}
+
 .message-agent-result .ai-message-toggle,
 .message-agent-result .ai-message-header strong {
+  color: #99f6e4;
+}
+
+.message-agent-result .ai-message-badge {
+  border-color: rgba(45, 212, 191, 0.34);
+  background: rgba(20, 184, 166, 0.14);
   color: #99f6e4;
 }
 
 .message-status .ai-message-toggle,
 .message-status .ai-message-header strong {
   color: #bfdbfe;
+}
+
+.message-status .ai-message-badge {
+  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(59, 130, 246, 0.12);
+  color: #bfdbfe;
+}
+
+.user-message .ai-message-badge {
+  border-color: rgba(96, 165, 250, 0.32);
+  background: rgba(59, 130, 246, 0.14);
+  color: #dbeafe;
+}
+
+.message-error .ai-message-badge {
+  border-color: rgba(239, 68, 68, 0.36);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
 }
 
 .risk-badge,
