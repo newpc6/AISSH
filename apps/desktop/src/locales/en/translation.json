@@ -545,6 +545,8 @@
     "noMatch": "No matching servers",
     "empty": "No servers yet",
     "emptyGroup": "Empty group",
+    "expandGroup": "Expand group {{name}}",
+    "collapseGroup": "Collapse group {{name}}",
     "selectBatch": "Select for batch execution",
     "moveUpHost": "Move {{name}} up",
     "moveDownHost": "Move {{name}} down",

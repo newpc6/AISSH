@@ -7,6 +7,7 @@ import { hostConnectionLabel } from '../../host-display'
 type ServersPanelProps = {
   batchMode: boolean
   batchSelectedHostIds: string[]
+  collapsedHostGroups: Record<string, boolean>
   openHostMenuId: string
   selectedHostId: string
   serverSearch: string
@@ -24,6 +25,7 @@ type ServersPanelProps = {
   onOpenHostMenuChange: (hostId: string) => void
   onSelectHost: (hostId: string) => void
   onServerSearchChange: (value: string) => void
+  onToggleHostGroupCollapsed: (groupName: string) => void
   onToggleBatchHost: (hostId: string) => void
   onToggleBatchMode: () => void
 }
@@ -31,6 +33,7 @@ type ServersPanelProps = {
 export function ServersPanel({
   batchMode,
   batchSelectedHostIds,
+  collapsedHostGroups,
   openHostMenuId,
   selectedHostId,
   serverSearch,
@@ -48,6 +51,7 @@ export function ServersPanel({
   onOpenHostMenuChange,
   onSelectHost,
   onServerSearchChange,
+  onToggleHostGroupCollapsed,
   onToggleBatchHost,
   onToggleBatchMode,
 }: ServersPanelProps) {
@@ -111,11 +115,23 @@ export function ServersPanel({
             {serverSearch.trim() ? t('serversPanel.noMatch') : t('serversPanel.empty')}
           </p>
         ) : null}
-        {visibleHostGroups.map((group) => (
-          <section className="server-group" key={group.name}>
-            <p>{group.name}<span>{group.hosts.length}</span></p>
-            {group.hosts.length === 0 ? <small className="empty-group-text">{t('serversPanel.emptyGroup')}</small> : null}
-            {group.hosts.map((host) => {
+        {visibleHostGroups.map((group) => {
+          const isCollapsed = Boolean(collapsedHostGroups[group.name])
+          return (
+          <section className={`server-group ${isCollapsed ? 'collapsed' : ''}`} key={group.name}>
+            <button
+              type="button"
+              className="server-group-toggle"
+              aria-expanded={!isCollapsed}
+              title={isCollapsed ? t('serversPanel.expandGroup', { name: group.name }) : t('serversPanel.collapseGroup', { name: group.name })}
+              onClick={() => onToggleHostGroupCollapsed(group.name)}
+            >
+              <span className={`server-group-chevron ${isCollapsed ? 'collapsed' : ''}`} aria-hidden="true">▾</span>
+              <span className="server-group-name">{group.name}</span>
+              <span className="server-group-count">{group.hosts.length}</span>
+            </button>
+            {!isCollapsed && group.hosts.length === 0 ? <small className="empty-group-text">{t('serversPanel.emptyGroup')}</small> : null}
+            {!isCollapsed ? group.hosts.map((host) => {
               const isSystemWSL = (host.protocol ?? 'ssh') === 'wsl' && host.id.startsWith('wsl-')
               return (
                 <div
@@ -198,9 +214,9 @@ export function ServersPanel({
                 ) : null}
                 </div>
               )
-            })}
+            }) : null}
           </section>
-        ))}
+        )})}
       </div>
     </div>
   )

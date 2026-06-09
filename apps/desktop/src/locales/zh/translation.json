@@ -545,6 +545,8 @@
     "noMatch": "没有匹配的服务器",
     "empty": "还没有服务器",
     "emptyGroup": "空分组",
+    "expandGroup": "展开分组 {{name}}",
+    "collapseGroup": "收起分组 {{name}}",
     "selectBatch": "选择用于批量执行",
     "moveUpHost": "{{name}} 上移",
     "moveDownHost": "{{name}} 下移",

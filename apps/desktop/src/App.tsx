@@ -225,6 +225,7 @@ export function App() {
   const [errorNotice, setErrorNotice] = useState<AppErrorNotice | null>(null)
   const [hosts, setHosts] = useState<HostRecord[]>([])
   const [hostGroups, setHostGroups] = useState<HostGroup[]>([{ name: '默认' }])
+  const [collapsedHostGroups, setCollapsedHostGroups] = useState<Record<string, boolean>>({})
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [groupDrafts, setGroupDrafts] = useState<string[]>(['默认'])
   const [originalGroupDrafts, setOriginalGroupDrafts] = useState<string[]>(['默认'])
@@ -1899,6 +1900,11 @@ export function App() {
     removeBatchSelectedHost,
     toggleBatchHostSelection,
   } = useBatchSelection(hosts)
+  useEffect(() => {
+    if (serverSearch.trim()) {
+      setCollapsedHostGroups({})
+    }
+  }, [serverSearch])
   const { visibleHostCount, visibleHostGroups } = useVisibleHostGroups(hostGroups, hosts, serverSearch)
   const {
     clearFileSelection,
@@ -5631,6 +5637,7 @@ export function App() {
           {!isLeftRailCollapsed ? (leftMode === 'servers' ? (
             <ServersPanel
               batchMode={batchMode}
+              collapsedHostGroups={collapsedHostGroups}
               batchSelectedHostIds={batchSelectedHostIds}
               openHostMenuId={openHostMenuId}
               selectedHostId={selectedHostId}
@@ -5650,6 +5657,9 @@ export function App() {
               onSelectHost={(hostId) => {
                 setSelectedHostId(hostId)
                 setOpenHostMenuId('')
+              }}
+              onToggleHostGroupCollapsed={(groupName) => {
+                setCollapsedHostGroups((current) => ({ ...current, [groupName]: !current[groupName] }))
               }}
               onServerSearchChange={setServerSearch}
               onToggleBatchHost={toggleBatchHostSelection}

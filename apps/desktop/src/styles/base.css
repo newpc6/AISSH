@@ -541,6 +541,45 @@ button {
   gap: 8px;
 }
 
+.server-group-toggle {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #7f91a7;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.server-group-toggle:hover {
+  color: #c8d4e3;
+}
+
+.server-group-chevron {
+  width: 12px;
+  color: #607189;
+  transition: transform 0.16s ease;
+}
+
+.server-group-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.server-group-name {
+  min-width: 0;
+  flex: 1;
+}
+
+.server-group-count {
+  color: #607189;
+  font-size: 11px;
+}
+
 .server-group p span,
 .empty-group-text {
   color: #607189;
