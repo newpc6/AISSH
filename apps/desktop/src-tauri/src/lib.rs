@@ -6,6 +6,7 @@ struct CoreProcess(std::sync::Mutex<Option<std::process::Child>>);
 struct LocalUploadFile {
     path: String,
     name: String,
+    relative_path: Option<String>,
     data: Vec<u8>,
 }
 
@@ -67,22 +68,61 @@ fn desktop_login_token() -> String {
 
 #[tauri::command]
 fn read_local_upload_files(paths: Vec<String>) -> Result<Vec<LocalUploadFile>, String> {
-    paths
-        .into_iter()
-        .map(|path| {
-            let file_path = std::path::PathBuf::from(&path);
-            if !file_path.is_file() {
-                return Err(format!("{path} 不是可上传的文件"));
-            }
-            let name = file_path
-                .file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or("upload-file")
-                .to_string();
-            let data = std::fs::read(&file_path).map_err(|error| format!("{path}: {error}"))?;
-            Ok(LocalUploadFile { path, name, data })
-        })
-        .collect()
+    let mut files = Vec::new();
+    for path in paths {
+        let file_path = std::path::PathBuf::from(&path);
+        if file_path.is_file() {
+            files.push(read_single_upload_file(&file_path, None)?);
+            continue;
+        }
+        if file_path.is_dir() {
+            collect_upload_directory(&file_path, &file_path, &mut files)?;
+            continue;
+        }
+        return Err(format!("{path} is not a file or directory that can be uploaded"));
+    }
+    Ok(files)
+}
+
+fn collect_upload_directory(
+    root: &std::path::Path,
+    current: &std::path::Path,
+    files: &mut Vec<LocalUploadFile>,
+) -> Result<(), String> {
+    for entry in std::fs::read_dir(current).map_err(|error| format!("{}: {error}", current.display()))? {
+        let entry = entry.map_err(|error| format!("{}: {error}", current.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_upload_directory(root, &path, files)?;
+            continue;
+        }
+        if path.is_file() {
+            let relative_path = path
+                .strip_prefix(root)
+                .ok()
+                .map(|value| value.to_string_lossy().replace('\', "/"));
+            files.push(read_single_upload_file(&path, relative_path)?);
+        }
+    }
+    Ok(())
+}
+
+fn read_single_upload_file(
+    file_path: &std::path::Path,
+    relative_path: Option<String>,
+) -> Result<LocalUploadFile, String> {
+    let name = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("upload-file")
+        .to_string();
+    let data = std::fs::read(file_path).map_err(|error| format!("{}: {error}", file_path.display()))?;
+    Ok(LocalUploadFile {
+        path: file_path.to_string_lossy().to_string(),
+        name,
+        relative_path,
+        data,
+    })
 }
 
 #[tauri::command]

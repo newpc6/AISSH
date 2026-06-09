@@ -390,6 +390,8 @@
     "downloadButton": "Download",
     "uploadToCurrent": "Upload files to current directory",
     "upload": "Upload",
+    "uploadFolderToCurrent": "Upload a folder to the current directory",
+    "uploadFolder": "Upload Folder",
     "pathLabel": "Remote path",
     "openPath": "Open entered remote path",
     "open": "Open",
@@ -412,6 +414,9 @@
       "upload": "Upload",
       "download": "Download"
     },
+    "transferFileBytes": "{{current}} / {{total}} ({{progress}}%)",
+    "transferFolderProgress": "Uploading file {{current}}/{{total}}: {{file}}",
+    "transferFolderBytes": "{{current}} / {{total}} ({{progress}}%)",
     "columns": {
       "name": "Name",
       "size": "Size",

@@ -157,6 +157,7 @@ import {
   formatFullDateTime,
   inferRemotePathFromCommand,
   isLikelyStatic405,
+  joinRemotePath,
   localFileName,
   missingCoreCapabilities,
   normalizeApiRequestPath,
@@ -382,6 +383,7 @@ export function App() {
   const sessionTabMenuRef = useRef<HTMLDivElement | null>(null)
   const privateKeyFileRef = useRef<HTMLInputElement | null>(null)
   const uploadFileRef = useRef<HTMLInputElement | null>(null)
+  const uploadFolderRef = useRef<HTMLInputElement | null>(null)
   const desktopTokenRef = useRef('')
   const {
     closeConfirmDialog,
@@ -3591,53 +3593,112 @@ export function App() {
     }
   }
 
-  const uploadFiles = async (files: FileList | File[]) => {
+  const uploadFiles = async (files: FileList | File[], options?: { names?: string[]; relativePaths?: string[]; rootLabel?: string }) => {
     const hostId = activeSession?.hostId ?? selectedHostId
     const selectedFiles = Array.from(files)
     if (!hostId || selectedFiles.length === 0) {
       return
     }
 
+    const rootLabel = options?.rootLabel?.trim() || ''
+    const relativePaths = options?.relativePaths ?? []
+    const names = options?.names ?? []
+    const totalBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0)
     const taskID = `${Date.now()}-upload`
+    const isFolderUpload = relativePaths.some((value) => value && value.includes('/')) || Boolean(rootLabel)
+    const taskName = rootLabel || (selectedFiles.length === 1 ? (names[0] || selectedFiles[0].name) : `${selectedFiles.length} files`)
+
+    const updateTransferTask = (patch: Partial<TransferTask>) => {
+      setTransferTasks((current) => current.map((task) => (task.id === taskID ? { ...task, ...patch } : task)))
+    }
+
     setTransferTasks((current) => [
       {
         id: taskID,
-        name: selectedFiles.length === 1 ? selectedFiles[0].name : `${selectedFiles.length} 个文件`,
+        name: taskName,
         direction: 'upload',
-        progress: 20,
+        progress: 0,
         status: 'running',
+        mode: isFolderUpload ? 'folder' : 'file',
+        transferredBytes: 0,
+        totalBytes,
+        totalFiles: selectedFiles.length,
+        currentFileIndex: selectedFiles.length > 0 ? 1 : 0,
+        currentFileName: names[0] || selectedFiles[0]?.name || '',
+        currentFileTransferredBytes: 0,
+        currentFileTotalBytes: selectedFiles[0]?.size ?? 0,
       },
       ...current,
     ])
 
-    const body = new FormData()
-    for (const file of selectedFiles) {
-      body.append('files', file)
-    }
+    let transferredBytes = 0
+    let lastTaskUpdate = 0
+    const updateIntervalMs = 500
 
     try {
-      const response = await apiFetch(`/files/${hostId}?path=${encodeURIComponent(filePath)}`, {
-        method: 'POST',
-        body,
-      })
-      if (!response.ok) {
-        const detail = await response.text()
-        throw new Error(detail.trim() || `上传失败：${response.status}`)
+      for (const [index, file] of selectedFiles.entries()) {
+        const relativePath = (relativePaths[index] || '').replace(/\\/g, '/')
+        const uploadName = names[index] || file.name
+        const currentPath = relativePath || uploadName
+        const remoteTargetPath = joinRemotePath(filePath, currentPath)
+        const remoteDir = parentPath(remoteTargetPath)
+        const remoteName = remoteFileName(remoteTargetPath)
+        const body = new FormData()
+        body.append('files', new File([file], remoteName, { type: file.type || 'application/octet-stream' }))
+
+        updateTransferTask({
+          currentFileIndex: index + 1,
+          totalFiles: selectedFiles.length,
+          currentFileName: currentPath,
+          currentFileTransferredBytes: 0,
+          currentFileTotalBytes: file.size,
+        })
+
+        let lastLoaded = 0
+        await uploadFormDataWithProgress(hostId, remoteDir, body, (loaded, total) => {
+          const safeLoaded = total === Number.MAX_SAFE_INTEGER ? file.size : Math.min(file.size, loaded)
+          const aggregateTransferred = transferredBytes + safeLoaded
+          const now = Date.now()
+          if (now - lastTaskUpdate < updateIntervalMs && safeLoaded < file.size) {
+            return
+          }
+          lastTaskUpdate = now
+          lastLoaded = safeLoaded
+          updateTransferTask({
+            progress: totalBytes > 0 ? Math.round((aggregateTransferred / totalBytes) * 100) : 100,
+            transferredBytes: aggregateTransferred,
+            currentFileTransferredBytes: safeLoaded,
+            currentFileTotalBytes: file.size,
+          })
+        })
+
+        transferredBytes += file.size
+        if (lastLoaded < file.size) {
+          updateTransferTask({
+            progress: totalBytes > 0 ? Math.round((transferredBytes / totalBytes) * 100) : 100,
+            transferredBytes,
+            currentFileTransferredBytes: file.size,
+            currentFileTotalBytes: file.size,
+          })
+        }
       }
-      setTransferTasks((current) =>
-        current.map((task) => (task.id === taskID ? { ...task, progress: 100, status: 'done' } : task)),
-      )
+
+      updateTransferTask({
+        progress: 100,
+        transferredBytes: totalBytes,
+        currentFileTransferredBytes: selectedFiles[selectedFiles.length - 1]?.size ?? 0,
+        currentFileTotalBytes: selectedFiles[selectedFiles.length - 1]?.size ?? 0,
+        status: 'done',
+      })
       await loadFiles(filePath, hostId)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '上传失败'
+      const message = error instanceof Error ? error.message : 'Upload failed'
       setErrorMessage(message)
-      setTransferTasks((current) =>
-        current.map((task) => (task.id === taskID ? { ...task, status: 'error' } : task)),
-      )
+      updateTransferTask({ status: 'error' })
     }
   }
 
-  const uploadLocalPaths = async (paths: string[]) => {
+  const uploadLocalPaths = async (paths: string[], options?: { rootLabel?: string }) => {
     const localPaths = paths.filter(Boolean)
     if (localPaths.length === 0) {
       return
@@ -3654,19 +3715,108 @@ export function App() {
               : Uint8Array.from(file.data)
         return new File([bytes as BlobPart], file.name || localFileName(file.path))
       })
-      await uploadFiles(files)
+      await uploadFiles(files, {
+        names: localFiles.map((file) => file.name || localFileName(file.path)),
+        relativePaths: localFiles.map((file) => file.relativePath || ''),
+        rootLabel: options?.rootLabel,
+      })
     } catch (error) {
-      const message = error instanceof Error ? error.message : '拖拽上传失败'
+      const message = error instanceof Error ? error.message : 'Drag upload failed'
       appendLog('error', 'ui.files', 'tauri local file upload failed', {
         error: message,
         count: localPaths.length,
       })
-      setFileError(`拖拽上传失败：${message}`)
-      setErrorMessage(`拖拽上传失败：${message}`, {
-        title: '本地文件上传失败',
-        source: '远程文件',
+      setFileError(`Drag upload failed: ${message}`)
+      setErrorMessage(`Drag upload failed: ${message}`, {
+        title: 'Local upload failed',
+        source: 'Remote files',
       })
     }
+  }
+
+  const chooseUploadFiles = async () => {
+    if (!isTauriRuntime) {
+      uploadFileRef.current?.click()
+      return
+    }
+
+    try {
+      const selected = await openDialog({
+        multiple: true,
+        directory: false,
+        title: 'Select files to upload',
+      })
+      const paths = Array.isArray(selected) ? selected : selected ? [selected] : []
+      await uploadLocalPaths(paths)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Select upload files failed'
+      appendLog('error', 'ui.files', 'tauri upload file dialog failed', { error: message })
+      setErrorMessage(message, {
+        title: 'Select upload files failed',
+        source: 'Remote files',
+      })
+    }
+  }
+
+  const chooseUploadFolder = async () => {
+    if (!isTauriRuntime) {
+      uploadFolderRef.current?.click()
+      return
+    }
+
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: true,
+        title: 'Select folder to upload',
+      })
+      const folderPath = Array.isArray(selected) ? selected[0] : selected || ''
+      if (!folderPath) {
+        return
+      }
+      await uploadLocalPaths([folderPath], { rootLabel: localFileName(folderPath) })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Select upload folder failed'
+      appendLog('error', 'ui.files', 'tauri upload folder dialog failed', { error: message })
+      setErrorMessage(message, {
+        title: 'Select upload folder failed',
+        source: 'Remote files',
+      })
+    }
+  }
+
+  const uploadFormDataWithProgress = async (
+    hostId: string,
+    remoteDir: string,
+    body: FormData,
+    onProgress: (loaded: number, total: number) => void,
+  ) => {
+    const requestPath = `/files/${hostId}?path=${encodeURIComponent(remoteDir)}`
+    const requestUrl = resolveApiUrl(requestPath)
+    const token = isTauriRuntime ? desktopTokenRef.current : ''
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', requestUrl)
+      xhr.withCredentials = true
+      if (token) {
+        xhr.setRequestHeader('X-AI-SSH-Desktop-Token', token)
+      }
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress(event.loaded, event.total)
+        }
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress(body.getAll('files').length > 0 ? Number.MAX_SAFE_INTEGER : 0, Number.MAX_SAFE_INTEGER)
+          resolve()
+          return
+        }
+        reject(new Error((xhr.responseText || '').trim() || `Upload failed: ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Upload request failed'))
+      xhr.send(body)
+    })
   }
 
   const remoteFileDownloadUrl = (entry: FileEntry) => {
@@ -3722,29 +3872,6 @@ export function App() {
     }, 120)
   }
 
-  const chooseUploadFiles = async () => {
-    if (!isTauriRuntime) {
-      uploadFileRef.current?.click()
-      return
-    }
-
-    try {
-      const selected = await openDialog({
-        multiple: true,
-        directory: false,
-        title: '选择要上传的文件',
-      })
-      const paths = Array.isArray(selected) ? selected : selected ? [selected] : []
-      await uploadLocalPaths(paths)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '选择上传文件失败'
-      appendLog('error', 'ui.files', 'tauri upload file dialog failed', { error: message })
-      setErrorMessage(message, {
-        title: '选择上传文件失败',
-        source: '远程文件',
-      })
-    }
-  }
 
   const loadServerMetrics = async () => {
     const hostId = activeSession?.hostId
@@ -5681,7 +5808,9 @@ export function App() {
               trackTerminalPath={trackTerminalPath}
               transferTasks={transferTasks}
               uploadFileRef={uploadFileRef}
+              uploadFolderRef={uploadFolderRef}
               onChooseUploadFiles={chooseUploadFiles}
+              onChooseUploadFolder={chooseUploadFolder}
               onCollapse={() => setIsLeftRailCollapsed(true)}
               onConfirmRemoveTransferTask={confirmRemoveTransferTask}
               onDownloadEntry={downloadFile}
@@ -5702,6 +5831,17 @@ export function App() {
               onUploadInputChange={(files) => {
                 if (files) {
                   return uploadFiles(files)
+                }
+                return undefined
+              }}
+              onUploadFolderInputChange={(files) => {
+                if (files) {
+                  const folderFiles = Array.from(files)
+                  return uploadFiles(folderFiles, {
+                    names: folderFiles.map((file) => file.name),
+                    relativePaths: folderFiles.map((file) => ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name)),
+                    rootLabel: ((folderFiles[0] as File & { webkitRelativePath?: string }).webkitRelativePath || '').split('/').filter(Boolean)[0] || folderFiles[0]?.name || '',
+                  })
                 }
                 return undefined
               }}

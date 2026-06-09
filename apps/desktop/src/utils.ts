@@ -502,6 +502,15 @@ export function localFileName(path: string) {
   return parts[parts.length - 1] ?? 'upload-file'
 }
 
+export function joinRemotePath(basePath: string, childPath: string) {
+  const base = normalizeRemotePath(basePath)
+  const child = childPath.replace(/\\/g, '/').trim()
+  if (!child) return base
+  const segments = child.split('/').filter(Boolean)
+  const prefix = base === '.' ? '' : base === '/' ? '/' : base
+  return normalizeRemotePath(`${prefix}${prefix && !prefix.endsWith('/') ? '/' : ''}${segments.join('/')}`)
+}
+
 export function normalizeRemotePath(path: string) {
   const trimmed = path.trim()
   if (!trimmed || trimmed === '.') return '.'

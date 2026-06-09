@@ -117,6 +117,7 @@ export type AppErrorNotice = {
 export type LocalUploadFile = {
   path: string
   name: string
+  relativePath?: string
   data: number[] | ArrayBuffer | Uint8Array
 }
 
@@ -197,6 +198,14 @@ export type TransferTask = {
   direction: 'upload' | 'download'
   progress: number
   status: string
+  mode?: 'file' | 'folder'
+  transferredBytes?: number
+  totalBytes?: number
+  currentFileName?: string
+  currentFileIndex?: number
+  totalFiles?: number
+  currentFileTransferredBytes?: number
+  currentFileTotalBytes?: number
 }
 
 export type DesktopWindow = Window & {

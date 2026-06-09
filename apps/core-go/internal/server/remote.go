@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	pathpkg "path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -253,7 +252,12 @@ func uploadRemoteFile(host hostRecord, remoteDir string, r *http.Request) error 
 				return err
 			}
 
-			targetPath := pathpkg.Join(pathpkg.Clean(remoteDir), filepath.Base(header.Filename))
+			targetName := normalizeUploadRelativePath(header.Filename)
+			targetPath := pathpkg.Join(pathpkg.Clean(remoteDir), targetName)
+			if err := mkdirRemoteAll(client, pathpkg.Dir(targetPath)); err != nil {
+				_ = source.Close()
+				return err
+			}
 			target, err := client.Create(targetPath)
 			if err != nil {
 				_ = source.Close()
@@ -296,9 +300,50 @@ func uploadWSLFile(host hostRecord, remoteDir string, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		targetPath := pathpkg.Join(targetDir, filepath.Base(header.Filename))
+		targetPath := pathpkg.Join(targetDir, normalizeUploadRelativePath(header.Filename))
 		if _, err := runWSLPython(host, buildWSLWriteBase64Python(targetPath, base64.StdEncoding.EncodeToString(data))); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func normalizeUploadRelativePath(value string) string {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	parts := strings.Split(normalized, "/")
+	safe := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		safe = append(safe, part)
+	}
+	if len(safe) == 0 {
+		return "upload-file"
+	}
+	return pathpkg.Join(safe...)
+}
+
+func mkdirRemoteAll(client *sftp.Client, dir string) error {
+	cleanDir := pathpkg.Clean(dir)
+	if cleanDir == "." || cleanDir == "/" || cleanDir == "" {
+		return nil
+	}
+	parts := strings.Split(strings.TrimPrefix(cleanDir, "/"), "/")
+	current := ""
+	if strings.HasPrefix(cleanDir, "/") {
+		current = "/"
+	}
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		current = pathpkg.Join(current, part)
+		if err := client.Mkdir(current); err != nil {
+			if _, statErr := client.Stat(current); statErr != nil {
+				return err
+			}
 		}
 	}
 	return nil

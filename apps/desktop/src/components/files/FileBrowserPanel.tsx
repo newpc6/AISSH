@@ -19,7 +19,9 @@ type FileBrowserPanelProps = {
   trackTerminalPath: boolean
   transferTasks: TransferTask[]
   uploadFileRef: RefObject<HTMLInputElement | null>
+  uploadFolderRef: RefObject<HTMLInputElement | null>
   onChooseUploadFiles: () => void | Promise<void>
+  onChooseUploadFolder: () => void | Promise<void>
   onCollapse: () => void
   onConfirmRemoveTransferTask: (task: TransferTask) => void
   onDownloadEntry: (entry: FileEntry) => void | Promise<void>
@@ -38,6 +40,7 @@ type FileBrowserPanelProps = {
   onSetTrackTerminalPath: (value: boolean) => void
   onSetupRemoteFileDrag: (entry: FileEntry, event: DragEvent<HTMLButtonElement>) => void
   onUploadInputChange: (files: FileList | null) => void | Promise<void>
+  onUploadFolderInputChange: (files: FileList | null) => void | Promise<void>
 }
 
 export function FileBrowserPanel({
@@ -55,7 +58,9 @@ export function FileBrowserPanel({
   trackTerminalPath,
   transferTasks,
   uploadFileRef,
+  uploadFolderRef,
   onChooseUploadFiles,
+  onChooseUploadFolder,
   onCollapse,
   onConfirmRemoveTransferTask,
   onDownloadEntry,
@@ -74,6 +79,7 @@ export function FileBrowserPanel({
   onSetTrackTerminalPath,
   onSetupRemoteFileDrag,
   onUploadInputChange,
+  onUploadFolderInputChange,
 }: FileBrowserPanelProps) {
   const { t, i18n } = useTranslation()
 
@@ -101,6 +107,9 @@ export function FileBrowserPanel({
           <button type="button" title={t('fileBrowser.uploadToCurrent')} onClick={() => void onChooseUploadFiles()}>
             {t('fileBrowser.upload')}
           </button>
+          <button type="button" title={t('fileBrowser.uploadFolderToCurrent')} onClick={() => void onChooseUploadFolder()}>
+            {t('fileBrowser.uploadFolder')}
+          </button>
         </div>
       </div>
       <form
@@ -122,6 +131,17 @@ export function FileBrowserPanel({
         type="file"
         onChange={(event) => {
           void onUploadInputChange(event.target.files)
+          event.target.value = ''
+        }}
+      />
+      <input
+        {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+        ref={uploadFolderRef}
+        hidden
+        multiple
+        type="file"
+        onChange={(event) => {
+          void onUploadFolderInputChange(event.target.files)
           event.target.value = ''
         }}
       />
@@ -261,10 +281,32 @@ export function FileBrowserPanel({
                   title={t('fileBrowser.removeTransfer', { name: task.name })}
                   onClick={() => onConfirmRemoveTransferTask(task)}
                 >
-                  ×
+                  ?
                 </button>
-                <span>{t(`fileBrowser.transferDirection.${task.direction}`)} · {task.name}</span>
+                <span>{t(`fileBrowser.transferDirection.${task.direction}`)} / {task.name}</span>
                 <progress max="100" value={task.progress} />
+                <small>
+                  {task.mode === 'folder' && task.totalFiles
+                    ? t('fileBrowser.transferFolderProgress', {
+                        current: task.currentFileIndex ?? 0,
+                        total: task.totalFiles,
+                        file: task.currentFileName || '-',
+                      })
+                    : task.currentFileName || task.name}
+                </small>
+                <small>
+                  {task.mode === 'folder'
+                    ? t('fileBrowser.transferFolderBytes', {
+                        current: formatBytes(task.currentFileTransferredBytes ?? 0),
+                        total: formatBytes(task.currentFileTotalBytes ?? 0),
+                        progress: task.progress,
+                      })
+                    : t('fileBrowser.transferFileBytes', {
+                        current: formatBytes(task.transferredBytes ?? 0),
+                        total: formatBytes(task.totalBytes ?? 0),
+                        progress: task.progress,
+                      })}
+                </small>
                 <small>{task.status}</small>
               </div>
             ))}
