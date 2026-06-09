@@ -298,7 +298,9 @@ export function useSessionLifecycle({
   const copySessionSSHInfo = async (session: SessionRecord) => {
     const host = hostsRef.current.find((item) => item.id === session.hostId)
     const text = host
-      ? `ssh -p ${host.port} ${host.username}@${host.address}`
+      ? (host.protocol === 'wsl'
+          ? `wsl${host.wslDistro ? ` -d ${host.wslDistro}` : ''}${host.username ? ` -u ${host.username}` : ''}`
+          : `ssh -p ${host.port} ${host.username}@${host.address}`)
       : session.hostName
     await navigator.clipboard.writeText(text)
     return text

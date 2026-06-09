@@ -2,6 +2,7 @@ import type { KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { HostRecord } from '@ai-ssh/shared-contracts'
 import type { HostGroupView } from '../../types'
+import { hostConnectionLabel } from '../../host-display'
 
 type ServersPanelProps = {
   batchMode: boolean
@@ -136,7 +137,7 @@ export function ServersPanel({
                 <div className="server-row-main">
                   <span>{host.name}</span>
                   <small>
-                    {host.username}@{host.address}:{host.port}
+                    {hostConnectionLabel(host)}
                   </small>
                 </div>
                 <div className="host-row-actions">

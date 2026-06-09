@@ -451,7 +451,8 @@ export function App() {
     openAddHostDialog,
     openEditHostDialog,
   } = useHostDialogState({
-    defaultGroupName: hostGroups[0]?.name ?? '默认',
+    defaultGroupName: hostGroups[0]?.name ?? '??',
+    duplicateSuffix: t('hostDialog.copySuffix'),
     setEditingHostId,
     setHostDialogError,
     setHostDialogMode,
@@ -2141,43 +2142,64 @@ export function App() {
 
   const saveHost = async () => {
     setHostDialogError('')
-    if (!hostForm.name || !hostForm.address || !hostForm.username) {
-      setHostDialogError('请填写主机名称、地址和用户名')
+    const protocol = hostForm.protocol ?? 'ssh'
+    const isWSL = protocol === 'wsl'
+    const hasName = hostForm.name.trim().length > 0
+    const hasSSHAddress = hostForm.address.trim().length > 0
+    const hasSSHUser = hostForm.username.trim().length > 0
+    const hasWSLDistro = String(hostForm.wslDistro ?? '').trim().length > 0
+
+    if (!hasName || (!isWSL && (!hasSSHAddress || !hasSSHUser)) || (isWSL && !hasWSLDistro)) {
+      setHostDialogError(t(isWSL ? 'hostDialog.errors.requiredFieldsWsl' : 'hostDialog.errors.requiredFieldsSsh'))
       return
     }
-    if (hostForm.authType === 'password' && hostDialogMode === 'create' && (!savePassword || !hostForm.password)) {
-      setHostDialogError('密码认证需要勾选并填写保存密码')
+    if (!isWSL && hostForm.authType === 'password' && hostDialogMode === 'create' && (!savePassword || !hostForm.password)) {
+      setHostDialogError(t('hostDialog.errors.passwordRequired'))
       return
     }
     if (
+      !isWSL &&
       hostForm.authType === 'privateKey' &&
       hostDialogMode === 'create' &&
       (!savePrivateKey || !hostForm.privateKey)
     ) {
-      setHostDialogError('SSH Key 认证需要勾选保存，并粘贴或选择私钥文件')
+      setHostDialogError(t('hostDialog.errors.privateKeyRequired'))
       return
     }
 
     setIsSavingHost(true)
     try {
       const requestPath = hostDialogMode === 'edit' ? `/hosts/${editingHostId}` : '/hosts'
+      const payload: HostUpsertRequest = isWSL
+        ? {
+            ...hostForm,
+            protocol: 'wsl',
+            address: 'wsl.local',
+            port: 0,
+            authType: 'agent',
+            password: '',
+            privateKey: '',
+            wslDistro: String(hostForm.wslDistro ?? '').trim(),
+          }
+        : {
+            ...hostForm,
+            protocol: 'ssh',
+            port: Number(hostForm.port) || 22,
+            password: hostForm.authType === 'password' && savePassword ? hostForm.password : '',
+            privateKey: hostForm.authType === 'privateKey' && savePrivateKey ? hostForm.privateKey : '',
+          }
       const response = await apiFetch(requestPath, {
         method: hostDialogMode === 'edit' ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...hostForm,
-          port: Number(hostForm.port) || 22,
-          password: hostForm.authType === 'password' && savePassword ? hostForm.password : '',
-          privateKey: hostForm.authType === 'privateKey' && savePrivateKey ? hostForm.privateKey : '',
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
         const detail = await response.text()
         const message = detail.trim() || `HTTP ${response.status}`
-        throw new Error(`${hostDialogMode === 'edit' ? '编辑' : '保存'}主机失败：${message}`)
+        throw new Error(`${t(hostDialogMode === 'edit' ? 'hostDialog.errors.updateFailed' : 'hostDialog.errors.createFailed')}: ${message}`)
       }
 
       const saved = (await response.json()) as HostRecord
@@ -2185,7 +2207,9 @@ export function App() {
       setErrorMessage('')
       closeHostDialog()
     } catch (error) {
-      const message = error instanceof Error ? error.message : `${hostDialogMode === 'edit' ? '编辑' : '保存'}主机失败`
+      const message = error instanceof Error
+        ? error.message
+        : t(hostDialogMode === 'edit' ? 'hostDialog.errors.updateFailed' : 'hostDialog.errors.createFailed')
       setHostDialogError(message)
       setErrorMessage(message)
     } finally {

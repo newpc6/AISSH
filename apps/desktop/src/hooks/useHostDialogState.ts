@@ -5,6 +5,7 @@ import { emptyHostForm } from '../utils'
 
 type UseHostDialogStateArgs = {
   defaultGroupName: string
+  duplicateSuffix: string
   setEditingHostId: React.Dispatch<React.SetStateAction<string>>
   setHostDialogError: React.Dispatch<React.SetStateAction<string>>
   setHostDialogMode: React.Dispatch<React.SetStateAction<HostDialogMode>>
@@ -17,6 +18,7 @@ type UseHostDialogStateArgs = {
 
 export function useHostDialogState({
   defaultGroupName,
+  duplicateSuffix,
   setEditingHostId,
   setHostDialogError,
   setHostDialogMode,
@@ -46,6 +48,7 @@ export function useHostDialogState({
     setEditingHostId(host.id)
     setHostForm({
       name: host.name,
+      protocol: host.protocol ?? 'ssh',
       address: host.address,
       port: host.port,
       username: host.username,
@@ -54,6 +57,7 @@ export function useHostDialogState({
       description: host.description ?? '',
       password: '',
       privateKey: '',
+      wslDistro: host.wslDistro ?? '',
     })
     setSavePassword(Boolean(host.hasPassword))
     setSavePrivateKey(Boolean(host.hasPrivateKey))
@@ -82,7 +86,8 @@ export function useHostDialogState({
     setHostDialogMode('create')
     setEditingHostId('')
     setHostForm({
-      name: `${host.name} 副本`,
+      name: `${host.name} ${duplicateSuffix}`,
+      protocol: host.protocol ?? 'ssh',
       address: host.address,
       port: host.port,
       username: host.username,
@@ -91,6 +96,7 @@ export function useHostDialogState({
       description: host.description ?? '',
       password: '',
       privateKey: '',
+      wslDistro: host.wslDistro ?? '',
     })
     setSavePassword(false)
     setSavePrivateKey(false)
@@ -98,6 +104,7 @@ export function useHostDialogState({
     setIsHostDialogOpen(true)
   }, [
     defaultGroupName,
+    duplicateSuffix,
     setEditingHostId,
     setHostDialogError,
     setHostDialogMode,

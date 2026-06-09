@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -33,6 +34,7 @@ type healthResponse struct {
 type hostRecord struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
+	Protocol      string `json:"protocol,omitempty"`
 	Address       string `json:"address"`
 	Port          int    `json:"port"`
 	Username      string `json:"username"`
@@ -43,6 +45,7 @@ type hostRecord struct {
 	Description   string `json:"description,omitempty"`
 	HasPassword   bool   `json:"hasPassword,omitempty"`
 	HasPrivateKey bool   `json:"hasPrivateKey,omitempty"`
+	WSLDistro     string `json:"wslDistro,omitempty"`
 }
 
 type hostGroup struct {
@@ -69,6 +72,7 @@ type hostsExportResponse struct {
 
 type hostUpsertRequest struct {
 	Name        string `json:"name"`
+	Protocol    string `json:"protocol,omitempty"`
 	Address     string `json:"address"`
 	Port        int    `json:"port"`
 	Username    string `json:"username"`
@@ -77,6 +81,7 @@ type hostUpsertRequest struct {
 	Password    string `json:"password,omitempty"`
 	PrivateKey  string `json:"privateKey,omitempty"`
 	Description string `json:"description,omitempty"`
+	WSLDistro   string `json:"wslDistro,omitempty"`
 }
 
 type hostsImportRequest struct {
@@ -136,28 +141,28 @@ type aiPredictionResponse struct {
 }
 
 type aiAssistRequest struct {
-	BaseURL              string        `json:"baseUrl"`
-	APIKey               string        `json:"apiKey,omitempty"`
-	Model                string        `json:"model"`
-	Provider             string        `json:"provider,omitempty"`
-	AgentThinkingEnabled *bool         `json:"agentThinkingEnabled,omitempty"`
-	TimeoutSeconds       int           `json:"timeoutSeconds,omitempty"`
-	SystemPrompt         string        `json:"systemPrompt,omitempty"`
-	SystemPromptOverride bool          `json:"systemPromptOverride,omitempty"`
-	Prompt               string        `json:"prompt"`
-	TerminalContext      string        `json:"terminalContext,omitempty"`
-	SelectedText         string        `json:"selectedText,omitempty"`
-	CommandHistory       []string      `json:"commandHistory,omitempty"`
-	CurrentCommand       string        `json:"currentCommand,omitempty"`
-	CWD                  string        `json:"cwd,omitempty"`
-	HostName             string        `json:"hostName,omitempty"`
-	HostAddress          string        `json:"hostAddress,omitempty"`
-	Username             string        `json:"username,omitempty"`
-	AgentMode            string        `json:"agentMode,omitempty"`
-	AgentGoal            string        `json:"agentGoal,omitempty"`
-	AgentSteps           []aiAgentStep `json:"agentSteps,omitempty"`
-	SelectedSkills       []aiSkill     `json:"selectedSkills,omitempty"`
-	ContextMode          string        `json:"contextMode,omitempty"`
+	BaseURL              string                        `json:"baseUrl"`
+	APIKey               string                        `json:"apiKey,omitempty"`
+	Model                string                        `json:"model"`
+	Provider             string                        `json:"provider,omitempty"`
+	AgentThinkingEnabled *bool                         `json:"agentThinkingEnabled,omitempty"`
+	TimeoutSeconds       int                           `json:"timeoutSeconds,omitempty"`
+	SystemPrompt         string                        `json:"systemPrompt,omitempty"`
+	SystemPromptOverride bool                          `json:"systemPromptOverride,omitempty"`
+	Prompt               string                        `json:"prompt"`
+	TerminalContext      string                        `json:"terminalContext,omitempty"`
+	SelectedText         string                        `json:"selectedText,omitempty"`
+	CommandHistory       []string                      `json:"commandHistory,omitempty"`
+	CurrentCommand       string                        `json:"currentCommand,omitempty"`
+	CWD                  string                        `json:"cwd,omitempty"`
+	HostName             string                        `json:"hostName,omitempty"`
+	HostAddress          string                        `json:"hostAddress,omitempty"`
+	Username             string                        `json:"username,omitempty"`
+	AgentMode            string                        `json:"agentMode,omitempty"`
+	AgentGoal            string                        `json:"agentGoal,omitempty"`
+	AgentSteps           []aiAgentStep                 `json:"agentSteps,omitempty"`
+	SelectedSkills       []aiSkill                     `json:"selectedSkills,omitempty"`
+	ContextMode          string                        `json:"contextMode,omitempty"`
 	ConversationMessages []aiAssistConversationMessage `json:"conversationMessages,omitempty"`
 }
 
@@ -292,6 +297,7 @@ type terminalSession struct {
 	cwd               string
 	commandMu         sync.Mutex
 	commandLineBuffer string
+	host              hostRecord
 }
 
 type sessionManager struct {
@@ -346,6 +352,7 @@ func defaultHosts() []hostRecord {
 		{
 			ID:          "local-demo",
 			Name:        "Local Demo",
+			Protocol:    "ssh",
 			Address:     "demo.local",
 			Port:        0,
 			Username:    "demo",
@@ -356,6 +363,7 @@ func defaultHosts() []hostRecord {
 		{
 			ID:          "gpu-dev-01",
 			Name:        "GPU Dev 01",
+			Protocol:    "ssh",
 			Address:     "10.10.1.25",
 			Port:        22,
 			Username:    "ubuntu",
@@ -366,6 +374,7 @@ func defaultHosts() []hostRecord {
 		{
 			ID:          "prod-api-01",
 			Name:        "Prod API 01",
+			Protocol:    "ssh",
 			Address:     "10.10.8.12",
 			Port:        22,
 			Username:    "deploy",
@@ -751,21 +760,46 @@ func hostFromRequest(request hostUpsertRequest) hostRecord {
 	if port == 0 {
 		port = 22
 	}
+	protocol := normalizeHostProtocol(request.Protocol)
 	authType := request.AuthType
 	if authType == "" {
-		authType = "password"
+		if protocol == "wsl" {
+			authType = "agent"
+		} else {
+			authType = "password"
+		}
+	}
+	address := request.Address
+	username := request.Username
+	wslDistro := strings.TrimSpace(request.WSLDistro)
+	if protocol == "wsl" {
+		if wslDistro == "" {
+			wslDistro = strings.TrimSpace(request.Address)
+		}
+		address = "wsl.local"
+		port = 0
+		username = strings.TrimSpace(username)
 	}
 	return hostRecord{
 		Name:        request.Name,
-		Address:     request.Address,
+		Protocol:    protocol,
+		Address:     address,
 		Port:        port,
-		Username:    request.Username,
+		Username:    username,
 		AuthType:    authType,
 		Group:       request.Group,
 		Password:    request.Password,
 		PrivateKey:  request.PrivateKey,
 		Description: request.Description,
+		WSLDistro:   wslDistro,
 	}
+}
+
+func normalizeHostProtocol(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "wsl") {
+		return "wsl"
+	}
+	return "ssh"
 }
 
 func (h hostRecord) sanitized() hostRecord {
@@ -848,6 +882,15 @@ func decryptOptionalExportSecret(exportKey string, value string) (string, error)
 }
 
 func (m *sessionManager) saveHostCredentials(host *hostRecord) error {
+	if host.Protocol == "wsl" {
+		_ = m.credentials.Delete(host.ID, passwordCredential)
+		_ = m.credentials.Delete(host.ID, privateKeyCredential)
+		host.HasPassword = false
+		host.HasPrivateKey = false
+		host.Password = ""
+		host.PrivateKey = ""
+		return nil
+	}
 	if host.AuthType == "password" && host.Password != "" {
 		if err := m.credentials.Set(host.ID, passwordCredential, host.Password); err != nil {
 			return err
@@ -880,9 +923,16 @@ func (m *sessionManager) resolveSessionHost(request sessionOpenRequest) (hostRec
 		host := *request.TransientHost
 		host.ID = "transient-" + uuid.NewString()
 		if host.Name == "" {
-			host.Name = host.Username + "@" + host.Address
+			if host.Protocol == "wsl" {
+				host.Name = strings.TrimSpace(host.WSLDistro)
+				if host.Name == "" {
+					host.Name = "WSL"
+				}
+			} else {
+				host.Name = host.Username + "@" + host.Address
+			}
 		}
-		if host.Port == 0 {
+		if host.Protocol != "wsl" && host.Port == 0 {
 			host.Port = 22
 		}
 		return host, true
@@ -972,6 +1022,7 @@ func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSessi
 		resize: make(chan sessionResizeRequest, 16),
 		output: make(chan terminalEvent, 256),
 		done:   make(chan struct{}),
+		host:   selectedHost,
 	}
 
 	m.mu.Lock()
@@ -985,6 +1036,8 @@ func (m *sessionManager) openSession(request sessionOpenRequest) (*terminalSessi
 
 	if selectedHost.ID == "local-demo" {
 		go session.runDemo()
+	} else if selectedHost.Protocol == "wsl" {
+		go session.runWSL(selectedHost)
 	} else {
 		go session.runSSH(selectedHost)
 	}
@@ -1028,7 +1081,12 @@ func (m *sessionManager) reconnectSession(sessionID string) (*terminalSession, *
 		return nil, nil, false, nil
 	}
 
-	newSession, _, err := m.openSession(sessionOpenRequest{HostID: oldSession.record.HostID})
+	request := sessionOpenRequest{HostID: oldSession.record.HostID}
+	if oldSession.host.Protocol == "wsl" {
+		host := oldSession.host
+		request.TransientHost = &host
+	}
+	newSession, _, err := m.openSession(request)
 	if err != nil {
 		m.mu.Lock()
 		m.sessions[sessionID] = oldSession
@@ -1058,6 +1116,12 @@ func (s *terminalSession) currentCWD() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cwd
+}
+
+func (s *terminalSession) currentHost() hostRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.host
 }
 
 func (s *terminalSession) setCWD(cwd string) {
@@ -1234,6 +1298,96 @@ func (s *terminalSession) runSSH(host hostRecord) {
 			s.send(terminalEvent{Type: "status", Data: "closed"})
 			return
 		case <-s.done:
+			return
+		}
+	}
+}
+
+func buildWSLCommand(host hostRecord) *exec.Cmd {
+	args := []string{}
+	if distro := strings.TrimSpace(host.WSLDistro); distro != "" {
+		args = append(args, "-d", distro)
+	}
+	args = append(args, "--cd", "~")
+	if user := strings.TrimSpace(host.Username); user != "" {
+		args = append(args, "-u", user)
+	}
+	args = append(args, "bash", "-il")
+	return exec.Command("wsl.exe", args...)
+}
+
+func (s *terminalSession) runWSL(host hostRecord) {
+	defer s.close()
+
+	cmd := buildWSLCommand(host)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		s.record.Status = "error"
+		s.record.LastError = err.Error()
+		s.send(terminalEvent{Type: "error", Data: err.Error()})
+		return
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		s.record.Status = "error"
+		s.record.LastError = err.Error()
+		s.send(terminalEvent{Type: "error", Data: err.Error()})
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		s.record.Status = "error"
+		s.record.LastError = err.Error()
+		s.send(terminalEvent{Type: "error", Data: err.Error()})
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		s.record.Status = "error"
+		s.record.LastError = err.Error()
+		s.send(terminalEvent{Type: "error", Data: err.Error()})
+		return
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}()
+
+	s.record.Status = "connected"
+	s.send(terminalEvent{Type: "status", Data: "connected"})
+
+	go copyOutput(s, stdout)
+	go copyOutput(s, stderr)
+
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- cmd.Wait()
+	}()
+
+	for {
+		select {
+		case data := <-s.input:
+			if _, err := io.WriteString(stdin, data); err != nil {
+				s.record.Status = "error"
+				s.record.LastError = err.Error()
+				s.send(terminalEvent{Type: "error", Data: err.Error()})
+				return
+			}
+		case <-s.resize:
+		case err := <-waitDone:
+			if err != nil && s.record.Status != "closed" {
+				s.record.Status = "error"
+				s.record.LastError = err.Error()
+				s.send(terminalEvent{Type: "error", Data: err.Error()})
+				return
+			}
+			s.record.Status = "closed"
+			s.send(terminalEvent{Type: "status", Data: "closed"})
+			return
+		case <-s.done:
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
 			return
 		}
 	}

@@ -610,7 +610,8 @@
     "network": "Network",
     "networkRate": "In {{rx}} / Out {{tx}}",
     "networkTotal": "Total In {{rx}} / Out {{tx}}",
-    "waitingSample": "Waiting for samples"
+    "waitingSample": "Waiting for samples",
+    "protocol": "Protocol"
   },
   "commandPanels": {
     "historyEmpty": "No command history yet",
@@ -701,5 +702,68 @@
     "settingsSaved": "Settings saved",
     "modelsSaved": "AI models saved",
     "skillsSaved": "AI skills saved"
+  },
+  "hostDialog": {
+    "createTitle": "Add connection",
+    "editTitle": "Edit connection",
+    "close": "Close connection editor",
+    "cancel": "Cancel host editing",
+    "submit": "Save host configuration",
+    "saving": "Saving...",
+    "saveCreate": "Save",
+    "saveEdit": "Save changes",
+    "copySuffix": "Copy",
+    "fields": {
+      "name": "Name",
+      "group": "Group",
+      "protocol": "Protocol",
+      "wslDistro": "WSL distro",
+      "username": "User",
+      "authType": "Authentication",
+      "port": "Port",
+      "address": "Address",
+      "description": "Description",
+      "password": "Password",
+      "privateKey": "SSH Key"
+    },
+    "protocols": {
+      "ssh": "SSH",
+      "wsl": "WSL"
+    },
+    "authTypes": {
+      "password": "Password",
+      "privateKey": "SSH Key",
+      "agent": "Agent"
+    },
+    "placeholders": {
+      "sshName": "Server name",
+      "wslName": "For example: Ubuntu dev environment",
+      "group": "Default",
+      "wslDistro": "For example: Ubuntu-24.04",
+      "wslUser": "Leave empty to use the distro default user",
+      "description": "Optional note",
+      "wslDescription": "For example: local Ubuntu distro",
+      "secret": "Used automatically when connecting after save"
+    },
+    "password": {
+      "save": "Save password",
+      "keepOrUpdate": "Keep or update password"
+    },
+    "privateKey": {
+      "save": "Save SSH key",
+      "keepOrUpdate": "Keep or update SSH key",
+      "selectFile": "Select local SSH private key file",
+      "selectFileButton": "Choose file",
+      "loaded": "Private key loaded",
+      "supportsLocal": "You can choose a local private key file"
+    },
+    "errors": {
+      "requiredFieldsSsh": "Please fill in the host name, address, and username",
+      "requiredFieldsWsl": "Please fill in the connection name and WSL distro",
+      "passwordRequired": "Password authentication requires enabling and filling in the saved password",
+      "privateKeyRequired": "SSH key authentication requires enabling save and providing a private key file or pasted content",
+      "createFailed": "Failed to save host",
+      "updateFailed": "Failed to update host"
+    }
   }
 }

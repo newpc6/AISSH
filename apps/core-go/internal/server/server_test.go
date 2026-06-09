@@ -1674,6 +1674,32 @@ func TestCreateTransientSessionEndpoint(t *testing.T) {
 	}
 }
 
+func TestHostFromRequestNormalizesWSL(t *testing.T) {
+	host := hostFromRequest(hostUpsertRequest{
+		Name:      "Ubuntu Dev",
+		Protocol:  "wsl",
+		Address:   "ignored",
+		WSLDistro: "Ubuntu-24.04",
+		Username:  "dev",
+	})
+
+	if host.Protocol != "wsl" {
+		t.Fatalf("expected protocol wsl, got %q", host.Protocol)
+	}
+	if host.Address != "wsl.local" {
+		t.Fatalf("expected WSL address wsl.local, got %q", host.Address)
+	}
+	if host.Port != 0 {
+		t.Fatalf("expected WSL port 0, got %d", host.Port)
+	}
+	if host.AuthType != "agent" {
+		t.Fatalf("expected WSL auth type agent, got %q", host.AuthType)
+	}
+	if host.WSLDistro != "Ubuntu-24.04" {
+		t.Fatalf("expected WSL distro Ubuntu-24.04, got %q", host.WSLDistro)
+	}
+}
+
 func TestWriteSessionInputEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))

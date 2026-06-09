@@ -1,10 +1,13 @@
 package server
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	pathpkg "path"
 	"path/filepath"
 	"sort"
@@ -38,6 +41,31 @@ func newSSHClient(host hostRecord) (*ssh.Client, error) {
 	})
 }
 
+func runWSLCommand(host hostRecord, command string) (string, error) {
+	args := []string{}
+	if distro := strings.TrimSpace(host.WSLDistro); distro != "" {
+		args = append(args, "-d", distro)
+	}
+	if user := strings.TrimSpace(host.Username); user != "" {
+		args = append(args, "-u", user)
+	}
+	args = append(args, "--cd", "~", "--", "bash", "-lc", command)
+	cmd := exec.Command("wsl.exe", args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+func resolveHostRemotePath(host hostRecord, remotePath string) string {
+	if host.Protocol == "wsl" {
+		trimmed := strings.TrimSpace(remotePath)
+		if trimmed == "" || trimmed == "." {
+			return "."
+		}
+		return strings.ReplaceAll(trimmed, "\\", "/")
+	}
+	return normalizeRemotePathForRequest(remotePath)
+}
+
 func withSFTPClient(host hostRecord, fn func(*sftp.Client) error) error {
 	client, err := newSSHClient(host)
 	if err != nil {
@@ -55,6 +83,9 @@ func withSFTPClient(host hostRecord, fn func(*sftp.Client) error) error {
 }
 
 func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, error) {
+	if host.Protocol == "wsl" {
+		return listWSLFiles(host, remotePath)
+	}
 	var response fileListResponse
 	err := withSFTPClient(host, func(client *sftp.Client) error {
 		cleanPath := normalizeRemotePathForRequest(remotePath)
@@ -102,6 +133,24 @@ func listRemoteFiles(host hostRecord, remotePath string) (fileListResponse, erro
 	return response, err
 }
 
+func listWSLFiles(host hostRecord, remotePath string) (fileListResponse, error) {
+	cleanPath := resolveHostRemotePath(host, remotePath)
+	listPath := cleanPath
+	if listPath == "." {
+		listPath = "~"
+	}
+	command := fmt.Sprintf("python3 -c %q", buildWSLListPython(listPath))
+	output, err := runWSLCommand(host, command)
+	if err != nil {
+		return fileListResponse{}, err
+	}
+	var response fileListResponse
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		return fileListResponse{}, err
+	}
+	return response, nil
+}
+
 func remoteInfoIsDirectory(client *sftp.Client, remotePath string, info os.FileInfo) bool {
 	if info.IsDir() {
 		return true
@@ -118,6 +167,9 @@ func normalizeRemotePathForRequest(remotePath string) string {
 }
 
 func downloadRemoteFile(host hostRecord, remotePath string, w http.ResponseWriter) error {
+	if host.Protocol == "wsl" {
+		return downloadWSLFile(host, remotePath, w)
+	}
 	return withSFTPClient(host, func(client *sftp.Client) error {
 		remoteFile, err := client.Open(remotePath)
 		if err != nil {
@@ -132,7 +184,27 @@ func downloadRemoteFile(host hostRecord, remotePath string, w http.ResponseWrite
 	})
 }
 
+func downloadWSLFile(host hostRecord, remotePath string, w http.ResponseWriter) error {
+	targetPath := resolveHostRemotePath(host, remotePath)
+	command := fmt.Sprintf("python3 -c %q", buildWSLReadBase64Python(targetPath))
+	output, err := runWSLCommand(host, command)
+	if err != nil {
+		return err
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(output))
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, pathpkg.Base(targetPath)))
+	_, err = w.Write(data)
+	return err
+}
+
 func uploadRemoteFile(host hostRecord, remoteDir string, r *http.Request) error {
+	if host.Protocol == "wsl" {
+		return uploadWSLFile(host, remoteDir, r)
+	}
 	if remoteDir == "" {
 		remoteDir = "."
 	}
@@ -174,19 +246,44 @@ func uploadRemoteFile(host hostRecord, remoteDir string, r *http.Request) error 
 	})
 }
 
+func uploadWSLFile(host hostRecord, remoteDir string, r *http.Request) error {
+	if remoteDir == "" {
+		remoteDir = "."
+	}
+	if err := r.ParseMultipartForm(256 << 20); err != nil {
+		return err
+	}
+	files := r.MultipartForm.File["files"]
+	if len(files) == 0 {
+		return fmt.Errorf("no files uploaded")
+	}
+	targetDir := resolveHostRemotePath(host, remoteDir)
+	for _, header := range files {
+		source, err := header.Open()
+		if err != nil {
+			return err
+		}
+		data, err := io.ReadAll(source)
+		_ = source.Close()
+		if err != nil {
+			return err
+		}
+		targetPath := pathpkg.Join(targetDir, filepath.Base(header.Filename))
+		command := fmt.Sprintf("python3 -c %q", buildWSLWriteBase64Python(targetPath, base64.StdEncoding.EncodeToString(data)))
+		if _, err := runWSLCommand(host, command); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func collectServerMetrics(host hostRecord) (serverMetrics, error) {
 	metrics := serverMetrics{
 		HostID:      host.ID,
 		CollectedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	client, err := newSSHClient(host)
-	if err != nil {
-		return metrics, err
-	}
-	defer client.Close()
-
-	output, err := runSSHCommand(client, "cat /proc/stat; printf '\\n__AI_SSH_STAT2__\\n'; sleep 0.25; cat /proc/stat; printf '\\n__AI_SSH_MEMINFO__\\n'; cat /proc/meminfo; printf '\\n__AI_SSH_DF__\\n'; df -P; printf '\\n__AI_SSH_NETDEV__\\n'; cat /proc/net/dev")
+	output, err := runHostCommand(host, "cat /proc/stat; printf '\\n__AI_SSH_STAT2__\\n'; sleep 0.25; cat /proc/stat; printf '\\n__AI_SSH_MEMINFO__\\n'; cat /proc/meminfo; printf '\\n__AI_SSH_DF__\\n'; df -P; printf '\\n__AI_SSH_NETDEV__\\n'; cat /proc/net/dev")
 	if err != nil {
 		return metrics, err
 	}
@@ -377,20 +474,26 @@ func runSSHCommand(client *ssh.Client, command string) (string, error) {
 	return string(output), err
 }
 
+func runHostCommand(host hostRecord, command string) (string, error) {
+	if host.Protocol == "wsl" {
+		return runWSLCommand(host, command)
+	}
+	client, err := newSSHClient(host)
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
+	return runSSHCommand(client, command)
+}
+
 func collectSystemInfo(host hostRecord) (systemInfo, error) {
 	info := systemInfo{
 		HostID:      host.ID,
 		CollectedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	client, err := newSSHClient(host)
-	if err != nil {
-		return info, err
-	}
-	defer client.Close()
-
 	cmd := "uname -s; printf \"\\n__AI_SSH_SYS_HOST__\\n\"; hostname; printf \"\\n__AI_SSH_SYS_KERNEL__\\n\"; uname -r; printf \"\\n__AI_SSH_SYS_ARCH__\\n\"; uname -m; printf \"\\n__AI_SSH_SYS_UPTIME__\\n\"; cat /proc/uptime"
-	output, err := runSSHCommand(client, cmd)
+	output, err := runHostCommand(host, cmd)
 	if err != nil {
 		return info, err
 	}
@@ -404,6 +507,35 @@ func collectSystemInfo(host hostRecord) (systemInfo, error) {
 	info.Uptime = formatUptime(uptimeRaw)
 
 	return info, nil
+}
+
+func buildWSLListPython(targetPath string) string {
+	return fmt.Sprintf(`import json, os, pathlib, stat, datetime
+p = pathlib.Path(os.path.expanduser(%q)).resolve()
+entries = []
+for item in sorted(p.iterdir(), key=lambda it: (not it.is_dir(), it.name.lower())):
+    st = item.stat()
+    entries.append({
+        "name": item.name,
+        "path": item.as_posix(),
+        "type": "directory" if item.is_dir() else "file",
+        "size": int(st.st_size),
+        "modifiedAt": datetime.datetime.utcfromtimestamp(st.st_mtime).strftime("%%Y-%%m-%%dT%%H:%%M:%%SZ"),
+    })
+print(json.dumps({"path": p.as_posix(), "entries": entries}))`, targetPath)
+}
+
+func buildWSLReadBase64Python(targetPath string) string {
+	return fmt.Sprintf(`import base64, os, pathlib
+p = pathlib.Path(os.path.expanduser(%q)).resolve()
+print(base64.b64encode(p.read_bytes()).decode("ascii"))`, targetPath)
+}
+
+func buildWSLWriteBase64Python(targetPath string, encoded string) string {
+	return fmt.Sprintf(`import base64, os, pathlib
+p = pathlib.Path(os.path.expanduser(%q)).resolve()
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_bytes(base64.b64decode(%q))`, targetPath, encoded)
 }
 
 func extractSection(output, startMarker, endMarker string) string {

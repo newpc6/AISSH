@@ -6,6 +6,7 @@ import type {
   PredictionGhostPosition,
   TerminalSelectionAction,
 } from '../../types'
+import { hostConnectionLabel } from '../../host-display'
 import { sessionStatusLabel } from '../../utils'
 
 type TerminalStageProps = {
@@ -86,7 +87,7 @@ export function TerminalStage({
             <strong>{activeSession.hostName}</strong>
             <span>
               {activeHost
-                ? `${activeHost.username}@${activeHost.address}:${activeHost.port}`
+                ? hostConnectionLabel(activeHost)
                 : activeSession.hostId}
             </span>
           </div>
@@ -151,7 +152,7 @@ export function TerminalStage({
                   recentHosts.map((host) => (
                     <button key={host.id} type="button" title={t('terminalStage.connectHost', { name: host.name })} onClick={() => void onCreateSession(host.id)}>
                       <strong title={host.name}>{host.name}</strong>
-                      <span>{host.username}@{host.address}:{host.port}</span>
+                      <span>{hostConnectionLabel(host)}</span>
                     </button>
                   ))
                 ) : (

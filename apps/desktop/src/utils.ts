@@ -1,4 +1,4 @@
-import { StreamLanguage } from '@codemirror/language'
+﻿import { StreamLanguage } from '@codemirror/language'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
 import { css } from '@codemirror/lang-css'
@@ -96,6 +96,7 @@ export const logLevelRank: Record<LogLevel, number> = {
 
 export const emptyHostForm: HostUpsertRequest = {
   name: '',
+  protocol: 'ssh',
   address: '',
   port: 22,
   username: '',
@@ -104,6 +105,7 @@ export const emptyHostForm: HostUpsertRequest = {
   description: '',
   password: '',
   privateKey: '',
+  wslDistro: '',
 }
 
 export const defaultSettings: AppSettings = {
@@ -1057,3 +1059,4 @@ export async function readSSEStream(response: Response, onEvent: (event: AIStrea
   buffer += decoder.decode().replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   flush()
 }
+

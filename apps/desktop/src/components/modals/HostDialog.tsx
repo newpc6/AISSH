@@ -1,5 +1,6 @@
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
-import type { HostAuthType, HostGroup, HostUpsertRequest } from '@ai-ssh/shared-contracts'
+import { useTranslation } from 'react-i18next'
+import type { HostAuthType, HostGroup, HostProtocol, HostUpsertRequest } from '@ai-ssh/shared-contracts'
 import type { HostDialogMode } from '../../types'
 
 type HostDialogProps = {
@@ -37,13 +38,34 @@ export function HostDialog({
   onSavePrivateKeyChange,
   onSelectPrivateKeyFile,
 }: HostDialogProps) {
+  const { t } = useTranslation()
+
   if (!open) {
     return null
   }
 
+  const protocol = hostForm.protocol ?? 'ssh'
+  const isWSL = protocol === 'wsl'
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     onSubmit()
+  }
+
+  const handleProtocolChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextProtocol = event.target.value as HostProtocol
+    onHostFormChange((current) => ({
+      ...current,
+      protocol: nextProtocol,
+      authType: nextProtocol === 'wsl' ? 'agent' : 'password',
+      address: nextProtocol === 'wsl' ? 'wsl.local' : '',
+      port: nextProtocol === 'wsl' ? 0 : 22,
+      password: '',
+      privateKey: '',
+      wslDistro: nextProtocol === 'wsl' ? current.wslDistro ?? '' : '',
+    }))
+    onSavePasswordChange(false)
+    onSavePrivateKeyChange(false)
   }
 
   const handleAuthTypeChange = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -58,30 +80,33 @@ export function HostDialog({
       <form className="host-modal" onSubmit={handleSubmit}>
         <div className="modal-header">
           <div>
-            <p className="section-label">SSH 连接</p>
-            <h3>{hostDialogMode === 'edit' ? '编辑服务器' : '新增服务器'}</h3>
+            <p className="section-label">{t(isWSL ? 'hostDialog.protocols.wsl' : 'hostDialog.protocols.ssh')}</p>
+            <h3>{t(hostDialogMode === 'edit' ? 'hostDialog.editTitle' : 'hostDialog.createTitle')}</h3>
           </div>
-          <button type="button" title="关闭服务器编辑窗口" onClick={onClose}>×</button>
+          <button type="button" title={t('hostDialog.close')} onClick={onClose}>
+            {t('app.close')}
+          </button>
         </div>
 
         {hostDialogError ? <p className="error-text modal-error">{hostDialogError}</p> : null}
 
         <label>
-          <span>名称</span>
+          <span>{t('hostDialog.fields.name')}</span>
           <input
             value={hostForm.name}
             onChange={(event) => onHostFormChange((current) => ({ ...current, name: event.target.value }))}
-            placeholder="服务器名称"
+            placeholder={t(isWSL ? 'hostDialog.placeholders.wslName' : 'hostDialog.placeholders.sshName')}
           />
         </label>
+
         <div className="form-row">
           <label>
-            <span>分组</span>
+            <span>{t('hostDialog.fields.group')}</span>
             <input
               list="host-group-options"
               value={hostForm.group ?? ''}
               onChange={(event) => onHostFormChange((current) => ({ ...current, group: event.target.value }))}
-              placeholder="默认"
+              placeholder={t('hostDialog.placeholders.group')}
             />
             <datalist id="host-group-options">
               {hostGroups.map((group) => (
@@ -90,82 +115,124 @@ export function HostDialog({
             </datalist>
           </label>
           <label>
-            <span>认证</span>
-            <select value={hostForm.authType} onChange={handleAuthTypeChange}>
-              <option value="password">密码</option>
-              <option value="privateKey">SSH Key</option>
-              <option value="agent">Agent</option>
+            <span>{t('hostDialog.fields.protocol')}</span>
+            <select value={protocol} onChange={handleProtocolChange}>
+              <option value="ssh">{t('hostDialog.protocols.ssh')}</option>
+              <option value="wsl">{t('hostDialog.protocols.wsl')}</option>
             </select>
           </label>
         </div>
+
+        {isWSL ? (
+          <>
+            <label>
+              <span>{t('hostDialog.fields.wslDistro')}</span>
+              <input
+                value={hostForm.wslDistro ?? ''}
+                onChange={(event) =>
+                  onHostFormChange((current) => ({ ...current, wslDistro: event.target.value, address: 'wsl.local' }))
+                }
+                placeholder={t('hostDialog.placeholders.wslDistro')}
+              />
+            </label>
+            <label>
+              <span>{t('hostDialog.fields.username')}</span>
+              <input
+                value={hostForm.username}
+                onChange={(event) => onHostFormChange((current) => ({ ...current, username: event.target.value }))}
+                placeholder={t('hostDialog.placeholders.wslUser')}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <div className="form-row">
+              <label>
+                <span>{t('hostDialog.fields.authType')}</span>
+                <select value={hostForm.authType} onChange={handleAuthTypeChange}>
+                  <option value="password">{t('hostDialog.authTypes.password')}</option>
+                  <option value="privateKey">{t('hostDialog.authTypes.privateKey')}</option>
+                  <option value="agent">{t('hostDialog.authTypes.agent')}</option>
+                </select>
+              </label>
+              <label>
+                <span>{t('hostDialog.fields.port')}</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value={hostForm.port}
+                  onChange={(event) =>
+                    onHostFormChange((current) => ({ ...current, port: Number(event.target.value) || 22 }))
+                  }
+                />
+              </label>
+            </div>
+            <label>
+              <span>{t('hostDialog.fields.address')}</span>
+              <input
+                value={hostForm.address}
+                onChange={(event) => onHostFormChange((current) => ({ ...current, address: event.target.value }))}
+                placeholder="192.168.1.10"
+              />
+            </label>
+            <label>
+              <span>{t('hostDialog.fields.username')}</span>
+              <input
+                value={hostForm.username}
+                onChange={(event) => onHostFormChange((current) => ({ ...current, username: event.target.value }))}
+                placeholder="root"
+              />
+            </label>
+          </>
+        )}
+
         <label>
-          <span>地址</span>
+          <span>{t('hostDialog.fields.description')}</span>
           <input
-            value={hostForm.address}
-            onChange={(event) => onHostFormChange((current) => ({ ...current, address: event.target.value }))}
-            placeholder="192.168.1.10"
+            value={hostForm.description ?? ''}
+            onChange={(event) => onHostFormChange((current) => ({ ...current, description: event.target.value }))}
+            placeholder={t(isWSL ? 'hostDialog.placeholders.wslDescription' : 'hostDialog.placeholders.description')}
           />
         </label>
-        <div className="form-row">
-          <label>
-            <span>端口</span>
-            <input
-              type="number"
-              min="1"
-              max="65535"
-              value={hostForm.port}
-              onChange={(event) =>
-                onHostFormChange((current) => ({ ...current, port: Number(event.target.value) || 22 }))
-              }
-            />
-          </label>
-          <label>
-            <span>用户</span>
-            <input
-              value={hostForm.username}
-              onChange={(event) => onHostFormChange((current) => ({ ...current, username: event.target.value }))}
-              placeholder="root"
-            />
-          </label>
-        </div>
 
-        {hostForm.authType === 'password' ? (
+        {!isWSL && hostForm.authType === 'password' ? (
           <div className="secret-area">
             <label className="checkbox-row">
               <input checked={savePassword} onChange={(event) => onSavePasswordChange(event.target.checked)} type="checkbox" />
-              <span>{hostDialogMode === 'edit' && savePassword ? '保留或更新密码' : '保存密码'}</span>
+              <span>{t(hostDialogMode === 'edit' && savePassword ? 'hostDialog.password.keepOrUpdate' : 'hostDialog.password.save')}</span>
             </label>
             <label>
-              <span>密码</span>
+              <span>{t('hostDialog.fields.password')}</span>
               <input
                 disabled={!savePassword}
                 type="password"
                 value={hostForm.password ?? ''}
                 onChange={(event) => onHostFormChange((current) => ({ ...current, password: event.target.value }))}
-                placeholder="保存后连接时自动使用"
+                placeholder={t('hostDialog.placeholders.secret')}
               />
             </label>
           </div>
         ) : null}
 
-        {hostForm.authType === 'privateKey' ? (
+        {!isWSL && hostForm.authType === 'privateKey' ? (
           <div className="secret-area">
             <label className="checkbox-row">
               <input checked={savePrivateKey} onChange={(event) => onSavePrivateKeyChange(event.target.checked)} type="checkbox" />
-              <span>{hostDialogMode === 'edit' && savePrivateKey ? '保留或更新 SSH Key' : '保存 SSH Key'}</span>
+              <span>{t(hostDialogMode === 'edit' && savePrivateKey ? 'hostDialog.privateKey.keepOrUpdate' : 'hostDialog.privateKey.save')}</span>
             </label>
             <label>
-              <span>SSH Key</span>
+              <span>{t('hostDialog.fields.privateKey')}</span>
               <div className="file-picker-row">
                 <button
                   disabled={!savePrivateKey}
-                  title="选择本地 SSH 私钥文件"
+                  title={t('hostDialog.privateKey.selectFile')}
                   type="button"
                   onClick={() => privateKeyFileRef.current?.click()}
                 >
-                  选择文件
+                  {t('hostDialog.privateKey.selectFileButton')}
                 </button>
-                <small>{hostForm.privateKey ? '已读取私钥内容' : '支持选择本地私钥文件'}</small>
+                <small>{t(hostForm.privateKey ? 'hostDialog.privateKey.loaded' : 'hostDialog.privateKey.supportsLocal')}</small>
               </div>
               <input
                 accept=".pem,.key,.pub,.txt"
@@ -181,16 +248,18 @@ export function HostDialog({
                 disabled={!savePrivateKey}
                 value={hostForm.privateKey ?? ''}
                 onChange={(event) => onHostFormChange((current) => ({ ...current, privateKey: event.target.value }))}
-                placeholder="保存后连接时自动使用"
+                placeholder={t('hostDialog.placeholders.secret')}
               />
             </label>
           </div>
         ) : null}
 
         <div className="modal-actions">
-          <button disabled={isSavingHost} title="取消保存服务器" type="button" onClick={onClose}>取消</button>
-          <button className="primary-button" disabled={isSavingHost} title="保存服务器配置" type="submit">
-            {isSavingHost ? '保存中' : hostDialogMode === 'edit' ? '保存修改' : '保存'}
+          <button disabled={isSavingHost} title={t('hostDialog.cancel')} type="button" onClick={onClose}>
+            {t('app.cancel')}
+          </button>
+          <button className="primary-button" disabled={isSavingHost} title={t('hostDialog.submit')} type="submit">
+            {isSavingHost ? t('hostDialog.saving') : t(hostDialogMode === 'edit' ? 'hostDialog.saveEdit' : 'hostDialog.saveCreate')}
           </button>
         </div>
       </form>

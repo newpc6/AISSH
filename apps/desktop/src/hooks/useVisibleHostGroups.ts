@@ -18,6 +18,8 @@ export function useVisibleHostGroups(hostGroups: HostGroup[], hosts: HostRecord[
         host.name,
         host.address,
         host.username,
+        host.protocol ?? 'ssh',
+        host.wslDistro ?? '',
         resolveGroupName(host),
         String(host.port),
       ]

@@ -1,4 +1,4 @@
-﻿{
+{
   "app": {
     "title": "AI SSH",
     "loading": "加载中...",
@@ -610,7 +610,8 @@
     "network": "网络",
     "networkRate": "入 {{rx}} / 出 {{tx}}",
     "networkTotal": "累计入 {{rx}} / 出 {{tx}}",
-    "waitingSample": "等待采样中"
+    "waitingSample": "等待采样中",
+    "protocol": "协议"
   },
   "commandPanels": {
     "historyEmpty": "还没有历史命令",
@@ -701,6 +702,68 @@
     "settingsSaved": "设置已保存",
     "modelsSaved": "AI 模型已保存",
     "skillsSaved": "AI 技能已保存"
+  },
+  "hostDialog": {
+    "createTitle": "新增连接",
+    "editTitle": "编辑连接",
+    "close": "关闭连接编辑窗口",
+    "cancel": "取消主机编辑",
+    "submit": "保存主机配置",
+    "saving": "保存中...",
+    "saveCreate": "保存",
+    "saveEdit": "保存修改",
+    "copySuffix": "副本",
+    "fields": {
+      "name": "名称",
+      "group": "分组",
+      "protocol": "协议",
+      "wslDistro": "WSL 发行版",
+      "username": "用户",
+      "authType": "认证方式",
+      "port": "端口",
+      "address": "地址",
+      "description": "备注",
+      "password": "密码",
+      "privateKey": "SSH Key"
+    },
+    "protocols": {
+      "ssh": "SSH",
+      "wsl": "WSL"
+    },
+    "authTypes": {
+      "password": "密码",
+      "privateKey": "SSH Key",
+      "agent": "Agent"
+    },
+    "placeholders": {
+      "sshName": "服务器名称",
+      "wslName": "例如：Ubuntu 开发环境",
+      "group": "默认",
+      "wslDistro": "例如：Ubuntu-24.04",
+      "wslUser": "留空则使用发行版默认用户",
+      "description": "可选说明",
+      "wslDescription": "例如：本机 Ubuntu 发行版",
+      "secret": "保存后连接时自动使用"
+    },
+    "password": {
+      "save": "保存密码",
+      "keepOrUpdate": "保留或更新密码"
+    },
+    "privateKey": {
+      "save": "保存 SSH Key",
+      "keepOrUpdate": "保留或更新 SSH Key",
+      "selectFile": "选择本地 SSH 私钥文件",
+      "selectFileButton": "选择文件",
+      "loaded": "已读取私钥内容",
+      "supportsLocal": "支持选择本地私钥文件"
+    },
+    "errors": {
+      "requiredFieldsSsh": "请填写主机名称、地址和用户名",
+      "requiredFieldsWsl": "请填写连接名称和 WSL 发行版",
+      "passwordRequired": "密码认证需要勾选并填写保存密码",
+      "privateKeyRequired": "SSH Key 认证需要勾选保存，并粘贴或选择私钥文件",
+      "createFailed": "保存主机失败",
+      "updateFailed": "编辑主机失败"
+    }
   }
 }
-

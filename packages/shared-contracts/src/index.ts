@@ -3,6 +3,7 @@ export const CORE_DEFAULT_PORT = 18555
 
 export type HealthStatus = 'ok'
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error' | 'closed'
+export type HostProtocol = 'ssh' | 'wsl'
 export type HostAuthType = 'password' | 'privateKey' | 'agent'
 
 export interface HealthResponse {
@@ -151,6 +152,7 @@ export interface AppSettings {
 export interface HostRecord {
   id: string
   name: string
+  protocol?: HostProtocol
   address: string
   port: number
   username: string
@@ -159,10 +161,12 @@ export interface HostRecord {
   description?: string
   hasPassword?: boolean
   hasPrivateKey?: boolean
+  wslDistro?: string
 }
 
 export interface HostUpsertRequest {
   name: string
+  protocol?: HostProtocol
   address: string
   port: number
   username: string
@@ -171,6 +175,7 @@ export interface HostUpsertRequest {
   description?: string
   password?: string
   privateKey?: string
+  wslDistro?: string
 }
 
 export interface HostGroup {
@@ -276,12 +281,14 @@ export interface SessionOpenResponse {
 
 export interface TransientHostConfig {
   name?: string
+  protocol?: HostProtocol
   address: string
   port: number
   username: string
   password?: string
   privateKey?: string
   authType: HostAuthType
+  wslDistro?: string
 }
 
 export interface SessionInputRequest {

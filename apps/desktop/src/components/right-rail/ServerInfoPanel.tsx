@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { HostRecord, ServerMetrics, SessionRecord, SystemInfo } from '@ai-ssh/shared-contracts'
 import type { MetricChartKey, MetricSample } from '../../types'
+import { hostAddressLabel, hostProtocolLabel } from '../../host-display'
 import { formatBytes, formatRate } from '../../utils'
 import { MetricChart } from './MetricChart'
 
@@ -40,7 +41,7 @@ export function ServerInfoPanel({
   const { t } = useTranslation()
   const isConnected = Boolean(activeSession)
   const displayHostName = activeSession?.hostName ?? activeHost?.name ?? t('serverInfo.disconnected')
-  const displayAddress = activeHost ? `${activeHost.address}:${activeHost.port}` : '-'
+  const displayAddress = hostAddressLabel(activeHost)
   const displayUsername = activeHost?.username ?? '-'
   const sectionLabel = isConnected ? t('serverInfo.currentSession') : t('serverInfo.selectedServer')
 
@@ -73,6 +74,10 @@ export function ServerInfoPanel({
             <div>
               <dt>{t('serverInfo.user')}</dt>
               <dd>{displayUsername}</dd>
+            </div>
+            <div>
+              <dt>协议</dt>
+              <dd>{hostProtocolLabel(activeHost) || '-'}</dd>
             </div>
           </dl>
           {activeSession && systemInfo ? (
