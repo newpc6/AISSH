@@ -5828,6 +5828,14 @@ export function App() {
               onSetIsFileDropActive={setIsFileDropActive}
               onSetTrackTerminalPath={setTrackTerminalPath}
               onSetupRemoteFileDrag={setupRemoteFileDrag}
+              onRejectDroppedFolder={() => {
+                const message = t('fileBrowser.dropFolderUseButton')
+                setFileError(message)
+                setErrorMessage(message, {
+                  title: t('fileBrowser.uploadFolder'),
+                  source: t('fileBrowser.title'),
+                })
+              }}
               onUploadInputChange={(files) => {
                 if (files) {
                   return uploadFiles(files)

@@ -39,6 +39,7 @@ type FileBrowserPanelProps = {
   onSetIsFileDropActive: (value: boolean) => void
   onSetTrackTerminalPath: (value: boolean) => void
   onSetupRemoteFileDrag: (entry: FileEntry, event: DragEvent<HTMLButtonElement>) => void
+  onRejectDroppedFolder: () => void
   onUploadInputChange: (files: FileList | null) => void | Promise<void>
   onUploadFolderInputChange: (files: FileList | null) => void | Promise<void>
 }
@@ -78,6 +79,7 @@ export function FileBrowserPanel({
   onSetIsFileDropActive,
   onSetTrackTerminalPath,
   onSetupRemoteFileDrag,
+  onRejectDroppedFolder,
   onUploadInputChange,
   onUploadFolderInputChange,
 }: FileBrowserPanelProps) {
@@ -174,6 +176,15 @@ export function FileBrowserPanel({
         onDrop={(event) => {
           event.preventDefault()
           onSetIsFileDropActive(false)
+          const items = Array.from(event.dataTransfer.items || [])
+          const hasDirectory = items.some((item) => {
+            const entry = item.kind === 'file' ? item.webkitGetAsEntry?.() : null
+            return entry?.isDirectory
+          })
+          if (hasDirectory) {
+            onRejectDroppedFolder()
+            return
+          }
           if (event.dataTransfer.files.length > 0) {
             void onUploadInputChange(event.dataTransfer.files)
           }

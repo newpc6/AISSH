@@ -399,6 +399,7 @@
     "directoryLabel": "Remote file directory",
     "dropUpload": "Release to upload",
     "dropTarget": "Upload to {{path}}",
+    "dropFolderUseButton": "Drag and drop supports files only. Use Upload Folder for directories.",
     "loadingFiles": "Loading remote files",
     "refreshCurrent": "Refresh current directory",
     "sortBy": "Sort by {{label}} {{direction}}",
