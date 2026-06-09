@@ -10,6 +10,14 @@ struct LocalUploadFile {
     data: Vec<u8>,
 }
 
+#[derive(serde::Serialize)]
+struct LocalUploadFileEntry {
+    path: String,
+    name: String,
+    relative_path: Option<String>,
+    size: u64,
+}
+
 #[derive(serde::Deserialize)]
 struct LocalDownloadFile {
     name: String,
@@ -25,7 +33,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             desktop_login_token,
+            list_local_upload_files,
             read_local_upload_files,
+            read_local_upload_file,
             write_local_download_files,
             active_explorer_directory
         ])
@@ -84,6 +94,33 @@ fn read_local_upload_files(paths: Vec<String>) -> Result<Vec<LocalUploadFile>, S
     Ok(files)
 }
 
+#[tauri::command]
+fn list_local_upload_files(paths: Vec<String>) -> Result<Vec<LocalUploadFileEntry>, String> {
+    let mut files = Vec::new();
+    for path in paths {
+        let file_path = std::path::PathBuf::from(&path);
+        if file_path.is_file() {
+            files.push(read_single_upload_file_entry(&file_path, None)?);
+            continue;
+        }
+        if file_path.is_dir() {
+            collect_upload_directory_entries(&file_path, &file_path, &mut files)?;
+            continue;
+        }
+        return Err(format!("{path} is not a file or directory that can be uploaded"));
+    }
+    Ok(files)
+}
+
+#[tauri::command]
+fn read_local_upload_file(path: String) -> Result<LocalUploadFile, String> {
+    let file_path = std::path::PathBuf::from(&path);
+    if !file_path.is_file() {
+        return Err(format!("{path} is not a file that can be uploaded"));
+    }
+    read_single_upload_file(&file_path, None)
+}
+
 fn collect_upload_directory(
     root: &std::path::Path,
     current: &std::path::Path,
@@ -107,6 +144,29 @@ fn collect_upload_directory(
     Ok(())
 }
 
+fn collect_upload_directory_entries(
+    root: &std::path::Path,
+    current: &std::path::Path,
+    files: &mut Vec<LocalUploadFileEntry>,
+) -> Result<(), String> {
+    for entry in std::fs::read_dir(current).map_err(|error| format!("{}: {error}", current.display()))? {
+        let entry = entry.map_err(|error| format!("{}: {error}", current.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_upload_directory_entries(root, &path, files)?;
+            continue;
+        }
+        if path.is_file() {
+            let relative_path = path
+                .strip_prefix(root)
+                .ok()
+                .map(|value| value.to_string_lossy().replace('\\', "/"));
+            files.push(read_single_upload_file_entry(&path, relative_path)?);
+        }
+    }
+    Ok(())
+}
+
 fn read_single_upload_file(
     file_path: &std::path::Path,
     relative_path: Option<String>,
@@ -122,6 +182,24 @@ fn read_single_upload_file(
         name,
         relative_path,
         data,
+    })
+}
+
+fn read_single_upload_file_entry(
+    file_path: &std::path::Path,
+    relative_path: Option<String>,
+) -> Result<LocalUploadFileEntry, String> {
+    let name = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("upload-file")
+        .to_string();
+    let metadata = std::fs::metadata(file_path).map_err(|error| format!("{}: {error}", file_path.display()))?;
+    Ok(LocalUploadFileEntry {
+        path: file_path.to_string_lossy().to_string(),
+        name,
+        relative_path,
+        size: metadata.len(),
     })
 }
 

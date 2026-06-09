@@ -121,6 +121,13 @@ export type LocalUploadFile = {
   data: number[] | ArrayBuffer | Uint8Array
 }
 
+export type LocalUploadFileEntry = {
+  path: string
+  name: string
+  relativePath?: string
+  size: number
+}
+
 export type LocalDownloadFile = {
   name: string
   data: number[]

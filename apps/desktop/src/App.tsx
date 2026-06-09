@@ -106,6 +106,7 @@ import {
   type LeftMode,
   type LoadState,
   type LocalDownloadFile,
+  type LocalUploadFileEntry,
   type LocalUploadFile,
   type MetricChartKey,
   type MetricSample,
@@ -3593,6 +3594,17 @@ export function App() {
     }
   }
 
+  const buildUploadTargetPath = (rootLabel: string, uploadName: string, relativePath: string) => {
+    const normalizedRelativePath = relativePath.replace(/^\/+|\/+$/g, '')
+    if (normalizedRelativePath) {
+      if (rootLabel && normalizedRelativePath !== rootLabel && !normalizedRelativePath.startsWith(`${rootLabel}/`)) {
+        return `${rootLabel}/${normalizedRelativePath}`
+      }
+      return normalizedRelativePath
+    }
+    return rootLabel ? `${rootLabel}/${uploadName}` : uploadName
+  }
+
   const uploadFiles = async (files: FileList | File[], options?: { names?: string[]; relativePaths?: string[]; rootLabel?: string }) => {
     const hostId = activeSession?.hostId ?? selectedHostId
     const selectedFiles = Array.from(files)
@@ -3635,22 +3647,11 @@ export function App() {
     let lastTaskUpdate = 0
     const updateIntervalMs = 500
 
-    const buildUploadTargetPath = (uploadName: string, relativePath: string) => {
-      const normalizedRelativePath = relativePath.replace(/^\/+|\/+$/g, '')
-      if (normalizedRelativePath) {
-        if (rootLabel && normalizedRelativePath !== rootLabel && !normalizedRelativePath.startsWith(`${rootLabel}/`)) {
-          return `${rootLabel}/${normalizedRelativePath}`
-        }
-        return normalizedRelativePath
-      }
-      return rootLabel ? `${rootLabel}/${uploadName}` : uploadName
-    }
-
     try {
       for (const [index, file] of selectedFiles.entries()) {
         const relativePath = (relativePaths[index] || '').replace(/\\/g, '/')
         const uploadName = names[index] || file.name
-        const currentPath = buildUploadTargetPath(uploadName, relativePath)
+        const currentPath = buildUploadTargetPath(rootLabel, uploadName, relativePath)
         const remoteTargetPath = joinRemotePath(filePath, currentPath)
         const remoteDir = parentPath(remoteTargetPath)
         const remoteName = remoteFileName(remoteTargetPath)
@@ -3709,6 +3710,116 @@ export function App() {
     }
   }
 
+  const uploadLocalFileEntries = async (entries: LocalUploadFileEntry[], options?: { rootLabel?: string }) => {
+    const hostId = activeSession?.hostId ?? selectedHostId
+    if (!hostId || entries.length === 0) {
+      return
+    }
+
+    const rootLabel = options?.rootLabel?.trim() || ''
+    const totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0)
+    const taskID = `${Date.now()}-upload`
+    const isFolderUpload = entries.some((entry) => (entry.relativePath || '').includes('/')) || Boolean(rootLabel)
+    const taskName = rootLabel || (entries.length === 1 ? (entries[0]?.name || localFileName(entries[0]?.path || '')) : `${entries.length} files`)
+
+    const updateTransferTask = (patch: Partial<TransferTask>) => {
+      setTransferTasks((current) => current.map((task) => (task.id === taskID ? { ...task, ...patch } : task)))
+    }
+
+    setTransferTasks((current) => [
+      {
+        id: taskID,
+        name: taskName,
+        direction: 'upload',
+        progress: 0,
+        status: 'running',
+        mode: isFolderUpload ? 'folder' : 'file',
+        transferredBytes: 0,
+        totalBytes,
+        totalFiles: entries.length,
+        currentFileIndex: entries.length > 0 ? 1 : 0,
+        currentFileName: entries[0]?.relativePath || entries[0]?.name || '',
+        currentFileTransferredBytes: 0,
+        currentFileTotalBytes: entries[0]?.size ?? 0,
+      },
+      ...current,
+    ])
+
+    let transferredBytes = 0
+    let lastTaskUpdate = 0
+    const updateIntervalMs = 500
+
+    try {
+      for (const [index, entry] of entries.entries()) {
+        const localFile = await invoke<LocalUploadFile>('read_local_upload_file', { path: entry.path })
+        const bytes =
+          localFile.data instanceof Uint8Array
+            ? localFile.data
+            : localFile.data instanceof ArrayBuffer
+              ? new Uint8Array(localFile.data)
+              : Uint8Array.from(localFile.data)
+        const file = new File([bytes as BlobPart], entry.name || localFileName(entry.path))
+        const relativePath = (entry.relativePath || '').replace(/\\/g, '/')
+        const uploadName = entry.name || file.name
+        const currentPath = buildUploadTargetPath(rootLabel, uploadName, relativePath)
+        const remoteTargetPath = joinRemotePath(filePath, currentPath)
+        const remoteDir = parentPath(remoteTargetPath)
+        const remoteName = remoteFileName(remoteTargetPath)
+        const body = new FormData()
+        body.append('files', new File([file], remoteName, { type: file.type || 'application/octet-stream' }))
+
+        updateTransferTask({
+          currentFileIndex: index + 1,
+          totalFiles: entries.length,
+          currentFileName: currentPath,
+          currentFileTransferredBytes: 0,
+          currentFileTotalBytes: entry.size,
+        })
+
+        let lastLoaded = 0
+        await uploadFormDataWithProgress(hostId, remoteDir, body, (loaded, total) => {
+          const safeLoaded = total === Number.MAX_SAFE_INTEGER ? entry.size : Math.min(entry.size, loaded)
+          const aggregateTransferred = transferredBytes + safeLoaded
+          const now = Date.now()
+          if (now - lastTaskUpdate < updateIntervalMs && safeLoaded < entry.size) {
+            return
+          }
+          lastTaskUpdate = now
+          lastLoaded = safeLoaded
+          updateTransferTask({
+            progress: totalBytes > 0 ? Math.round((aggregateTransferred / totalBytes) * 100) : 100,
+            transferredBytes: aggregateTransferred,
+            currentFileTransferredBytes: safeLoaded,
+            currentFileTotalBytes: entry.size,
+          })
+        })
+
+        transferredBytes += entry.size
+        if (lastLoaded < entry.size) {
+          updateTransferTask({
+            progress: totalBytes > 0 ? Math.round((transferredBytes / totalBytes) * 100) : 100,
+            transferredBytes,
+            currentFileTransferredBytes: entry.size,
+            currentFileTotalBytes: entry.size,
+          })
+        }
+      }
+
+      updateTransferTask({
+        progress: 100,
+        transferredBytes: totalBytes,
+        currentFileTransferredBytes: entries[entries.length - 1]?.size ?? 0,
+        currentFileTotalBytes: entries[entries.length - 1]?.size ?? 0,
+        status: 'done',
+      })
+      await loadFiles(filePath, hostId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed'
+      setErrorMessage(message)
+      updateTransferTask({ status: 'error' })
+    }
+  }
+
   const uploadLocalPaths = async (paths: string[], options?: { rootLabel?: string }) => {
     const localPaths = paths.filter(Boolean)
     if (localPaths.length === 0) {
@@ -3716,6 +3827,12 @@ export function App() {
     }
 
     try {
+      if (isTauriRuntime) {
+        const localEntries = await invoke<LocalUploadFileEntry[]>('list_local_upload_files', { paths: localPaths })
+        await uploadLocalFileEntries(localEntries, options)
+        return
+      }
+
       const localFiles = await invoke<LocalUploadFile[]>('read_local_upload_files', { paths: localPaths })
       const files = localFiles.map((file) => {
         const bytes =
