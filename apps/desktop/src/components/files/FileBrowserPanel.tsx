@@ -292,7 +292,7 @@ export function FileBrowserPanel({
                   title={t(task.direction === 'upload' && task.status === 'running' ? 'fileBrowser.cancelTransfer' : 'fileBrowser.removeTransfer', { name: task.name })}
                   onClick={() => onConfirmRemoveTransferTask(task)}
                 >
-                  ?
+                  x
                 </button>
                 <span>{t(`fileBrowser.transferDirection.${task.direction}`)} / {task.name}</span>
                 <progress max="100" value={task.progress} />

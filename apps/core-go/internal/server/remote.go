@@ -236,6 +236,10 @@ func uploadRemoteFile(host hostRecord, remoteDir string, r *http.Request) error 
 		remoteDir = "."
 	}
 
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "application/octet-stream") {
+		return uploadRemoteFileChunk(host, remoteDir, r)
+	}
+
 	if err := r.ParseMultipartForm(256 << 20); err != nil {
 		return err
 	}
@@ -278,9 +282,38 @@ func uploadRemoteFile(host hostRecord, remoteDir string, r *http.Request) error 
 	})
 }
 
+func uploadRemoteFileChunk(host hostRecord, remoteDir string, r *http.Request) error {
+	filename := normalizeUploadRelativePath(r.URL.Query().Get("filename"))
+	appendMode := r.URL.Query().Get("append") == "1"
+	return withSFTPClient(host, func(client *sftp.Client) error {
+		targetPath := pathpkg.Join(pathpkg.Clean(remoteDir), filename)
+		if err := mkdirRemoteAll(client, pathpkg.Dir(targetPath)); err != nil {
+			return err
+		}
+		var (
+			target *sftp.File
+			err error
+		)
+		if appendMode {
+			target, err = client.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND)
+		} else {
+			target, err = client.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+		}
+		if err != nil {
+			return err
+		}
+		defer target.Close()
+		_, err = io.Copy(target, r.Body)
+		return err
+	})
+}
+
 func uploadWSLFile(host hostRecord, remoteDir string, r *http.Request) error {
 	if remoteDir == "" {
 		remoteDir = "."
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "application/octet-stream") {
+		return uploadWSLFileChunk(host, remoteDir, r)
 	}
 	if err := r.ParseMultipartForm(256 << 20); err != nil {
 		return err
@@ -304,6 +337,20 @@ func uploadWSLFile(host hostRecord, remoteDir string, r *http.Request) error {
 		if _, err := runWSLPython(host, buildWSLWriteBase64Python(targetPath, base64.StdEncoding.EncodeToString(data))); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func uploadWSLFileChunk(host hostRecord, remoteDir string, r *http.Request) error {
+	targetDir := resolveHostRemotePath(host, remoteDir)
+	targetPath := pathpkg.Join(targetDir, normalizeUploadRelativePath(r.URL.Query().Get("filename")))
+	appendMode := r.URL.Query().Get("append") == "1"
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	if _, err := runWSLPython(host, buildWSLWriteBase64PythonWithMode(targetPath, base64.StdEncoding.EncodeToString(data), appendMode)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -608,6 +655,18 @@ func buildWSLWriteBase64Python(targetPath string, encoded string) string {
 p = pathlib.Path(os.path.expanduser(%q)).resolve()
 p.parent.mkdir(parents=True, exist_ok=True)
 p.write_bytes(base64.b64decode(%q))`, targetPath, encoded)
+}
+
+func buildWSLWriteBase64PythonWithMode(targetPath string, encoded string, appendMode bool) string {
+	mode := "wb"
+	if appendMode {
+		mode = "ab"
+	}
+	return fmt.Sprintf(`import base64, os, pathlib
+p = pathlib.Path(os.path.expanduser(%q)).resolve()
+p.parent.mkdir(parents=True, exist_ok=True)
+with p.open(%q) as f:
+    f.write(base64.b64decode(%q))`, targetPath, mode, encoded)
 }
 
 func extractSection(output, startMarker, endMarker string) string {

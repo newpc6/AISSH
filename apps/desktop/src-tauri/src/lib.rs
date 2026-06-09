@@ -1,4 +1,5 @@
 use tauri::Manager;
+use std::io::{Read, Seek, SeekFrom};
 
 struct CoreProcess(std::sync::Mutex<Option<std::process::Child>>);
 
@@ -36,6 +37,7 @@ pub fn run() {
             list_local_upload_files,
             read_local_upload_files,
             read_local_upload_file,
+            read_local_upload_file_chunk,
             write_local_download_files,
             active_explorer_directory
         ])
@@ -119,6 +121,23 @@ fn read_local_upload_file(path: String) -> Result<LocalUploadFile, String> {
         return Err(format!("{path} is not a file that can be uploaded"));
     }
     read_single_upload_file(&file_path, None)
+}
+
+#[tauri::command]
+fn read_local_upload_file_chunk(path: String, offset: u64, size: usize) -> Result<Vec<u8>, String> {
+    let file_path = std::path::PathBuf::from(&path);
+    if !file_path.is_file() {
+        return Err(format!("{path} is not a file that can be uploaded"));
+    }
+    let mut file = std::fs::File::open(&file_path).map_err(|error| format!("{}: {error}", file_path.display()))?;
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|error| format!("{}: {error}", file_path.display()))?;
+    let mut buffer = vec![0_u8; size];
+    let read = file
+        .read(&mut buffer)
+        .map_err(|error| format!("{}: {error}", file_path.display()))?;
+    buffer.truncate(read);
+    Ok(buffer)
 }
 
 fn collect_upload_directory(

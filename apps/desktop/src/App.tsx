@@ -3767,25 +3767,16 @@ export function App() {
     let transferredBytes = 0
     let lastTaskUpdate = 0
     const updateIntervalMs = 200
+    const chunkSize = 4 * 1024 * 1024
 
     try {
       for (const [index, entry] of entries.entries()) {
-        const localFile = await invoke<LocalUploadFile>('read_local_upload_file', { path: entry.path })
-        const bytes =
-          localFile.data instanceof Uint8Array
-            ? localFile.data
-            : localFile.data instanceof ArrayBuffer
-              ? new Uint8Array(localFile.data)
-              : Uint8Array.from(localFile.data)
-        const file = new File([bytes as BlobPart], entry.name || localFileName(entry.path))
         const relativePath = (entry.relativePath || '').replace(/\\/g, '/')
-        const uploadName = entry.name || file.name
+        const uploadName = entry.name || localFileName(entry.path)
         const currentPath = buildUploadTargetPath(rootLabel, uploadName, relativePath)
         const remoteTargetPath = joinRemotePath(filePath, currentPath)
         const remoteDir = parentPath(remoteTargetPath)
         const remoteName = remoteFileName(remoteTargetPath)
-        const body = new FormData()
-        body.append('files', new File([file], remoteName, { type: file.type || 'application/octet-stream' }))
 
         updateTransferTask({
           currentFileIndex: index + 1,
@@ -3795,35 +3786,47 @@ export function App() {
           currentFileTotalBytes: entry.size,
         })
 
-        let lastLoaded = 0
-        await uploadFormDataWithProgress(taskID, hostId, remoteDir, body, (loaded, total) => {
-          const safeLoaded = total === Number.MAX_SAFE_INTEGER ? entry.size : Math.min(entry.size, loaded)
-          const aggregateTransferred = transferredBytes + safeLoaded
-          const now = Date.now()
-          if (now - lastTaskUpdate < updateIntervalMs && safeLoaded < entry.size) {
-            return
-          }
-          lastTaskUpdate = now
-          lastLoaded = safeLoaded
-          updateTransferTask({
-            progress: totalBytes > 0 ? Math.max(0, Math.min(100, (aggregateTransferred / totalBytes) * 100)) : 100,
-            currentFileProgress: entry.size > 0 ? Math.max(0, Math.min(100, (safeLoaded / entry.size) * 100)) : 100,
-            transferredBytes: aggregateTransferred,
-            currentFileTransferredBytes: safeLoaded,
-            currentFileTotalBytes: entry.size,
+        let fileTransferred = 0
+        let append = false
+        while (fileTransferred < entry.size) {
+          const nextChunkSize = Math.min(chunkSize, entry.size - fileTransferred)
+          const chunkBytes = await invoke<number[]>('read_local_upload_file_chunk', {
+            path: entry.path,
+            offset: fileTransferred,
+            size: nextChunkSize,
           })
-        })
+          const chunk = new Blob([Uint8Array.from(chunkBytes)])
 
-        transferredBytes += entry.size
-        if (lastLoaded < entry.size) {
+          await uploadChunkWithProgress(taskID, hostId, remoteDir, remoteName, chunk, append, (loaded, total) => {
+            const chunkLoaded = Math.min(chunk.size, total > 0 ? loaded : chunk.size)
+            const safeLoaded = fileTransferred + chunkLoaded
+            const aggregateTransferred = transferredBytes + safeLoaded
+            const now = Date.now()
+            if (now - lastTaskUpdate < updateIntervalMs && chunkLoaded < chunk.size) {
+              return
+            }
+            lastTaskUpdate = now
+            updateTransferTask({
+              progress: totalBytes > 0 ? Math.max(0, Math.min(100, (aggregateTransferred / totalBytes) * 100)) : 100,
+              currentFileProgress: entry.size > 0 ? Math.max(0, Math.min(100, (safeLoaded / entry.size) * 100)) : 100,
+              transferredBytes: aggregateTransferred,
+              currentFileTransferredBytes: safeLoaded,
+              currentFileTotalBytes: entry.size,
+            })
+          })
+
+          fileTransferred += chunk.size
+          append = true
           updateTransferTask({
-            progress: totalBytes > 0 ? Math.max(0, Math.min(100, (transferredBytes / totalBytes) * 100)) : 100,
-            currentFileProgress: 100,
-            transferredBytes,
-            currentFileTransferredBytes: entry.size,
+            progress: totalBytes > 0 ? Math.max(0, Math.min(100, ((transferredBytes + fileTransferred) / totalBytes) * 100)) : 100,
+            currentFileProgress: entry.size > 0 ? Math.max(0, Math.min(100, (fileTransferred / entry.size) * 100)) : 100,
+            transferredBytes: transferredBytes + fileTransferred,
+            currentFileTransferredBytes: fileTransferred,
             currentFileTotalBytes: entry.size,
           })
         }
+
+        transferredBytes += entry.size
       }
 
       updateTransferTask({
@@ -3976,6 +3979,49 @@ export function App() {
       }
       xhr.onerror = () => reject(new Error('Upload request failed'))
       xhr.send(body)
+    })
+  }
+
+  const uploadChunkWithProgress = async (
+    taskID: string,
+    hostId: string,
+    remoteDir: string,
+    remoteName: string,
+    chunk: Blob,
+    append: boolean,
+    onProgress: (loaded: number, total: number) => void,
+  ) => {
+    const requestPath = `/files/${hostId}?path=${encodeURIComponent(remoteDir)}&append=${append ? '1' : '0'}&filename=${encodeURIComponent(remoteName)}`
+    const requestUrl = resolveApiUrl(requestPath)
+    const token = isTauriRuntime ? desktopTokenRef.current : ''
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      uploadRequestRef.current[taskID] = xhr
+      xhr.open('POST', requestUrl)
+      xhr.withCredentials = true
+      if (token) {
+        xhr.setRequestHeader('X-AI-SSH-Desktop-Token', token)
+      }
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+      xhr.upload.onprogress = (event) => {
+        const total = event.lengthComputable && event.total > 0 ? event.total : Math.max(event.loaded, chunk.size || 1)
+        onProgress(event.loaded, total)
+      }
+      xhr.onload = () => {
+        delete uploadRequestRef.current[taskID]
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress(chunk.size, chunk.size)
+          resolve()
+          return
+        }
+        reject(new Error((xhr.responseText || '').trim() || `Upload failed: ${xhr.status}`))
+      }
+      xhr.onabort = () => {
+        delete uploadRequestRef.current[taskID]
+        reject(new Error('Upload cancelled'))
+      }
+      xhr.onerror = () => reject(new Error('Upload request failed'))
+      xhr.send(chunk)
     })
   }
 
