@@ -672,6 +672,12 @@
     "close": "Close AI models dialog",
     "save": "Save AI models",
     "help": "Manage multiple AI model endpoints in one table. You can choose a default model, a dedicated AI/Agent model, and a separate command prediction model.",
+    "contextMode": {
+      "title": "Assist Context",
+      "window": "History Window",
+      "compact": "Compact",
+      "history": "Keep history"
+    },
     "tableTitle": "Model list",
     "table": {
       "actions": "Actions"

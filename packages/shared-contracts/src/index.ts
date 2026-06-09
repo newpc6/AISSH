@@ -64,6 +64,7 @@ export interface AuthSettingsUpdateRequest {
 }
 
 export type AIModelProvider = 'openai-compatible' | 'ollama' | 'anthropic-claude'
+export type AIAssistContextMode = 'compact' | 'history'
 
 export interface AIModelConfig {
   id: string
@@ -73,6 +74,8 @@ export interface AIModelConfig {
   apiKey: string
   model: string
   thinkingEnabled: boolean
+  assistContextMode?: AIAssistContextMode
+  assistContextWindow?: number
 }
 
 export interface AISkill {
@@ -330,6 +333,11 @@ export interface AIAgentStep {
   createdAt?: string
 }
 
+export interface AIAssistConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export interface AIAssistRequest {
   baseUrl: string
   apiKey?: string
@@ -352,6 +360,8 @@ export interface AIAssistRequest {
   agentGoal?: string
   agentSteps?: AIAgentStep[]
   selectedSkills?: AISkill[]
+  contextMode?: AIAssistContextMode
+  conversationMessages?: AIAssistConversationMessage[]
 }
 
 export interface AIAssistResponse {

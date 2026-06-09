@@ -157,6 +157,8 @@ export function newOpenAICompatibleModelConfig(): AIModelConfig {
     apiKey: '',
     model: '',
     thinkingEnabled: true,
+    assistContextMode: 'compact',
+    assistContextWindow: 6,
   }
 }
 
@@ -169,6 +171,8 @@ export function newAnthropicClaudeModelConfig(): AIModelConfig {
     apiKey: '',
     model: 'claude-sonnet-4-0',
     thinkingEnabled: true,
+    assistContextMode: 'compact',
+    assistContextWindow: 6,
   }
 }
 
@@ -181,6 +185,8 @@ export function newOllamaModelConfig(): AIModelConfig {
     apiKey: '',
     model: 'llama3.1',
     thinkingEnabled: true,
+    assistContextMode: 'compact',
+    assistContextWindow: 6,
   }
 }
 
@@ -209,6 +215,8 @@ export function normalizeAIModelConfigs(value: unknown, legacy?: Pick<AppSetting
         apiKey: String(raw.apiKey ?? ''),
         model: String(raw.model ?? '').trim(),
         thinkingEnabled: raw.thinkingEnabled === undefined ? true : Boolean(raw.thinkingEnabled),
+        assistContextMode: raw.assistContextMode === 'history' ? 'history' : 'compact',
+        assistContextWindow: Math.max(2, Math.min(64, Number(raw.assistContextWindow ?? 6) || 6)),
       }
       if (config.provider === 'ollama' && !config.baseUrl) {
         config.baseUrl = DEFAULT_OLLAMA_BASE_URL
@@ -229,6 +237,8 @@ export function normalizeAIModelConfigs(value: unknown, legacy?: Pick<AppSetting
       apiKey: String(legacy.aiApiKey ?? ''),
       model: String(legacy.aiModel ?? '').trim(),
       thinkingEnabled: true,
+      assistContextMode: 'compact',
+      assistContextWindow: 6,
     })
   }
 

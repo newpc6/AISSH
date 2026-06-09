@@ -57,6 +57,8 @@ type AIModelConfig struct {
 	APIKey   string `json:"apiKey"`
 	Model    string `json:"model"`
 	ThinkingEnabled bool `json:"thinkingEnabled"`
+	AssistContextMode string `json:"assistContextMode,omitempty"`
+	AssistContextWindow int `json:"assistContextWindow,omitempty"`
 }
 
 func DefaultCoreConfig() CoreConfig {

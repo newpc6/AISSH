@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS ai_models (
   api_key TEXT NOT NULL,
   model TEXT NOT NULL,
   thinking_enabled INTEGER NOT NULL DEFAULT 1,
+  assist_context_mode TEXT NOT NULL DEFAULT 'compact',
+  assist_context_window INTEGER NOT NULL DEFAULT 6,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -91,7 +93,7 @@ func (s *aiModelStore) listModels() (aiModelState, error) {
 	if err != nil {
 		return aiModelState{}, err
 	}
-	rows, err := db.Query(`SELECT id, name, provider, base_url, api_key, model, thinking_enabled FROM ai_models ORDER BY sort_order ASC, updated_at DESC`)
+	rows, err := db.Query(`SELECT id, name, provider, base_url, api_key, model, thinking_enabled, assist_context_mode, assist_context_window FROM ai_models ORDER BY sort_order ASC, updated_at DESC`)
 	if err != nil {
 		return aiModelState{}, err
 	}
@@ -101,7 +103,7 @@ func (s *aiModelStore) listModels() (aiModelState, error) {
 	for rows.Next() {
 		var item AIModelConfig
 		var thinkingEnabled int
-		if err := rows.Scan(&item.ID, &item.Name, &item.Provider, &item.BaseURL, &item.APIKey, &item.Model, &thinkingEnabled); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Provider, &item.BaseURL, &item.APIKey, &item.Model, &thinkingEnabled, &item.AssistContextMode, &item.AssistContextWindow); err != nil {
 			return aiModelState{}, err
 		}
 		item.ThinkingEnabled = thinkingEnabled != 0
@@ -178,7 +180,7 @@ func (s *aiModelStore) replaceModels(models []AIModelConfig, activeModelID strin
 	}
 	for index, model := range normalized {
 		if _, err = tx.Exec(
-			`INSERT INTO ai_models(id, name, provider, base_url, api_key, model, thinking_enabled, sort_order, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO ai_models(id, name, provider, base_url, api_key, model, thinking_enabled, assist_context_mode, assist_context_window, sort_order, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			model.ID,
 			model.Name,
 			model.Provider,
@@ -186,6 +188,8 @@ func (s *aiModelStore) replaceModels(models []AIModelConfig, activeModelID strin
 			model.APIKey,
 			model.Model,
 			boolToInt(model.ThinkingEnabled),
+			model.AssistContextMode,
+			model.AssistContextWindow,
 			index,
 			now,
 			now,
@@ -268,6 +272,14 @@ func normalizeAIModelStoreConfigs(models []AIModelConfig) []AIModelConfig {
 			APIKey:           model.APIKey,
 			Model:            strings.TrimSpace(model.Model),
 			ThinkingEnabled:  model.ThinkingEnabled,
+			AssistContextMode: strings.TrimSpace(model.AssistContextMode),
+			AssistContextWindow: model.AssistContextWindow,
+		}
+		if item.AssistContextMode != "history" {
+			item.AssistContextMode = "compact"
+		}
+		if item.AssistContextWindow < 2 {
+			item.AssistContextWindow = 6
 		}
 		if item.ID == "" || item.Name == "" || item.Model == "" || item.BaseURL == "" {
 			continue

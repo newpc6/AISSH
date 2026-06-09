@@ -672,6 +672,12 @@
     "close": "关闭 AI 模型窗口",
     "save": "保存 AI 模型",
     "help": "在一个表格中管理多个 AI 模型端点。可以选择默认模型、专用 AI/Agent 模型，以及独立的命令预测模型。",
+    "contextMode": {
+      "title": "Assist 上下文",
+      "window": "历史窗口",
+      "compact": "紧凑模式",
+      "history": "保留历史"
+    },
     "tableTitle": "模型列表",
     "table": {
       "actions": "操作"

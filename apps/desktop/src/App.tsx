@@ -67,6 +67,7 @@ import {
   type AIModelProvider,
   type AIChatMessage,
   type AIChatMessageKind,
+  type AIAssistConversationMessage,
   type AIRiskLevel,
   type AuthSettingsResponse,
   type AuthSettingsUpdateRequest,
@@ -4167,9 +4168,26 @@ export function App() {
     }
     const { conversationId, ignoreAmbientContext, ignoreConversationContext, suppressStreamingMessages, ...requestOptions } = options
     const activeConversation = conversationId || activeAIConversationIdRef.current
-    const recentContext = ignoreConversationContext ? '' : normalizeAITextBlock(recentConversationContext(activeConversation, 6), 4000)
+    const assistContextMode = activeModel.assistContextMode ?? 'compact'
+    const assistContextWindow = Math.max(2, Math.min(64, Number(activeModel.assistContextWindow ?? 6) || 6))
+    const recentContext = ignoreConversationContext ? '' : normalizeAITextBlock(recentConversationContext(activeConversation, assistContextWindow), 4000)
     const agentSteps = [...(requestOptions.agentSteps ?? getAgentStepsForSession(sessionId))].reverse()
     const selectedInlineText = ignoreAmbientContext ? '' : normalizeAITextBlock(window.getSelection()?.toString() ?? '', 4000)
+    const conversationMessages: AIAssistConversationMessage[] = ignoreConversationContext || assistContextMode !== 'history'
+      ? []
+      : aiMessagesRef.current
+        .filter(
+          (message) =>
+            message.conversationId === activeConversation &&
+            !message.pending &&
+            ['user', 'assistant', 'command', 'agent_result'].includes(message.kind),
+        )
+        .slice(-assistContextWindow)
+        .map((message): AIAssistConversationMessage => ({
+          role: message.kind === 'user' ? 'user' : 'assistant',
+          content: normalizeAITextBlock(message.content, 4000),
+        }))
+        .filter((message) => message.content)
     const payload: AIAssistRequest = {
       baseUrl: activeModel.baseUrl,
       apiKey: activeModel.apiKey,
@@ -4200,6 +4218,8 @@ export function App() {
       agentGoal: requestOptions.agentGoal ?? resolveAgentGoal(prompt, sessionId),
       agentSteps,
       selectedSkills: selectedAISkills,
+      contextMode: assistContextMode,
+      conversationMessages,
       ...requestOptions,
     }
     const response = await apiFetch(AI_ASSIST_STREAM_API_PATH, {

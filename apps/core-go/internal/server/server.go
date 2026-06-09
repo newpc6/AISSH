@@ -157,6 +157,13 @@ type aiAssistRequest struct {
 	AgentGoal            string        `json:"agentGoal,omitempty"`
 	AgentSteps           []aiAgentStep `json:"agentSteps,omitempty"`
 	SelectedSkills       []aiSkill     `json:"selectedSkills,omitempty"`
+	ContextMode          string        `json:"contextMode,omitempty"`
+	ConversationMessages []aiAssistConversationMessage `json:"conversationMessages,omitempty"`
+}
+
+type aiAssistConversationMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type aiAgentStep struct {

@@ -1,8 +1,9 @@
 import type { ChangeEvent } from 'react'
-import type { AIModelConfig, AIModelProvider } from '@ai-ssh/shared-contracts'
+import type { AIAssistContextMode, AIModelConfig, AIModelProvider } from '@ai-ssh/shared-contracts'
 import { useTranslation } from 'react-i18next'
 
 const AI_PROVIDER_VALUES: AIModelProvider[] = ['openai-compatible', 'anthropic-claude', 'ollama']
+const ASSIST_CONTEXT_MODE_VALUES: AIAssistContextMode[] = ['compact', 'history']
 
 function aiProviderLabel(provider: AIModelProvider, t: (key: string) => string) {
   if (provider === 'ollama') return t('settings.ai.provider.ollama')
@@ -32,6 +33,10 @@ function aiProviderHelp(provider: AIModelProvider, t: (key: string) => string) {
   if (provider === 'ollama') return t('settings.ai.providerHelp.ollama')
   if (provider === 'anthropic-claude') return t('settings.ai.providerHelp.anthropicClaude')
   return t('settings.ai.providerHelp.openaiCompatible')
+}
+
+function assistContextModeLabel(mode: AIAssistContextMode, t: (key: string) => string) {
+  return mode === 'history' ? t('modelsDialog.contextMode.history') : t('modelsDialog.contextMode.compact')
 }
 
 type AIModelsDialogProps = {
@@ -122,6 +127,8 @@ export function AIModelsDialog({
                     <th>{t('settings.ai.modelTable.key')}</th>
                     <th>{t('settings.ai.modelTable.model')}</th>
                     <th>{t('settings.ai.modelTable.thinking')}</th>
+                    <th>{t('modelsDialog.contextMode.title')}</th>
+                    <th>{t('modelsDialog.contextMode.window')}</th>
                     <th>{t('settings.ai.modelTable.description')}</th>
                     <th>{t('modelsDialog.table.actions')}</th>
                   </tr>
@@ -203,6 +210,22 @@ export function AIModelsDialog({
                             onChange={updateField(model.id, 'thinkingEnabled')}
                           />
                         </label>
+                      </td>
+                      <td>
+                        <select value={model.assistContextMode ?? 'compact'} onChange={updateField(model.id, 'assistContextMode')}>
+                          {ASSIST_CONTEXT_MODE_VALUES.map((mode) => (
+                            <option key={mode} value={mode}>{assistContextModeLabel(mode, t)}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          min="2"
+                          max="64"
+                          type="number"
+                          value={model.assistContextWindow ?? 6}
+                          onChange={updateField(model.id, 'assistContextWindow')}
+                        />
                       </td>
                       <td>
                         <small>{aiProviderHelp(model.provider, t)}</small>

@@ -334,16 +334,7 @@ func assistWithAI(ctx context.Context, request aiAssistRequest, logger *appLogge
 		Temperature:    0,
 		MaxTokens:      aiAssistMaxTokens,
 		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
-		Messages: []openAIChatMessage{
-			{
-				Role:    "system",
-				Content: buildAssistSystemPrompt(normalized),
-			},
-			{
-				Role:    "user",
-				Content: buildAssistPrompt(normalized),
-			},
-		},
+		Messages:       buildAssistMessages(normalized),
 	}
 	applyAgentThinkingOptions(&chatRequest, normalized)
 	body, err := json.Marshal(chatRequest)
@@ -572,16 +563,7 @@ func streamAssistWithAI(ctx context.Context, request aiAssistRequest, logger *ap
 		MaxTokens:      aiAssistMaxTokens,
 		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
 		Stream:         true,
-		Messages: []openAIChatMessage{
-			{
-				Role:    "system",
-				Content: buildAssistSystemPrompt(normalized),
-			},
-			{
-				Role:    "user",
-				Content: buildAssistPrompt(normalized),
-			},
-		},
+		Messages:       buildAssistMessages(normalized),
 	}
 	applyAgentThinkingOptions(&chatRequest, normalized)
 	body, err := json.Marshal(chatRequest)
@@ -729,7 +711,7 @@ func assistWithAnthropic(ctx context.Context, request aiAssistRequest, logger *a
 	body, err := json.Marshal(anthropicMessageRequest{
 		Model:       request.Model,
 		System:      buildAssistSystemPrompt(request),
-		Messages:    []anthropicMessage{{Role: "user", Content: buildAssistPrompt(request)}},
+		Messages:    buildAssistAnthropicMessages(request),
 		MaxTokens:   aiAssistMaxTokens,
 		Temperature: 0,
 		Thinking:    anthropicThinkingOptionsForAgent(aiAgentThinkingEnabled(request)),
@@ -855,7 +837,7 @@ func streamAssistWithAnthropic(ctx context.Context, request aiAssistRequest, log
 	body, err := json.Marshal(anthropicMessageRequest{
 		Model:       request.Model,
 		System:      buildAssistSystemPrompt(request),
-		Messages:    []anthropicMessage{{Role: "user", Content: buildAssistPrompt(request)}},
+		Messages:    buildAssistAnthropicMessages(request),
 		MaxTokens:   aiAssistMaxTokens,
 		Temperature: 0,
 		Stream:      true,
@@ -1566,6 +1548,61 @@ func buildAssistPrompt(request aiAssistRequest) string {
 		emptyAsDash(request.SelectedText),
 		request.TerminalContext,
 	)
+}
+
+func buildAssistMessages(request aiAssistRequest) []openAIChatMessage {
+	messages := []openAIChatMessage{
+		{
+			Role:    "system",
+			Content: buildAssistSystemPrompt(request),
+		},
+	}
+	if strings.TrimSpace(request.ContextMode) == "history" {
+		for _, item := range request.ConversationMessages {
+			role := strings.TrimSpace(item.Role)
+			if role != "user" && role != "assistant" {
+				continue
+			}
+			content := strings.TrimSpace(item.Content)
+			if content == "" {
+				continue
+			}
+			messages = append(messages, openAIChatMessage{
+				Role:    role,
+				Content: content,
+			})
+		}
+	}
+	messages = append(messages, openAIChatMessage{
+		Role:    "user",
+		Content: buildAssistPrompt(request),
+	})
+	return messages
+}
+
+func buildAssistAnthropicMessages(request aiAssistRequest) []anthropicMessage {
+	messages := make([]anthropicMessage, 0, len(request.ConversationMessages)+1)
+	if strings.TrimSpace(request.ContextMode) == "history" {
+		for _, item := range request.ConversationMessages {
+			role := strings.TrimSpace(item.Role)
+			if role != "user" && role != "assistant" {
+				continue
+			}
+			content := strings.TrimSpace(item.Content)
+			if content == "" {
+				continue
+			}
+			messages = append(messages, anthropicMessage{
+				Role:    role,
+				Content: content,
+			})
+		}
+	}
+	messages = append(messages, anthropicMessage{
+		Role:    "user",
+		Content: buildAssistPrompt(request),
+	})
+	return messages
 }
 
 func parseAssistResponse(content string) (aiAssistResponse, error) {

@@ -214,7 +214,9 @@ func TestAIModelEndpointsReplaceAndList(t *testing.T) {
 				"baseUrl":"https://api.openai.com/v1",
 				"apiKey":"sk-test",
 				"model":"gpt-4.1-mini",
-				"thinkingEnabled":true
+				"thinkingEnabled":true,
+				"assistContextMode":"history",
+				"assistContextWindow":12
 			},
 			{
 				"id":"claude-main",
@@ -223,7 +225,9 @@ func TestAIModelEndpointsReplaceAndList(t *testing.T) {
 				"baseUrl":"https://api.anthropic.com/v1",
 				"apiKey":"sk-ant-test",
 				"model":"claude-sonnet-4-0",
-				"thinkingEnabled":false
+				"thinkingEnabled":false,
+				"assistContextMode":"compact",
+				"assistContextWindow":6
 			}
 		],
 		"activeModelId":"claude-main",
@@ -249,6 +253,9 @@ func TestAIModelEndpointsReplaceAndList(t *testing.T) {
 	}
 	if !strings.Contains(body, `"activeAgentModelId":"claude-main"`) || !strings.Contains(body, `"activePredictionModelId":"openai-main"`) {
 		t.Fatalf("expected split active model ids in body, got %s", body)
+	}
+	if !strings.Contains(body, `"assistContextMode":"history"`) || !strings.Contains(body, `"assistContextWindow":12`) {
+		t.Fatalf("expected assist context fields in body, got %s", body)
 	}
 	if !strings.Contains(body, `"provider":"anthropic-claude"`) || !strings.Contains(body, `"provider":"openai-compatible"`) {
 		t.Fatalf("expected persisted models in body, got %s", body)
