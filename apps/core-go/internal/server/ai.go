@@ -632,7 +632,7 @@ func predictCommandsWithAnthropic(ctx context.Context, request aiPredictionReque
 		Messages:    []anthropicMessage{{Role: "user", Content: buildPredictionPrompt(request)}},
 		MaxTokens:   aiMaxTokens,
 		Temperature: 0,
-		Thinking:    anthropicThinkingOptionsForPrediction(aiPredictionThinkingEnabled(request)),
+		Thinking:    anthropicThinkingOptionsForPrediction(aiPredictionThinkingEnabled(request) && supportsAnthropicThinking(request.Model)),
 	})
 	if err != nil {
 		return aiPredictionResponse{}, err
@@ -714,7 +714,7 @@ func assistWithAnthropic(ctx context.Context, request aiAssistRequest, logger *a
 		Messages:    buildAssistAnthropicMessages(request),
 		MaxTokens:   aiAssistMaxTokens,
 		Temperature: 0,
-		Thinking:    anthropicThinkingOptionsForAgent(aiAgentThinkingEnabled(request)),
+		Thinking:    anthropicThinkingOptionsForAgent(aiAgentThinkingEnabled(request) && supportsAnthropicThinking(request.Model)),
 	})
 	if err != nil {
 		return aiAssistResponse{}, err
@@ -797,7 +797,7 @@ func streamPredictedCommandsWithAnthropic(ctx context.Context, request aiPredict
 		MaxTokens:   aiMaxTokens,
 		Temperature: 0,
 		Stream:      true,
-		Thinking:    anthropicThinkingOptionsForPrediction(aiPredictionThinkingEnabled(request)),
+		Thinking:    anthropicThinkingOptionsForPrediction(aiPredictionThinkingEnabled(request) && supportsAnthropicThinking(request.Model)),
 	})
 	if err != nil {
 		return err
@@ -841,7 +841,7 @@ func streamAssistWithAnthropic(ctx context.Context, request aiAssistRequest, log
 		MaxTokens:   aiAssistMaxTokens,
 		Temperature: 0,
 		Stream:      true,
-		Thinking:    anthropicThinkingOptionsForAgent(aiAgentThinkingEnabled(request)),
+		Thinking:    anthropicThinkingOptionsForAgent(aiAgentThinkingEnabled(request) && supportsAnthropicThinking(request.Model)),
 	})
 	if err != nil {
 		return err
@@ -1410,6 +1410,11 @@ func anthropicThinkingOptionsForAgent(enabled bool) *anthropicThinkingOptions {
 		Type:         "enabled",
 		BudgetTokens: minInt(4096, aiAssistMaxTokens/2),
 	}
+}
+
+func supportsAnthropicThinking(model string) bool {
+	value := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(value, "claude")
 }
 
 func trimToLastRunes(value string, limit int) string {

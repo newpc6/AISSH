@@ -135,6 +135,15 @@ func TestNormalizeAIRequestDefaultsThinkingEnabled(t *testing.T) {
 	}
 }
 
+func TestSupportsAnthropicThinkingOnlyForClaudeModels(t *testing.T) {
+	if !supportsAnthropicThinking("claude-sonnet-4-0") {
+		t.Fatalf("expected Claude model to support anthropic thinking")
+	}
+	if supportsAnthropicThinking("GPT-5.4-Mini") {
+		t.Fatalf("expected GPT model on anthropic wire format to disable anthropic thinking")
+	}
+}
+
 func TestApplyPredictionThinkingOptionsCanBeDisabled(t *testing.T) {
 	disabled := false
 	request := aiPredictionRequest{
