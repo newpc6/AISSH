@@ -411,6 +411,7 @@
     "directoryTitle": "双击进入目录",
     "transferTasks": "传输任务",
     "removeTransfer": "移除 {{name}} 传输记录",
+    "cancelTransfer": "中止 {{name}} 传输任务",
     "transferDirection": {
       "upload": "上传",
       "download": "下载"
@@ -418,6 +419,7 @@
     "transferFileBytes": "{{current}} / {{total}}（{{progress}}%）",
     "transferFolderProgress": "正在上传第 {{current}}/{{total}} 个文件：{{file}}",
     "transferFolderBytes": "{{current}} / {{total}}（{{progress}}%）",
+    "transferOverallBytes": "整体：{{current}} / {{total}}（{{progress}}%）",
     "columns": {
       "name": "名称",
       "size": "大小",

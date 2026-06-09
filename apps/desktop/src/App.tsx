@@ -357,6 +357,7 @@ export function App() {
   const predictionGhostVisibleRef = useRef(false)
   const terminalReplayTokenRef = useRef(0)
   const terminalReplayQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const uploadRequestRef = useRef<Record<string, XMLHttpRequest | null>>({})
   const {
     clearPreviewConversationId,
     getDisplayedConversationId,
@@ -1241,14 +1242,25 @@ export function App() {
     }
   }
 
-  const confirmRemoveTransferTask = (task: { id: string; name: string; direction: 'upload' | 'download' }) => {
+  const confirmRemoveTransferTask = (task: { id: string; name: string; direction: 'upload' | 'download'; status?: TransferTask['status'] }) => {
+    const isRunningUpload = task.direction === 'upload' && task.status === 'running'
     requestConfirm({
       section: '传输任务',
-      title: '移除传输记录',
-      message: `确定移除「${task.name}」这条${task.direction === 'upload' ? '上传' : '下载'}记录吗？`,
-      confirmText: '移除',
+      title: isRunningUpload ? '取消上传任务' : '移除传输记录',
+      message: isRunningUpload
+        ? `确定中止「${task.name}」这条上传任务吗？`
+        : `确定移除「${task.name}」这条${task.direction === 'upload' ? '上传' : '下载'}记录吗？`,
+      confirmText: isRunningUpload ? '中止' : '移除',
       danger: true,
-      onConfirm: () => setTransferTasks((current) => current.filter((item) => item.id !== task.id)),
+      onConfirm: () => {
+        if (isRunningUpload) {
+          uploadRequestRef.current[task.id]?.abort()
+          delete uploadRequestRef.current[task.id]
+          setTransferTasks((current) => current.map((item) => (item.id === task.id ? { ...item, status: 'cancelled' } : item)))
+          return
+        }
+        setTransferTasks((current) => current.filter((item) => item.id !== task.id))
+      },
     })
   }
 
@@ -3621,7 +3633,7 @@ export function App() {
     const taskName = rootLabel || (selectedFiles.length === 1 ? (names[0] || selectedFiles[0].name) : `${selectedFiles.length} files`)
 
     const updateTransferTask = (patch: Partial<TransferTask>) => {
-      setTransferTasks((current) => current.map((task) => (task.id === taskID ? { ...task, ...patch } : task)))
+      setTransferTasks((current) => current.map((task) => (task.id === taskID && task.status === 'running' ? { ...task, ...patch } : task)))
     }
 
     setTransferTasks((current) => [
@@ -3645,7 +3657,7 @@ export function App() {
 
     let transferredBytes = 0
     let lastTaskUpdate = 0
-    const updateIntervalMs = 500
+    const updateIntervalMs = 200
 
     try {
       for (const [index, file] of selectedFiles.entries()) {
@@ -3667,7 +3679,7 @@ export function App() {
         })
 
         let lastLoaded = 0
-        await uploadFormDataWithProgress(hostId, remoteDir, body, (loaded, total) => {
+        await uploadFormDataWithProgress(taskID, hostId, remoteDir, body, (loaded, total) => {
           const safeLoaded = total === Number.MAX_SAFE_INTEGER ? file.size : Math.min(file.size, loaded)
           const aggregateTransferred = transferredBytes + safeLoaded
           const now = Date.now()
@@ -3677,7 +3689,8 @@ export function App() {
           lastTaskUpdate = now
           lastLoaded = safeLoaded
           updateTransferTask({
-            progress: totalBytes > 0 ? Math.round((aggregateTransferred / totalBytes) * 100) : 100,
+            progress: totalBytes > 0 ? Math.max(0, Math.min(100, (aggregateTransferred / totalBytes) * 100)) : 100,
+            currentFileProgress: file.size > 0 ? Math.max(0, Math.min(100, (safeLoaded / file.size) * 100)) : 100,
             transferredBytes: aggregateTransferred,
             currentFileTransferredBytes: safeLoaded,
             currentFileTotalBytes: file.size,
@@ -3687,7 +3700,8 @@ export function App() {
         transferredBytes += file.size
         if (lastLoaded < file.size) {
           updateTransferTask({
-            progress: totalBytes > 0 ? Math.round((transferredBytes / totalBytes) * 100) : 100,
+            progress: totalBytes > 0 ? Math.max(0, Math.min(100, (transferredBytes / totalBytes) * 100)) : 100,
+            currentFileProgress: 100,
             transferredBytes,
             currentFileTransferredBytes: file.size,
             currentFileTotalBytes: file.size,
@@ -3697,6 +3711,7 @@ export function App() {
 
       updateTransferTask({
         progress: 100,
+        currentFileProgress: 100,
         transferredBytes: totalBytes,
         currentFileTransferredBytes: selectedFiles[selectedFiles.length - 1]?.size ?? 0,
         currentFileTotalBytes: selectedFiles[selectedFiles.length - 1]?.size ?? 0,
@@ -3705,6 +3720,10 @@ export function App() {
       await loadFiles(filePath, hostId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed'
+      if (message === 'Upload cancelled') {
+        updateTransferTask({ status: 'cancelled' })
+        return
+      }
       setErrorMessage(message)
       updateTransferTask({ status: 'error' })
     }
@@ -3723,7 +3742,7 @@ export function App() {
     const taskName = rootLabel || (entries.length === 1 ? (entries[0]?.name || localFileName(entries[0]?.path || '')) : `${entries.length} files`)
 
     const updateTransferTask = (patch: Partial<TransferTask>) => {
-      setTransferTasks((current) => current.map((task) => (task.id === taskID ? { ...task, ...patch } : task)))
+      setTransferTasks((current) => current.map((task) => (task.id === taskID && task.status === 'running' ? { ...task, ...patch } : task)))
     }
 
     setTransferTasks((current) => [
@@ -3747,7 +3766,7 @@ export function App() {
 
     let transferredBytes = 0
     let lastTaskUpdate = 0
-    const updateIntervalMs = 500
+    const updateIntervalMs = 200
 
     try {
       for (const [index, entry] of entries.entries()) {
@@ -3777,7 +3796,7 @@ export function App() {
         })
 
         let lastLoaded = 0
-        await uploadFormDataWithProgress(hostId, remoteDir, body, (loaded, total) => {
+        await uploadFormDataWithProgress(taskID, hostId, remoteDir, body, (loaded, total) => {
           const safeLoaded = total === Number.MAX_SAFE_INTEGER ? entry.size : Math.min(entry.size, loaded)
           const aggregateTransferred = transferredBytes + safeLoaded
           const now = Date.now()
@@ -3787,7 +3806,8 @@ export function App() {
           lastTaskUpdate = now
           lastLoaded = safeLoaded
           updateTransferTask({
-            progress: totalBytes > 0 ? Math.round((aggregateTransferred / totalBytes) * 100) : 100,
+            progress: totalBytes > 0 ? Math.max(0, Math.min(100, (aggregateTransferred / totalBytes) * 100)) : 100,
+            currentFileProgress: entry.size > 0 ? Math.max(0, Math.min(100, (safeLoaded / entry.size) * 100)) : 100,
             transferredBytes: aggregateTransferred,
             currentFileTransferredBytes: safeLoaded,
             currentFileTotalBytes: entry.size,
@@ -3797,7 +3817,8 @@ export function App() {
         transferredBytes += entry.size
         if (lastLoaded < entry.size) {
           updateTransferTask({
-            progress: totalBytes > 0 ? Math.round((transferredBytes / totalBytes) * 100) : 100,
+            progress: totalBytes > 0 ? Math.max(0, Math.min(100, (transferredBytes / totalBytes) * 100)) : 100,
+            currentFileProgress: 100,
             transferredBytes,
             currentFileTransferredBytes: entry.size,
             currentFileTotalBytes: entry.size,
@@ -3807,6 +3828,7 @@ export function App() {
 
       updateTransferTask({
         progress: 100,
+        currentFileProgress: 100,
         transferredBytes: totalBytes,
         currentFileTransferredBytes: entries[entries.length - 1]?.size ?? 0,
         currentFileTotalBytes: entries[entries.length - 1]?.size ?? 0,
@@ -3815,6 +3837,10 @@ export function App() {
       await loadFiles(filePath, hostId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed'
+      if (message === 'Upload cancelled') {
+        updateTransferTask({ status: 'cancelled' })
+        return
+      }
       setErrorMessage(message)
       updateTransferTask({ status: 'error' })
     }
@@ -3914,6 +3940,7 @@ export function App() {
   }
 
   const uploadFormDataWithProgress = async (
+    taskID: string,
     hostId: string,
     remoteDir: string,
     body: FormData,
@@ -3924,23 +3951,28 @@ export function App() {
     const token = isTauriRuntime ? desktopTokenRef.current : ''
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
+      uploadRequestRef.current[taskID] = xhr
       xhr.open('POST', requestUrl)
       xhr.withCredentials = true
       if (token) {
         xhr.setRequestHeader('X-AI-SSH-Desktop-Token', token)
       }
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          onProgress(event.loaded, event.total)
-        }
+        const total = event.lengthComputable && event.total > 0 ? event.total : Math.max(event.loaded, 1)
+        onProgress(event.loaded, total)
       }
       xhr.onload = () => {
+        delete uploadRequestRef.current[taskID]
         if (xhr.status >= 200 && xhr.status < 300) {
           onProgress(body.getAll('files').length > 0 ? Number.MAX_SAFE_INTEGER : 0, Number.MAX_SAFE_INTEGER)
           resolve()
           return
         }
         reject(new Error((xhr.responseText || '').trim() || `Upload failed: ${xhr.status}`))
+      }
+      xhr.onabort = () => {
+        delete uploadRequestRef.current[taskID]
+        reject(new Error('Upload cancelled'))
       }
       xhr.onerror = () => reject(new Error('Upload request failed'))
       xhr.send(body)

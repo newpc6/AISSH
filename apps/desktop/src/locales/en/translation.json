@@ -411,6 +411,7 @@
     "directoryTitle": "Double-click to open directory",
     "transferTasks": "Transfer Tasks",
     "removeTransfer": "Remove transfer record for {{name}}",
+    "cancelTransfer": "Cancel transfer for {{name}}",
     "transferDirection": {
       "upload": "Upload",
       "download": "Download"
@@ -418,6 +419,7 @@
     "transferFileBytes": "{{current}} / {{total}} ({{progress}}%)",
     "transferFolderProgress": "Uploading file {{current}}/{{total}}: {{file}}",
     "transferFolderBytes": "{{current}} / {{total}} ({{progress}}%)",
+    "transferOverallBytes": "Overall: {{current}} / {{total}} ({{progress}}%)",
     "columns": {
       "name": "Name",
       "size": "Size",

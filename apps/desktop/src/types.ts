@@ -204,7 +204,8 @@ export type TransferTask = {
   name: string
   direction: 'upload' | 'download'
   progress: number
-  status: string
+  currentFileProgress?: number
+  status: 'running' | 'done' | 'error' | 'cancelled'
   mode?: 'file' | 'folder'
   transferredBytes?: number
   totalBytes?: number

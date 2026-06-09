@@ -289,7 +289,7 @@ export function FileBrowserPanel({
                 <button
                   className="transfer-close"
                   type="button"
-                  title={t('fileBrowser.removeTransfer', { name: task.name })}
+                  title={t(task.direction === 'upload' && task.status === 'running' ? 'fileBrowser.cancelTransfer' : 'fileBrowser.removeTransfer', { name: task.name })}
                   onClick={() => onConfirmRemoveTransferTask(task)}
                 >
                   ?
@@ -310,14 +310,23 @@ export function FileBrowserPanel({
                     ? t('fileBrowser.transferFolderBytes', {
                         current: formatBytes(task.currentFileTransferredBytes ?? 0),
                         total: formatBytes(task.currentFileTotalBytes ?? 0),
-                        progress: task.progress,
+                        progress: Math.max(0, Math.min(100, task.currentFileProgress ?? task.progress)).toFixed(1),
                       })
                     : t('fileBrowser.transferFileBytes', {
                         current: formatBytes(task.transferredBytes ?? 0),
                         total: formatBytes(task.totalBytes ?? 0),
-                        progress: task.progress,
+                        progress: Math.max(0, Math.min(100, task.progress)).toFixed(1),
                       })}
                 </small>
+                {task.mode === 'folder' ? (
+                  <small>
+                    {t('fileBrowser.transferOverallBytes', {
+                      current: formatBytes(task.transferredBytes ?? 0),
+                      total: formatBytes(task.totalBytes ?? 0),
+                      progress: Math.max(0, Math.min(100, task.progress)).toFixed(1),
+                    })}
+                  </small>
+                ) : null}
                 <small>{task.status}</small>
               </div>
             ))}
