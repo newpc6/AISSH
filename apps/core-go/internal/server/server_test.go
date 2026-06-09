@@ -1711,6 +1711,31 @@ func TestNormalizeWSLDistroList(t *testing.T) {
 	}
 }
 
+func TestResolveAnyHostFindsWSLHost(t *testing.T) {
+	manager := newSessionManagerWithStores(&hostStore{path: filepath.Join(t.TempDir(), "hosts.json")}, newMemoryCredentialStore(), newAppLogger())
+	manager.wslHosts = []hostRecord{{
+		ID:        "wsl-ubuntu-24-04",
+		Name:      "Ubuntu-24.04",
+		Protocol:  "wsl",
+		Address:   "wsl.local",
+		Port:      0,
+		AuthType:  "agent",
+		Group:     "WSL",
+		WSLDistro: "Ubuntu-24.04",
+	}}
+
+	host, ok, err := manager.resolveAnyHost("wsl-ubuntu-24-04")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !ok {
+		t.Fatal("expected WSL host to be resolved")
+	}
+	if host.Protocol != "wsl" || host.WSLDistro != "Ubuntu-24.04" {
+		t.Fatalf("unexpected host %#v", host)
+	}
+}
+
 func TestWriteSessionInputEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))

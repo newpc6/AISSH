@@ -678,7 +678,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 
-		host, ok, err := manager.resolveStoredHost(hostID)
+		host, ok, err := manager.resolveAnyHost(hostID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -728,7 +728,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 
-		host, ok, err := manager.resolveStoredHost(hostID)
+		host, ok, err := manager.resolveAnyHost(hostID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -757,7 +757,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 
-		host, ok, err := manager.resolveStoredHost(hostID)
+		host, ok, err := manager.resolveAnyHost(hostID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

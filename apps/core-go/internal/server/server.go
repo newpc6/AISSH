@@ -1020,6 +1020,9 @@ func (m *sessionManager) resolveSessionHost(request sessionOpenRequest) (hostRec
 }
 
 func (m *sessionManager) loadHostCredentials(host *hostRecord) error {
+	if host.Protocol == "wsl" {
+		return nil
+	}
 	if host.HasPassword && host.Password == "" {
 		password, found, err := m.credentials.Get(host.ID, passwordCredential)
 		if err != nil {
@@ -1041,6 +1044,37 @@ func (m *sessionManager) loadHostCredentials(host *hostRecord) error {
 	}
 
 	return nil
+}
+
+func (m *sessionManager) resolveAnyHost(hostID string) (hostRecord, bool, error) {
+	m.mu.RLock()
+	var host hostRecord
+	found := false
+	for i := range m.hosts {
+		if m.hosts[i].ID == hostID {
+			host = m.hosts[i]
+			found = true
+			break
+		}
+	}
+	if !found {
+		for i := range m.wslHosts {
+			if m.wslHosts[i].ID == hostID {
+				host = m.wslHosts[i]
+				found = true
+				break
+			}
+		}
+	}
+	m.mu.RUnlock()
+
+	if !found {
+		return hostRecord{}, false, nil
+	}
+	if err := m.loadHostCredentials(&host); err != nil {
+		return hostRecord{}, true, err
+	}
+	return host, true, nil
 }
 
 func (m *sessionManager) resolveStoredHost(hostID string) (hostRecord, bool, error) {
