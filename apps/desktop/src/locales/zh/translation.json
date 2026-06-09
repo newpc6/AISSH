@@ -563,7 +563,7 @@
     "duplicateServer": "复制此服务器配置",
     "deleteServer": "删除此服务器",
     "duplicate": "复制",
-    "systemWslReadonly": "??????? WSL ?????"
+    "systemWslReadonly": "自动发现的 WSL 连接为只读"
   },
   "terminalStage": {
     "reconnectSession": "重连当前 SSH 会话",

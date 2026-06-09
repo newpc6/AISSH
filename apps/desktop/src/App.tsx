@@ -454,7 +454,7 @@ export function App() {
     openAddHostDialog,
     openEditHostDialog,
   } = useHostDialogState({
-    defaultGroupName: hostGroups[0]?.name ?? '??',
+    defaultGroupName: hostGroups[0]?.name ?? '默认',
     duplicateSuffix: t('hostDialog.copySuffix'),
     setEditingHostId,
     setHostDialogError,
