@@ -100,7 +100,7 @@ fn collect_upload_directory(
             let relative_path = path
                 .strip_prefix(root)
                 .ok()
-                .map(|value| value.to_string_lossy().replace('\', "/"));
+                .map(|value| value.to_string_lossy().replace('\\', "/"));
             files.push(read_single_upload_file(&path, relative_path)?);
         }
     }
