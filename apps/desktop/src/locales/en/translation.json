@@ -118,7 +118,6 @@
       "predictionCommandHistoryLimit": "Prediction Command History Count",
       "terminalContextLimit": "Terminal Context Characters",
       "commandHistoryLimit": "Command History Count",
-      "conversationContextLimit": "Conversation Context Messages",
       "agentCommandTimeout": "Agent Command Wait Timeout (seconds)",
       "aiProviderTimeout": "AI Request Timeout (seconds)",
       "predictionProviderTimeout": "Prediction Request Timeout (seconds)",

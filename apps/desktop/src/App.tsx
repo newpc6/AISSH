@@ -1016,7 +1016,6 @@ export function App() {
     getLiveConversationId,
     getSessionAgentState,
     loadAIMessages,
-    normalizeConversationContextLimit: () => normalizeAppSettings(sessionSettingsRef.current).aiConversationContextLimit,
     setActiveConversationId: (conversationId) => {
       setActiveAIConversationId(conversationId)
       activeAIConversationIdRef.current = conversationId
@@ -1328,7 +1327,6 @@ export function App() {
       aiPredictionProviderTimeoutSeconds: normalized.aiPredictionProviderTimeoutSeconds,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
-      aiConversationContextLimit: normalized.aiConversationContextLimit,
       aiSystemPrompt: normalized.aiSystemPrompt,
       aiAgentThinkingEnabled: normalized.aiAgentThinkingEnabled,
       aiProviderTimeoutSeconds: normalized.aiProviderTimeoutSeconds,
@@ -1407,7 +1405,6 @@ export function App() {
             aiPredictionProviderTimeoutSeconds: app.aiPredictionProviderTimeoutSeconds as number,
             aiTerminalContextLimit: app.aiTerminalContextLimit as number,
             aiCommandHistoryLimit: app.aiCommandHistoryLimit as number,
-            aiConversationContextLimit: app.aiConversationContextLimit as number,
             aiSystemPrompt: (app.aiSystemPrompt ?? '') as string,
             aiAgentThinkingEnabled: app.aiAgentThinkingEnabled as boolean,
             aiProviderTimeoutSeconds: app.aiProviderTimeoutSeconds as number,
@@ -2525,7 +2522,6 @@ export function App() {
       aiPredictionProviderTimeoutSeconds: normalized.aiPredictionProviderTimeoutSeconds,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
-      aiConversationContextLimit: normalized.aiConversationContextLimit,
       aiAgentThinkingEnabled: normalized.aiAgentThinkingEnabled,
       aiProviderTimeoutSeconds: normalized.aiProviderTimeoutSeconds,
       agentCommandTimeoutSeconds: normalized.agentCommandTimeoutSeconds,
@@ -5996,7 +5992,6 @@ export function App() {
         changePasswordForm={changePasswordForm}
         changePasswordSuccess={changePasswordSuccess}
         defaultAiCommandHistoryLimit={defaultSettings.aiCommandHistoryLimit}
-        defaultAiConversationContextLimit={defaultSettings.aiConversationContextLimit}
         defaultAiPredictionCommandHistoryLimit={defaultSettings.aiPredictionCommandHistoryLimit}
         defaultAiPredictionProviderTimeoutSeconds={defaultSettings.aiPredictionProviderTimeoutSeconds}
         defaultAiPredictionTerminalContextLimit={defaultSettings.aiPredictionTerminalContextLimit}

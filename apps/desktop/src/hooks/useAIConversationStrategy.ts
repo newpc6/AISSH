@@ -17,7 +17,6 @@ type UseAIConversationStrategyArgs = {
   getLiveConversationId: (sessionId: string) => string
   getSessionAgentState: (sessionId: string) => SessionAgentState
   loadAIMessages: (conversationId: string, sessionId?: string) => Promise<AIChatMessageDraft[]>
-  normalizeConversationContextLimit: () => number
   setActiveConversationId: (conversationId: string) => void
   setAiAssistantResponse: (response: null) => void
   setLiveConversationId: (sessionId: string, conversationId: string) => void
@@ -36,14 +35,13 @@ export function useAIConversationStrategy({
   getLiveConversationId,
   getSessionAgentState,
   loadAIMessages,
-  normalizeConversationContextLimit,
   setActiveConversationId,
   setAiAssistantResponse,
   setLiveConversationId,
   resetAIStreamBuffers,
   resetSessionAgentState,
 }: UseAIConversationStrategyArgs) {
-  const ensureAIConversation = async (title = '新对话', sessionId = activeSessionIdRef.current || '') => {
+  const ensureAIConversation = async (title = 'New Conversation', sessionId = activeSessionIdRef.current || '') => {
     const liveConversationId = sessionId ? getLiveConversationId(sessionId) : ''
     if (liveConversationId) {
       if (activeConversationIdRef.current !== liveConversationId) {
@@ -84,30 +82,8 @@ export function useAIConversationStrategy({
     await loadAIMessages(conversationId, sessionId)
   }
 
-  const currentConversationContext = (conversationId = activeConversationIdRef.current || '') => {
-    const limit = normalizeConversationContextLimit()
-    return aiMessagesRef.current
-      .filter(
-        (message) =>
-          message.conversationId === conversationId &&
-          !message.pending &&
-          ['user', 'assistant', 'command', 'agent_step', 'agent_result'].includes(message.kind),
-      )
-      .slice(-Math.max(1, Math.min(limit, 6)))
-      .map((message) => {
-        const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
-        if (message.kind === 'agent_step' && message.step) {
-          const output = message.step.output ? `\n输出摘要: ${message.step.output.slice(-2000)}` : ''
-          const exitCode = typeof message.step.exitCode === 'number' ? `\n退出码: ${message.step.exitCode}` : ''
-          return `${label}: ${message.step.command || message.content}\n状态: ${message.step.status}${exitCode}${output}`
-        }
-        return `${label}: ${message.content}`
-      })
-      .join('\n')
-  }
-
   const recentConversationContext = (conversationId = activeConversationIdRef.current || '', recentCount = 8) => {
-    const recent = aiMessagesRef.current
+    return aiMessagesRef.current
       .filter(
         (message) =>
           message.conversationId === conversationId &&
@@ -116,19 +92,15 @@ export function useAIConversationStrategy({
       )
       .slice(-Math.max(1, recentCount))
       .map((message) => {
-        const label = message.kind === 'user' ? '用户' : message.kind === 'command' ? 'AI命令' : message.kind === 'agent_step' ? '执行步骤' : 'AI'
+        const label = message.kind === 'user' ? 'User' : message.kind === 'command' ? 'AI Command' : message.kind === 'agent_step' ? 'Step' : 'AI'
         if (message.kind === 'agent_step' && message.step) {
-          const output = message.step.output ? `
-输出摘要: ${message.step.output.slice(-1200)}` : ''
-          const exitCode = typeof message.step.exitCode === 'number' ? `
-退出码: ${message.step.exitCode}` : ''
-          return `${label}: ${message.step.command || message.content}
-状态: ${message.step.status}${exitCode}${output}`
+          const output = message.step.output ? `\nOutput summary: ${message.step.output.slice(-1200)}` : ''
+          const exitCode = typeof message.step.exitCode === 'number' ? `\nExit code: ${message.step.exitCode}` : ''
+          return `${label}: ${message.step.command || message.content}\nStatus: ${message.step.status}${exitCode}${output}`
         }
         return `${label}: ${message.content}`
       })
       .join('\n')
-    return recent
   }
 
   const resolveAgentGoal = (fallback = '', sessionId = activeSessionIdRef.current || '') => {
@@ -142,7 +114,6 @@ export function useAIConversationStrategy({
   }
 
   return {
-    currentConversationContext,
     ensureAIConversation,
     recentConversationContext,
     resolveAgentGoal,

@@ -41,7 +41,6 @@ type CoreAppConfig struct {
 	AIPredictionProviderTimeoutSeconds int       `json:"aiPredictionProviderTimeoutSeconds,omitempty"`
 	AITerminalContextLimit        int             `json:"aiTerminalContextLimit,omitempty"`
 	AICommandHistoryLimit         int             `json:"aiCommandHistoryLimit,omitempty"`
-	AIConversationContextLimit    int             `json:"aiConversationContextLimit,omitempty"`
 	AISystemPrompt                string          `json:"aiSystemPrompt,omitempty"`
 	AIAgentThinkingEnabled        bool            `json:"aiAgentThinkingEnabled,omitempty"`
 	AIProviderTimeoutSeconds      int             `json:"aiProviderTimeoutSeconds,omitempty"`
@@ -224,9 +223,6 @@ func mergeCoreAppConfig(target *CoreAppConfig, incoming *CoreAppConfig, fields m
 	}
 	if _, ok := fields["aiCommandHistoryLimit"]; ok && incoming.AICommandHistoryLimit > 0 {
 		target.AICommandHistoryLimit = incoming.AICommandHistoryLimit
-	}
-	if _, ok := fields["aiConversationContextLimit"]; ok && incoming.AIConversationContextLimit > 0 {
-		target.AIConversationContextLimit = incoming.AIConversationContextLimit
 	}
 	if _, ok := fields["aiSystemPrompt"]; ok {
 		target.AISystemPrompt = incoming.AISystemPrompt

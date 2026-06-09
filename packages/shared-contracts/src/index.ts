@@ -141,7 +141,6 @@ export interface AppSettings {
   aiPredictionProviderTimeoutSeconds: number
   aiTerminalContextLimit: number
   aiCommandHistoryLimit: number
-  aiConversationContextLimit: number
   aiSystemPrompt: string
   aiSystemPromptOverride: boolean
   aiAgentThinkingEnabled: boolean

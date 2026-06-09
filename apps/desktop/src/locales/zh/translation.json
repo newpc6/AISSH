@@ -1,4 +1,4 @@
-{
+﻿{
   "app": {
     "title": "AI SSH",
     "loading": "加载中...",
@@ -118,7 +118,6 @@
       "predictionCommandHistoryLimit": "预测历史命令条数",
       "terminalContextLimit": "终端上下文字数",
       "commandHistoryLimit": "历史命令条数",
-      "conversationContextLimit": "对话上下文消息数",
       "agentCommandTimeout": "Agent 命令等待超时（秒）",
       "aiProviderTimeout": "AI 请求超时（秒）",
       "predictionProviderTimeout": "预测请求超时（秒）",
@@ -704,3 +703,4 @@
     "skillsSaved": "AI 技能已保存"
   }
 }
+

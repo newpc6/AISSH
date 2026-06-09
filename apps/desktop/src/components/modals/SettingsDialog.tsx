@@ -32,7 +32,6 @@ type SettingsDialogProps = {
   defaultAiSystemPrompt: string
   defaultAiTerminalContextLimit: number
   defaultAiCommandHistoryLimit: number
-  defaultAiConversationContextLimit: number
   defaultAiPredictionTerminalContextLimit: number
   defaultAiPredictionCommandHistoryLimit: number
   defaultAgentCommandTimeoutSeconds: number
@@ -72,7 +71,6 @@ export function SettingsDialog({
   defaultAiSystemPrompt,
   defaultAiTerminalContextLimit,
   defaultAiCommandHistoryLimit,
-  defaultAiConversationContextLimit,
   defaultAiPredictionTerminalContextLimit,
   defaultAiPredictionCommandHistoryLimit,
   defaultAgentCommandTimeoutSeconds,
@@ -380,16 +378,6 @@ export function SettingsDialog({
                       />
                     </label>
                   </div>
-                  <label>
-                    <span>{t('settings.ai.conversationContextLimit')}</span>
-                    <input
-                      min="1"
-                      max="100"
-                      type="number"
-                      value={settings.aiConversationContextLimit ?? defaultAiConversationContextLimit}
-                      onChange={updateNumber('aiConversationContextLimit', defaultAiConversationContextLimit)}
-                    />
-                  </label>
                   <label>
                     <span>{t('settings.ai.agentCommandTimeout')}</span>
                     <input
