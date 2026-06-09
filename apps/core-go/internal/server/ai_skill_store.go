@@ -65,6 +65,14 @@ CREATE INDEX IF NOT EXISTS idx_ai_skills_updated_at ON ai_skills(updated_at DESC
 		_ = db.Close()
 		return err
 	}
+	if err := ensureSQLiteColumns(db, "ai_skills", []sqliteColumnSpec{
+		{Name: "prompt", Definition: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "created_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "updated_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+	}); err != nil {
+		_ = db.Close()
+		return err
+	}
 	s.db = db
 	return nil
 }

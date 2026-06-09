@@ -20,10 +20,10 @@ type aiModelStore struct {
 }
 
 type aiModelState struct {
-	Models                   []AIModelConfig `json:"models"`
-	ActiveModelID            string          `json:"activeModelId"`
-	ActiveAgentModelID       string          `json:"activeAgentModelId"`
-	ActivePredictionModelID  string          `json:"activePredictionModelId"`
+	Models                  []AIModelConfig `json:"models"`
+	ActiveModelID           string          `json:"activeModelId"`
+	ActiveAgentModelID      string          `json:"activeAgentModelId"`
+	ActivePredictionModelID string          `json:"activePredictionModelId"`
 }
 
 func newAIModelStore(logger *appLogger) *aiModelStore {
@@ -70,8 +70,28 @@ CREATE TABLE IF NOT EXISTS ai_model_state (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_ai_models_sort_order ON ai_models(sort_order ASC, updated_at DESC);
 `); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if err := ensureSQLiteColumns(db, "ai_models", []sqliteColumnSpec{
+		{Name: "thinking_enabled", Definition: "INTEGER NOT NULL DEFAULT 1"},
+		{Name: "assist_context_mode", Definition: "TEXT NOT NULL DEFAULT 'compact'"},
+		{Name: "assist_context_window", Definition: "INTEGER NOT NULL DEFAULT 6"},
+		{Name: "sort_order", Definition: "INTEGER NOT NULL DEFAULT 0"},
+		{Name: "created_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "updated_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+	}); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if err := ensureSQLiteColumns(db, "ai_model_state", []sqliteColumnSpec{
+		{Name: "updated_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+	}); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_ai_models_sort_order ON ai_models(sort_order ASC, updated_at DESC)`); err != nil {
 		_ = db.Close()
 		return err
 	}
@@ -222,9 +242,9 @@ func (s *aiModelStore) replaceModels(models []AIModelConfig, activeModelID strin
 		return aiModelState{}, err
 	}
 	return aiModelState{
-		Models: normalized,
-		ActiveModelID: activeModelID,
-		ActiveAgentModelID: activeAgentModelID,
+		Models:                  normalized,
+		ActiveModelID:           activeModelID,
+		ActiveAgentModelID:      activeAgentModelID,
 		ActivePredictionModelID: activePredictionModelID,
 	}, nil
 }
@@ -265,14 +285,14 @@ func normalizeAIModelStoreConfigs(models []AIModelConfig) []AIModelConfig {
 	seen := map[string]struct{}{}
 	for _, model := range models {
 		item := AIModelConfig{
-			ID:               strings.TrimSpace(model.ID),
-			Name:             strings.TrimSpace(model.Name),
-			Provider:         normalizeAIProvider(model.Provider),
-			BaseURL:          strings.TrimSpace(model.BaseURL),
-			APIKey:           model.APIKey,
-			Model:            strings.TrimSpace(model.Model),
-			ThinkingEnabled:  model.ThinkingEnabled,
-			AssistContextMode: strings.TrimSpace(model.AssistContextMode),
+			ID:                  strings.TrimSpace(model.ID),
+			Name:                strings.TrimSpace(model.Name),
+			Provider:            normalizeAIProvider(model.Provider),
+			BaseURL:             strings.TrimSpace(model.BaseURL),
+			APIKey:              model.APIKey,
+			Model:               strings.TrimSpace(model.Model),
+			ThinkingEnabled:     model.ThinkingEnabled,
+			AssistContextMode:   strings.TrimSpace(model.AssistContextMode),
 			AssistContextWindow: model.AssistContextWindow,
 		}
 		if item.AssistContextMode != "history" {

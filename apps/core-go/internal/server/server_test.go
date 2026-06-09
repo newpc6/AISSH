@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestNewHostStoreDefaultsToExecutableDataDirectory(t *testing.T) {
@@ -259,6 +262,90 @@ func TestAIModelEndpointsReplaceAndList(t *testing.T) {
 	}
 	if !strings.Contains(body, `"provider":"anthropic-claude"`) || !strings.Contains(body, `"provider":"openai-compatible"`) {
 		t.Fatalf("expected persisted models in body, got %s", body)
+	}
+}
+
+func TestAIModelStoreMigratesLegacySchema(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "legacy-ai-models.sqlite3")
+	db, err := sql.Open("sqlite", storePath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`
+CREATE TABLE ai_models (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL,
+  model TEXT NOT NULL
+);
+CREATE TABLE ai_model_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+INSERT INTO ai_models(id, name, provider, base_url, api_key, model)
+VALUES('legacy-model', 'Legacy Model', 'openai-compatible', 'https://api.example.com/v1', 'sk-legacy', 'deepseek-v4-flash');
+INSERT INTO ai_model_state(key, value)
+VALUES('active_model_id', 'legacy-model');
+`); err != nil {
+		t.Fatalf("seed legacy schema: %v", err)
+	}
+
+	store := &aiModelStore{path: storePath, logger: newAppLogger()}
+	defer func() {
+		if store.db != nil {
+			_ = store.db.Close()
+		}
+	}()
+	state, err := store.listModels()
+	if err != nil {
+		t.Fatalf("list models after migration: %v", err)
+	}
+	if len(state.Models) != 1 {
+		t.Fatalf("expected 1 model after migration, got %d", len(state.Models))
+	}
+	model := state.Models[0]
+	if model.ID != "legacy-model" || model.Name != "Legacy Model" {
+		t.Fatalf("unexpected migrated model: %#v", model)
+	}
+	if model.AssistContextMode != "compact" {
+		t.Fatalf("expected default assist context mode compact, got %q", model.AssistContextMode)
+	}
+	if model.AssistContextWindow != 6 {
+		t.Fatalf("expected default assist context window 6, got %d", model.AssistContextWindow)
+	}
+	if state.ActiveModelID != "legacy-model" {
+		t.Fatalf("expected active model id legacy-model, got %q", state.ActiveModelID)
+	}
+
+	rows, err := db.Query(`PRAGMA table_info(ai_models)`)
+	if err != nil {
+		t.Fatalf("pragma table_info(ai_models): %v", err)
+	}
+	defer rows.Close()
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatalf("scan table info: %v", err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table info rows err: %v", err)
+	}
+	for _, expected := range []string{"thinking_enabled", "assist_context_mode", "assist_context_window", "sort_order", "created_at", "updated_at"} {
+		if !columns[expected] {
+			t.Fatalf("expected migrated column %q to exist, columns=%v", expected, columns)
+		}
 	}
 }
 

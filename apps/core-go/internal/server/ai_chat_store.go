@@ -74,6 +74,23 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(convers
 		_ = db.Close()
 		return err
 	}
+	if err := ensureSQLiteColumns(db, "conversations", []sqliteColumnSpec{
+		{Name: "title", Definition: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "created_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "updated_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+	}); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if err := ensureSQLiteColumns(db, "messages", []sqliteColumnSpec{
+		{Name: "content", Definition: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "response_json", Definition: "TEXT"},
+		{Name: "step_json", Definition: "TEXT"},
+		{Name: "created_at", Definition: "TEXT NOT NULL DEFAULT ''"},
+	}); err != nil {
+		_ = db.Close()
+		return err
+	}
 	s.db = db
 	return nil
 }
