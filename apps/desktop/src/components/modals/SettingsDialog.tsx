@@ -33,8 +33,11 @@ type SettingsDialogProps = {
   defaultAiTerminalContextLimit: number
   defaultAiCommandHistoryLimit: number
   defaultAiConversationContextLimit: number
+  defaultAiPredictionTerminalContextLimit: number
+  defaultAiPredictionCommandHistoryLimit: number
   defaultAgentCommandTimeoutSeconds: number
   defaultAiProviderTimeoutSeconds: number
+  defaultAiPredictionProviderTimeoutSeconds: number
   defaultAiPredictionTriggerDelayMs: number
   onClose: () => void
   onSettingsSectionChange: (section: SettingsSection) => void
@@ -70,8 +73,11 @@ export function SettingsDialog({
   defaultAiTerminalContextLimit,
   defaultAiCommandHistoryLimit,
   defaultAiConversationContextLimit,
+  defaultAiPredictionTerminalContextLimit,
+  defaultAiPredictionCommandHistoryLimit,
   defaultAgentCommandTimeoutSeconds,
   defaultAiProviderTimeoutSeconds,
+  defaultAiPredictionProviderTimeoutSeconds,
   defaultAiPredictionTriggerDelayMs,
   onClose,
   onSettingsSectionChange,
@@ -296,75 +302,116 @@ export function SettingsDialog({
                   <span>{t('settings.ai.enableAgentThinking')}</span>
                 </label>
                 <p className="ai-model-help">{t('settings.ai.agentThinkingHelp')}</p>
-                <label>
-                  <span>{t('settings.ai.predictionCount')}</span>
-                  <input min="1" max="8" type="number" value={settings.aiPredictionCount} onChange={updateNumber('aiPredictionCount', 3)} />
-                </label>
-                <div className="form-row settings-pair">
+                <div className="settings-subsection">
+                  <h4>{t('settings.ai.predictionSection')}</h4>
+                  <p className="hint-text">{t('settings.ai.predictionSectionHint')}</p>
                   <label>
-                    <span>{t('settings.ai.terminalContextLimit')}</span>
+                    <span>{t('settings.ai.predictionCount')}</span>
+                    <input min="1" max="8" type="number" value={settings.aiPredictionCount} onChange={updateNumber('aiPredictionCount', 2)} />
+                  </label>
+                  <div className="form-row settings-pair">
+                    <label>
+                      <span>{t('settings.ai.predictionTerminalContextLimit')}</span>
+                      <input
+                        min="500"
+                        max="50000"
+                        step="500"
+                        type="number"
+                        value={settings.aiPredictionTerminalContextLimit ?? defaultAiPredictionTerminalContextLimit}
+                        onChange={updateNumber('aiPredictionTerminalContextLimit', defaultAiPredictionTerminalContextLimit)}
+                      />
+                    </label>
+                    <label>
+                      <span>{t('settings.ai.predictionCommandHistoryLimit')}</span>
+                      <input
+                        min="1"
+                        max="200"
+                        type="number"
+                        value={settings.aiPredictionCommandHistoryLimit ?? defaultAiPredictionCommandHistoryLimit}
+                        onChange={updateNumber('aiPredictionCommandHistoryLimit', defaultAiPredictionCommandHistoryLimit)}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    <span>{t('settings.ai.predictionTriggerDelay')}</span>
                     <input
-                      min="500"
-                      max="50000"
-                      step="500"
+                      min="0"
+                      max="10000"
+                      step="100"
                       type="number"
-                      value={settings.aiTerminalContextLimit ?? defaultAiTerminalContextLimit}
-                      onChange={updateNumber('aiTerminalContextLimit', defaultAiTerminalContextLimit)}
+                      value={settings.aiPredictionTriggerDelayMs ?? defaultAiPredictionTriggerDelayMs}
+                      onChange={updateNumber('aiPredictionTriggerDelayMs', defaultAiPredictionTriggerDelayMs)}
                     />
                   </label>
                   <label>
-                    <span>{t('settings.ai.commandHistoryLimit')}</span>
+                    <span>{t('settings.ai.predictionProviderTimeout')}</span>
                     <input
-                      min="1"
-                      max="200"
+                      min="10"
+                      max="1800"
                       type="number"
-                      value={settings.aiCommandHistoryLimit ?? defaultAiCommandHistoryLimit}
-                      onChange={updateNumber('aiCommandHistoryLimit', defaultAiCommandHistoryLimit)}
+                      value={settings.aiPredictionProviderTimeoutSeconds ?? defaultAiPredictionProviderTimeoutSeconds}
+                      onChange={updateNumber('aiPredictionProviderTimeoutSeconds', defaultAiPredictionProviderTimeoutSeconds)}
                     />
                   </label>
                 </div>
-                <label>
-                  <span>{t('settings.ai.conversationContextLimit')}</span>
-                  <input
-                    min="1"
-                    max="100"
-                    type="number"
-                    value={settings.aiConversationContextLimit ?? defaultAiConversationContextLimit}
-                    onChange={updateNumber('aiConversationContextLimit', defaultAiConversationContextLimit)}
-                  />
-                </label>
-                <label>
-                  <span>{t('settings.ai.agentCommandTimeout')}</span>
-                  <input
-                    min="10"
-                    max="1800"
-                    type="number"
-                    value={settings.agentCommandTimeoutSeconds ?? defaultAgentCommandTimeoutSeconds}
-                    onChange={updateNumber('agentCommandTimeoutSeconds', defaultAgentCommandTimeoutSeconds)}
-                  />
-                </label>
-                <label>
-                  <span>{t('settings.ai.aiProviderTimeout')}</span>
-                  <input
-                    min="10"
-                    max="1800"
-                    type="number"
-                    value={settings.aiProviderTimeoutSeconds ?? defaultAiProviderTimeoutSeconds}
-                    onChange={updateNumber('aiProviderTimeoutSeconds', defaultAiProviderTimeoutSeconds)}
-                  />
-                  <small>{t('settings.ai.providerTimeoutHint')}</small>
-                </label>
-                <label>
-                  <span>{t('settings.ai.predictionTriggerDelay')}</span>
-                  <input
-                    min="0"
-                    max="10000"
-                    step="100"
-                    type="number"
-                    value={settings.aiPredictionTriggerDelayMs ?? defaultAiPredictionTriggerDelayMs}
-                    onChange={updateNumber('aiPredictionTriggerDelayMs', defaultAiPredictionTriggerDelayMs)}
-                  />
-                </label>
+                <div className="settings-subsection">
+                  <h4>{t('settings.ai.assistSection')}</h4>
+                  <p className="hint-text">{t('settings.ai.assistSectionHint')}</p>
+                  <div className="form-row settings-pair">
+                    <label>
+                      <span>{t('settings.ai.terminalContextLimit')}</span>
+                      <input
+                        min="500"
+                        max="50000"
+                        step="500"
+                        type="number"
+                        value={settings.aiTerminalContextLimit ?? defaultAiTerminalContextLimit}
+                        onChange={updateNumber('aiTerminalContextLimit', defaultAiTerminalContextLimit)}
+                      />
+                    </label>
+                    <label>
+                      <span>{t('settings.ai.commandHistoryLimit')}</span>
+                      <input
+                        min="1"
+                        max="200"
+                        type="number"
+                        value={settings.aiCommandHistoryLimit ?? defaultAiCommandHistoryLimit}
+                        onChange={updateNumber('aiCommandHistoryLimit', defaultAiCommandHistoryLimit)}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    <span>{t('settings.ai.conversationContextLimit')}</span>
+                    <input
+                      min="1"
+                      max="100"
+                      type="number"
+                      value={settings.aiConversationContextLimit ?? defaultAiConversationContextLimit}
+                      onChange={updateNumber('aiConversationContextLimit', defaultAiConversationContextLimit)}
+                    />
+                  </label>
+                  <label>
+                    <span>{t('settings.ai.agentCommandTimeout')}</span>
+                    <input
+                      min="10"
+                      max="1800"
+                      type="number"
+                      value={settings.agentCommandTimeoutSeconds ?? defaultAgentCommandTimeoutSeconds}
+                      onChange={updateNumber('agentCommandTimeoutSeconds', defaultAgentCommandTimeoutSeconds)}
+                    />
+                  </label>
+                  <label>
+                    <span>{t('settings.ai.aiProviderTimeout')}</span>
+                    <input
+                      min="10"
+                      max="1800"
+                      type="number"
+                      value={settings.aiProviderTimeoutSeconds ?? defaultAiProviderTimeoutSeconds}
+                      onChange={updateNumber('aiProviderTimeoutSeconds', defaultAiProviderTimeoutSeconds)}
+                    />
+                    <small>{t('settings.ai.providerTimeoutHint')}</small>
+                  </label>
+                </div>
                 <label>
                   <span>{t('settings.ai.systemPrompt')}</span>
                   <textarea

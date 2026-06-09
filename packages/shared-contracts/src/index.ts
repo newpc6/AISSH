@@ -133,6 +133,9 @@ export interface AppSettings {
   aiPredictionThinkingEnabled: boolean
   aiPredictionCount: number
   aiPredictionTriggerDelayMs: number
+  aiPredictionTerminalContextLimit: number
+  aiPredictionCommandHistoryLimit: number
+  aiPredictionProviderTimeoutSeconds: number
   aiTerminalContextLimit: number
   aiCommandHistoryLimit: number
   aiConversationContextLimit: number

@@ -1322,6 +1322,9 @@ export function App() {
       aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
       aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
+      aiPredictionTerminalContextLimit: normalized.aiPredictionTerminalContextLimit,
+      aiPredictionCommandHistoryLimit: normalized.aiPredictionCommandHistoryLimit,
+      aiPredictionProviderTimeoutSeconds: normalized.aiPredictionProviderTimeoutSeconds,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
       aiConversationContextLimit: normalized.aiConversationContextLimit,
@@ -1398,6 +1401,9 @@ export function App() {
             aiPredictionThinkingEnabled: app.aiPredictionThinkingEnabled as boolean,
             aiPredictionCount: app.aiPredictionCount as number,
             aiPredictionTriggerDelayMs: app.aiPredictionTriggerDelayMs as number,
+            aiPredictionTerminalContextLimit: app.aiPredictionTerminalContextLimit as number,
+            aiPredictionCommandHistoryLimit: app.aiPredictionCommandHistoryLimit as number,
+            aiPredictionProviderTimeoutSeconds: app.aiPredictionProviderTimeoutSeconds as number,
             aiTerminalContextLimit: app.aiTerminalContextLimit as number,
             aiCommandHistoryLimit: app.aiCommandHistoryLimit as number,
             aiConversationContextLimit: app.aiConversationContextLimit as number,
@@ -2513,6 +2519,9 @@ export function App() {
       aiPredictionThinkingEnabled: normalized.aiPredictionThinkingEnabled,
       aiPredictionCount: normalized.aiPredictionCount,
       aiPredictionTriggerDelayMs: normalized.aiPredictionTriggerDelayMs,
+      aiPredictionTerminalContextLimit: normalized.aiPredictionTerminalContextLimit,
+      aiPredictionCommandHistoryLimit: normalized.aiPredictionCommandHistoryLimit,
+      aiPredictionProviderTimeoutSeconds: normalized.aiPredictionProviderTimeoutSeconds,
       aiTerminalContextLimit: normalized.aiTerminalContextLimit,
       aiCommandHistoryLimit: normalized.aiCommandHistoryLimit,
       aiConversationContextLimit: normalized.aiConversationContextLimit,
@@ -3898,7 +3907,7 @@ export function App() {
       streamingContent: '',
     })
 
-    const compactHistory = compactCommandHistoryForAI(history, normalized.aiCommandHistoryLimit).reverse()
+    const compactHistory = compactCommandHistoryForAI(history, normalized.aiPredictionCommandHistoryLimit).reverse()
     const payload: AIPredictionRequest = {
       modelId: activeModel.id,
       baseUrl: activeModel.baseUrl,
@@ -3906,10 +3915,10 @@ export function App() {
       model: activeModel.model,
       provider: activeModel.provider,
       thinkingEnabled: activeModel.thinkingEnabled,
-      timeoutSeconds: normalized.aiProviderTimeoutSeconds,
+      timeoutSeconds: normalized.aiPredictionProviderTimeoutSeconds,
       predictionCount: normalized.aiPredictionCount,
       includeThinking: normalized.aiPredictionThinkingEnabled,
-      terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiTerminalContextLimit),
+      terminalContext: terminalContextTail(terminalCachesRef.current[session.id], normalized.aiPredictionTerminalContextLimit),
       commandHistory: compactHistory,
       currentCommand: commandBufferRef.current,
       hostName: session.hostName,
@@ -5968,6 +5977,9 @@ export function App() {
         changePasswordSuccess={changePasswordSuccess}
         defaultAiCommandHistoryLimit={defaultSettings.aiCommandHistoryLimit}
         defaultAiConversationContextLimit={defaultSettings.aiConversationContextLimit}
+        defaultAiPredictionCommandHistoryLimit={defaultSettings.aiPredictionCommandHistoryLimit}
+        defaultAiPredictionProviderTimeoutSeconds={defaultSettings.aiPredictionProviderTimeoutSeconds}
+        defaultAiPredictionTerminalContextLimit={defaultSettings.aiPredictionTerminalContextLimit}
         defaultAiPredictionTriggerDelayMs={defaultSettings.aiPredictionTriggerDelayMs}
         defaultAiProviderTimeoutSeconds={defaultSettings.aiProviderTimeoutSeconds}
         defaultAiSystemPrompt={DEFAULT_AI_SYSTEM_PROMPT}

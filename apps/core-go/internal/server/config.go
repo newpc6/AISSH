@@ -36,6 +36,9 @@ type CoreAppConfig struct {
 	AIPredictionThinkingEnabled   bool            `json:"aiPredictionThinkingEnabled,omitempty"`
 	AIPredictionCount             int             `json:"aiPredictionCount,omitempty"`
 	AIPredictionTriggerDelayMs    int             `json:"aiPredictionTriggerDelayMs,omitempty"`
+	AIPredictionTerminalContextLimit int         `json:"aiPredictionTerminalContextLimit,omitempty"`
+	AIPredictionCommandHistoryLimit int          `json:"aiPredictionCommandHistoryLimit,omitempty"`
+	AIPredictionProviderTimeoutSeconds int       `json:"aiPredictionProviderTimeoutSeconds,omitempty"`
 	AITerminalContextLimit        int             `json:"aiTerminalContextLimit,omitempty"`
 	AICommandHistoryLimit         int             `json:"aiCommandHistoryLimit,omitempty"`
 	AIConversationContextLimit    int             `json:"aiConversationContextLimit,omitempty"`
@@ -204,6 +207,15 @@ func mergeCoreAppConfig(target *CoreAppConfig, incoming *CoreAppConfig, fields m
 	}
 	if _, ok := fields["aiPredictionTriggerDelayMs"]; ok && incoming.AIPredictionTriggerDelayMs > 0 {
 		target.AIPredictionTriggerDelayMs = incoming.AIPredictionTriggerDelayMs
+	}
+	if _, ok := fields["aiPredictionTerminalContextLimit"]; ok && incoming.AIPredictionTerminalContextLimit > 0 {
+		target.AIPredictionTerminalContextLimit = incoming.AIPredictionTerminalContextLimit
+	}
+	if _, ok := fields["aiPredictionCommandHistoryLimit"]; ok && incoming.AIPredictionCommandHistoryLimit > 0 {
+		target.AIPredictionCommandHistoryLimit = incoming.AIPredictionCommandHistoryLimit
+	}
+	if _, ok := fields["aiPredictionProviderTimeoutSeconds"]; ok && incoming.AIPredictionProviderTimeoutSeconds > 0 {
+		target.AIPredictionProviderTimeoutSeconds = incoming.AIPredictionProviderTimeoutSeconds
 	}
 	if _, ok := fields["aiTerminalContextLimit"]; ok && incoming.AITerminalContextLimit > 0 {
 		target.AITerminalContextLimit = incoming.AITerminalContextLimit

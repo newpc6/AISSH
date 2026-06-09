@@ -126,16 +126,19 @@ export const defaultSettings: AppSettings = {
   activeAIPredictionModelId: '',
   aiPredictionEnabled: true,
   aiPredictionThinkingEnabled: false,
-  aiPredictionCount: 3,
-  aiPredictionTriggerDelayMs: 1000,
-  aiTerminalContextLimit: 5000,
-  aiCommandHistoryLimit: 20,
-  aiConversationContextLimit: 30,
+  aiPredictionCount: 2,
+  aiPredictionTriggerDelayMs: 700,
+  aiPredictionTerminalContextLimit: 2200,
+  aiPredictionCommandHistoryLimit: 10,
+  aiPredictionProviderTimeoutSeconds: 45,
+  aiTerminalContextLimit: 3200,
+  aiCommandHistoryLimit: 12,
+  aiConversationContextLimit: 6,
   aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
   aiSystemPromptOverride: false,
   aiAgentThinkingEnabled: true,
-  aiProviderTimeoutSeconds: 120,
-  agentCommandTimeoutSeconds: 120,
+  aiProviderTimeoutSeconds: 90,
+  agentCommandTimeoutSeconds: 300,
 }
 
 export function createAIModelId() {
@@ -710,16 +713,37 @@ export function normalizeAppSettings(value: Partial<AppSettings> = {}): AppSetti
     activeAIPredictionModelId,
     aiPredictionEnabled: value.aiPredictionEnabled ?? defaultSettings.aiPredictionEnabled,
     aiPredictionThinkingEnabled: value.aiPredictionThinkingEnabled ?? defaultSettings.aiPredictionThinkingEnabled,
-    aiPredictionCount: Math.max(1, Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 3)),
-    aiPredictionTriggerDelayMs: Math.max(0, Math.min(10000, Number(value.aiPredictionTriggerDelayMs ?? defaultSettings.aiPredictionTriggerDelayMs) || 1000)),
-    aiTerminalContextLimit: Math.max(500, Math.min(50000, Number(value.aiTerminalContextLimit ?? defaultSettings.aiTerminalContextLimit) || 5000)),
-    aiCommandHistoryLimit: Math.max(1, Math.min(200, Number(value.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit) || 20)),
-    aiConversationContextLimit: Math.max(1, Math.min(100, Number(value.aiConversationContextLimit ?? defaultSettings.aiConversationContextLimit) || 30)),
+    aiPredictionCount: Math.max(1, Math.min(8, Number(value.aiPredictionCount ?? defaultSettings.aiPredictionCount) || 2)),
+    aiPredictionTriggerDelayMs: Math.max(0, Math.min(10000, Number(value.aiPredictionTriggerDelayMs ?? defaultSettings.aiPredictionTriggerDelayMs) || 700)),
+    aiPredictionTerminalContextLimit: Math.max(
+      500,
+      Math.min(
+        50000,
+        Number(value.aiPredictionTerminalContextLimit ?? value.aiTerminalContextLimit ?? defaultSettings.aiPredictionTerminalContextLimit) || 2200,
+      ),
+    ),
+    aiPredictionCommandHistoryLimit: Math.max(
+      1,
+      Math.min(
+        200,
+        Number(value.aiPredictionCommandHistoryLimit ?? value.aiCommandHistoryLimit ?? defaultSettings.aiPredictionCommandHistoryLimit) || 10,
+      ),
+    ),
+    aiPredictionProviderTimeoutSeconds: Math.max(
+      10,
+      Math.min(
+        1800,
+        Number(value.aiPredictionProviderTimeoutSeconds ?? value.aiProviderTimeoutSeconds ?? defaultSettings.aiPredictionProviderTimeoutSeconds) || 45,
+      ),
+    ),
+    aiTerminalContextLimit: Math.max(500, Math.min(50000, Number(value.aiTerminalContextLimit ?? defaultSettings.aiTerminalContextLimit) || 3200)),
+    aiCommandHistoryLimit: Math.max(1, Math.min(200, Number(value.aiCommandHistoryLimit ?? defaultSettings.aiCommandHistoryLimit) || 12)),
+    aiConversationContextLimit: Math.max(1, Math.min(100, Number(value.aiConversationContextLimit ?? defaultSettings.aiConversationContextLimit) || 6)),
     aiSystemPrompt: typeof value.aiSystemPrompt === 'string' && value.aiSystemPrompt.trim() ? value.aiSystemPrompt : defaultSettings.aiSystemPrompt,
     aiSystemPromptOverride: value.aiSystemPromptOverride ?? defaultSettings.aiSystemPromptOverride,
     aiAgentThinkingEnabled: value.aiAgentThinkingEnabled ?? defaultSettings.aiAgentThinkingEnabled,
-    aiProviderTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.aiProviderTimeoutSeconds ?? defaultSettings.aiProviderTimeoutSeconds) || 120)),
-    agentCommandTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.agentCommandTimeoutSeconds ?? defaultSettings.agentCommandTimeoutSeconds) || 120)),
+    aiProviderTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.aiProviderTimeoutSeconds ?? defaultSettings.aiProviderTimeoutSeconds) || 90)),
+    agentCommandTimeoutSeconds: Math.max(10, Math.min(1800, Number(value.agentCommandTimeoutSeconds ?? defaultSettings.agentCommandTimeoutSeconds) || 300)),
   }
 }
 
