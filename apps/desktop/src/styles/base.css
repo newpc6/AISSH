@@ -544,14 +544,15 @@ button {
 .server-group-toggle {
   width: 100%;
   border: 0;
-  padding: 0;
+  padding: 2px 0;
   margin: 0;
   background: transparent;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: #7f91a7;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.2;
   cursor: pointer;
   text-align: left;
 }
@@ -561,7 +562,9 @@ button {
 }
 
 .server-group-chevron {
-  width: 12px;
+  width: 16px;
+  font-size: 15px;
+  line-height: 1;
   color: #607189;
   transition: transform 0.16s ease;
 }
