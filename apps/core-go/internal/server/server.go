@@ -303,6 +303,7 @@ type terminalSession struct {
 type sessionManager struct {
 	mu          sync.RWMutex
 	hosts       []hostRecord
+	wslHosts    []hostRecord
 	groups      []hostGroup
 	sessions    map[string]*terminalSession
 	store       *hostStore
@@ -343,6 +344,7 @@ func newSessionManagerWithStores(store *hostStore, credentials credentialStore, 
 	if len(manager.groups) == 0 {
 		manager.groups = mergeHostGroups(nil, manager.hosts)
 	}
+	manager.refreshWSLHosts()
 
 	return manager
 }
@@ -485,17 +487,69 @@ func (m *sessionManager) listHosts() []hostRecord {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	hosts := make([]hostRecord, len(m.hosts))
-	for i, host := range m.hosts {
+	allHosts := append(append([]hostRecord{}, m.hosts...), m.wslHosts...)
+	hosts := make([]hostRecord, len(allHosts))
+	for i, host := range allHosts {
 		hosts[i] = host.sanitized()
 	}
 	return hosts
 }
 
+func normalizeWSLDistroList(output string) []string {
+	trimmed := strings.ReplaceAll(output, "\x00", "")
+	trimmed = strings.ReplaceAll(trimmed, "\r", "")
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return nil
+	}
+	seen := make(map[string]bool)
+	distros := make([]string, 0)
+	for _, line := range strings.Split(trimmed, "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		distros = append(distros, name)
+	}
+	return distros
+}
+
+func detectWSLHosts() []hostRecord {
+	output, err := exec.Command("wsl.exe", "-l", "-q").CombinedOutput()
+	if err != nil {
+		return nil
+	}
+	distros := normalizeWSLDistroList(string(output))
+	if len(distros) == 0 {
+		return nil
+	}
+	hosts := make([]hostRecord, 0, len(distros))
+	for _, distro := range distros {
+		hosts = append(hosts, hostRecord{
+			ID:          "wsl-" + strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(distro, " ", "-"), ".", "-")),
+			Name:        distro,
+			Protocol:    "wsl",
+			Address:     "wsl.local",
+			Port:        0,
+			Username:    "",
+			AuthType:    "agent",
+			Group:       "WSL",
+			Description: "Auto-detected local WSL distribution",
+			WSLDistro:   distro,
+		})
+	}
+	return hosts
+}
+
+func (m *sessionManager) refreshWSLHosts() {
+	m.wslHosts = detectWSLHosts()
+}
+
 func (m *sessionManager) listHostGroups() []hostGroup {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return mergeHostGroups(m.groups, m.hosts)
+	return mergeHostGroups(m.groups, append(append([]hostRecord{}, m.hosts...), m.wslHosts...))
 }
 
 func (m *sessionManager) updateHostGroups(request hostGroupsUpdateRequest) []hostGroup {
@@ -650,6 +704,11 @@ func (m *sessionManager) updateHost(hostID string, request hostUpsertRequest) (h
 			return next.sanitized(), true, nil
 		}
 	}
+	for i := range m.wslHosts {
+		if m.wslHosts[i].ID == hostID {
+			return hostRecord{}, true, fmt.Errorf("system WSL hosts are read-only")
+		}
+	}
 
 	return hostRecord{}, false, nil
 }
@@ -667,6 +726,11 @@ func (m *sessionManager) deleteHost(hostID string) bool {
 			_ = m.store.save(m.hosts, m.groups)
 			m.logger.info("hosts", "host deleted", map[string]any{"hostID": hostID})
 			return true
+		}
+	}
+	for i := range m.wslHosts {
+		if m.wslHosts[i].ID == hostID {
+			return false
 		}
 	}
 
@@ -944,6 +1008,11 @@ func (m *sessionManager) resolveSessionHost(request sessionOpenRequest) (hostRec
 	for i := range m.hosts {
 		if m.hosts[i].ID == request.HostID {
 			return m.hosts[i], true
+		}
+	}
+	for i := range m.wslHosts {
+		if m.wslHosts[i].ID == request.HostID {
+			return m.wslHosts[i], true
 		}
 	}
 

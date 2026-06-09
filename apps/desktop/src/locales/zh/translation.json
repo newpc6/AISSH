@@ -554,7 +554,8 @@
     "connectServer": "连接到此服务器",
     "duplicateServer": "复制此服务器配置",
     "deleteServer": "删除此服务器",
-    "duplicate": "复制"
+    "duplicate": "复制",
+    "systemWslReadonly": "??????? WSL ?????"
   },
   "terminalStage": {
     "reconnectSession": "重连当前 SSH 会话",

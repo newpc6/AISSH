@@ -554,7 +554,8 @@
     "connectServer": "Connect to this server",
     "duplicateServer": "Duplicate this server config",
     "deleteServer": "Delete this server",
-    "duplicate": "Duplicate"
+    "duplicate": "Duplicate",
+    "systemWslReadonly": "Auto-detected WSL connections are read-only"
   },
   "terminalStage": {
     "reconnectSession": "Reconnect current SSH session",

@@ -1700,6 +1700,17 @@ func TestHostFromRequestNormalizesWSL(t *testing.T) {
 	}
 }
 
+func TestNormalizeWSLDistroList(t *testing.T) {
+	input := "U\x00b\x00u\x00n\x00t\x00u\x00-\x002\x004\x00.\x000\x004\x00\r\x00\n\x00d\x00o\x00c\x00k\x00e\x00r\x00-\x00d\x00e\x00s\x00k\x00t\x00o\x00p\x00\r\x00\n\x00"
+	got := normalizeWSLDistroList(input)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 distros, got %v", got)
+	}
+	if got[0] != "Ubuntu-24.04" || got[1] != "docker-desktop" {
+		t.Fatalf("unexpected distros %v", got)
+	}
+}
+
 func TestWriteSessionInputEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))

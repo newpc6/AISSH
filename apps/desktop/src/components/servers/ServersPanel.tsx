@@ -115,16 +115,18 @@ export function ServersPanel({
           <section className="server-group" key={group.name}>
             <p>{group.name}<span>{group.hosts.length}</span></p>
             {group.hosts.length === 0 ? <small className="empty-group-text">{t('serversPanel.emptyGroup')}</small> : null}
-            {group.hosts.map((host) => (
-              <div
-                key={host.id}
-                className={`server-row ${batchMode ? 'batch-mode-row' : ''} ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''} ${openHostMenuId === host.id ? 'menu-open' : ''}`}
-                onClick={() => onSelectHost(host.id)}
-                onDoubleClick={() => void onCreateSession(host.id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => handleHostKeyDown(event, host.id)}
-              >
+            {group.hosts.map((host) => {
+              const isSystemWSL = (host.protocol ?? 'ssh') === 'wsl' && host.id.startsWith('wsl-')
+              return (
+                <div
+                  key={host.id}
+                  className={`server-row ${batchMode ? 'batch-mode-row' : ''} ${selectedHostId === host.id ? 'selected' : ''} ${batchSelectedHostIds.includes(host.id) ? 'batch-checked' : ''} ${openHostMenuId === host.id ? 'menu-open' : ''}`}
+                  onClick={() => onSelectHost(host.id)}
+                  onDoubleClick={() => void onCreateSession(host.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => handleHostKeyDown(event, host.id)}
+                >
                 {batchMode ? (
                   <label className="batch-checkbox" onClick={(event) => event.stopPropagation()} title={t('serversPanel.selectBatch')}>
                     <input
@@ -186,16 +188,17 @@ export function ServersPanel({
                 </div>
                 {openHostMenuId === host.id ? (
                   <div className="host-menu" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" title={t('serversPanel.editServer')} onClick={() => onOpenEditHostDialog(host)}>{t('app.edit')}</button>
+                    <button disabled={isSystemWSL} type="button" title={isSystemWSL ? t('serversPanel.systemWslReadonly') : t('serversPanel.editServer')} onClick={() => onOpenEditHostDialog(host)}>{t('app.edit')}</button>
                     <button type="button" title={t('serversPanel.connectServer')} onClick={() => void onCreateSession(host.id)}>{t('servers.connect')}</button>
-                    <button type="button" title={t('serversPanel.duplicateServer')} onClick={() => void onDuplicateHost(host)}>{t('serversPanel.duplicate')}</button>
-                    <button className="danger-item" type="button" title={t('serversPanel.deleteServer')} onClick={() => onConfirmDeleteHost(host)}>
+                    <button disabled={isSystemWSL} type="button" title={isSystemWSL ? t('serversPanel.systemWslReadonly') : t('serversPanel.duplicateServer')} onClick={() => void onDuplicateHost(host)}>{t('serversPanel.duplicate')}</button>
+                    <button disabled={isSystemWSL} className="danger-item" type="button" title={isSystemWSL ? t('serversPanel.systemWslReadonly') : t('serversPanel.deleteServer')} onClick={() => onConfirmDeleteHost(host)}>
                       {t('app.delete')}
                     </button>
                   </div>
                 ) : null}
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </section>
         ))}
       </div>
