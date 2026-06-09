@@ -3635,11 +3635,22 @@ export function App() {
     let lastTaskUpdate = 0
     const updateIntervalMs = 500
 
+    const buildUploadTargetPath = (uploadName: string, relativePath: string) => {
+      const normalizedRelativePath = relativePath.replace(/^\/+|\/+$/g, '')
+      if (normalizedRelativePath) {
+        if (rootLabel && normalizedRelativePath !== rootLabel && !normalizedRelativePath.startsWith(`${rootLabel}/`)) {
+          return `${rootLabel}/${normalizedRelativePath}`
+        }
+        return normalizedRelativePath
+      }
+      return rootLabel ? `${rootLabel}/${uploadName}` : uploadName
+    }
+
     try {
       for (const [index, file] of selectedFiles.entries()) {
         const relativePath = (relativePaths[index] || '').replace(/\\/g, '/')
         const uploadName = names[index] || file.name
-        const currentPath = relativePath || uploadName
+        const currentPath = buildUploadTargetPath(uploadName, relativePath)
         const remoteTargetPath = joinRemotePath(filePath, currentPath)
         const remoteDir = parentPath(remoteTargetPath)
         const remoteName = remoteFileName(remoteTargetPath)
