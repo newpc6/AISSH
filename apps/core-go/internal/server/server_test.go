@@ -1736,6 +1736,33 @@ func TestResolveAnyHostFindsWSLHost(t *testing.T) {
 	}
 }
 
+func TestBuildWSLCommandWrapsInteractiveShellWithScript(t *testing.T) {
+	host := hostRecord{Protocol: "wsl", WSLDistro: "Ubuntu-24.04", Username: "newpc"}
+	cmd := buildWSLCommand(host)
+
+	got := strings.Join(cmd.Args, " ")
+	for _, expected := range []string{
+		"wsl.exe",
+		"-d Ubuntu-24.04",
+		"-u newpc",
+		"script -qfec bash -il /dev/null",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("expected command args to contain %q, got %q", expected, got)
+		}
+	}
+}
+
+func TestBuildWSLListPythonUsesTimezoneAwareTimestamps(t *testing.T) {
+	script := buildWSLListPython("~")
+	if !strings.Contains(script, "datetime.datetime.fromtimestamp") {
+		t.Fatalf("expected timezone-aware timestamp conversion, got %q", script)
+	}
+	if strings.Contains(script, "utcfromtimestamp") {
+		t.Fatalf("expected deprecated utcfromtimestamp to be removed, got %q", script)
+	}
+}
+
 func TestWriteSessionInputEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	openReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"hostId":"local-demo"}`))

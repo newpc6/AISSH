@@ -1415,7 +1415,9 @@ func buildWSLCommand(host hostRecord) *exec.Cmd {
 	if user := strings.TrimSpace(host.Username); user != "" {
 		args = append(args, "-u", user)
 	}
-	args = append(args, "bash", "-il")
+	// Run the interactive shell inside `script` so full-screen tools like top
+	// get a pseudo-terminal under Windows-hosted WSL sessions.
+	args = append(args, "script", "-qfec", "bash -il", "/dev/null")
 	return exec.Command("wsl.exe", args...)
 }
 

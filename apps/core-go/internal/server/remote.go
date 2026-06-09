@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -53,6 +54,35 @@ func runWSLCommand(host hostRecord, command string) (string, error) {
 	cmd := exec.Command("wsl.exe", args...)
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func runWSLPython(host hostRecord, script string) (string, error) {
+	args := []string{}
+	if distro := strings.TrimSpace(host.WSLDistro); distro != "" {
+		args = append(args, "-d", distro)
+	}
+	if user := strings.TrimSpace(host.Username); user != "" {
+		args = append(args, "-u", user)
+	}
+	args = append(args, "--cd", "~", "--", "python3", "-")
+	cmd := exec.Command("wsl.exe", args...)
+	cmd.Stdin = strings.NewReader(script)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = strings.TrimSpace(stdout.String())
+		}
+		if message != "" {
+			return "", fmt.Errorf("%w: %s", err, message)
+		}
+		return "", err
+	}
+	return stdout.String(), nil
 }
 
 func resolveHostRemotePath(host hostRecord, remotePath string) string {
@@ -139,8 +169,7 @@ func listWSLFiles(host hostRecord, remotePath string) (fileListResponse, error) 
 	if listPath == "." {
 		listPath = "~"
 	}
-	command := fmt.Sprintf("python3 -c %q", buildWSLListPython(listPath))
-	output, err := runWSLCommand(host, command)
+	output, err := runWSLPython(host, buildWSLListPython(listPath))
 	if err != nil {
 		return fileListResponse{}, err
 	}
@@ -186,8 +215,7 @@ func downloadRemoteFile(host hostRecord, remotePath string, w http.ResponseWrite
 
 func downloadWSLFile(host hostRecord, remotePath string, w http.ResponseWriter) error {
 	targetPath := resolveHostRemotePath(host, remotePath)
-	command := fmt.Sprintf("python3 -c %q", buildWSLReadBase64Python(targetPath))
-	output, err := runWSLCommand(host, command)
+	output, err := runWSLPython(host, buildWSLReadBase64Python(targetPath))
 	if err != nil {
 		return err
 	}
@@ -269,8 +297,7 @@ func uploadWSLFile(host hostRecord, remoteDir string, r *http.Request) error {
 			return err
 		}
 		targetPath := pathpkg.Join(targetDir, filepath.Base(header.Filename))
-		command := fmt.Sprintf("python3 -c %q", buildWSLWriteBase64Python(targetPath, base64.StdEncoding.EncodeToString(data)))
-		if _, err := runWSLCommand(host, command); err != nil {
+		if _, err := runWSLPython(host, buildWSLWriteBase64Python(targetPath, base64.StdEncoding.EncodeToString(data))); err != nil {
 			return err
 		}
 	}
@@ -520,7 +547,7 @@ for item in sorted(p.iterdir(), key=lambda it: (not it.is_dir(), it.name.lower()
         "path": item.as_posix(),
         "type": "directory" if item.is_dir() else "file",
         "size": int(st.st_size),
-        "modifiedAt": datetime.datetime.utcfromtimestamp(st.st_mtime).strftime("%%Y-%%m-%%dT%%H:%%M:%%SZ"),
+        "modifiedAt": datetime.datetime.fromtimestamp(st.st_mtime, datetime.UTC).strftime("%%Y-%%m-%%dT%%H:%%M:%%SZ"),
     })
 print(json.dumps({"path": p.as_posix(), "entries": entries}))`, targetPath)
 }
