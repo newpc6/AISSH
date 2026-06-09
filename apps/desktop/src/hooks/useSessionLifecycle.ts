@@ -127,7 +127,11 @@ export function useSessionLifecycle({
         terminalCachesRef.current = next
         return next
       })
-      setSessions((current) => [data.session, ...current])
+      setSessions((current) => {
+        const next = [data.session, ...current.filter((session) => session.id !== data.session.id)]
+        sessionsRef.current = next
+        return next
+      })
       setActiveSession(data.session.id)
       xtermRef.current?.clear()
       xtermRef.current?.write(initialOutput)
