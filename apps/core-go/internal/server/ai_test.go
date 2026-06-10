@@ -196,6 +196,15 @@ func TestAnthropicContentAndThinking(t *testing.T) {
 	}
 }
 
+func TestFirstNonEmptyRawPreservesWhitespaceChunks(t *testing.T) {
+	if got := firstNonEmptyRaw(" ", "fallback"); got != " " {
+		t.Fatalf("expected raw whitespace chunk to be preserved, got %q", got)
+	}
+	if got := firstNonEmptyRaw("", "docker images"); got != "docker images" {
+		t.Fatalf("expected next non-empty raw value, got %q", got)
+	}
+}
+
 func TestAssistContentStreamExtractorReturnsReadableAnswerDelta(t *testing.T) {
 	extractor := &assistContentStreamExtractor{}
 	var streamed string

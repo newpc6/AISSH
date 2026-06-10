@@ -1061,13 +1061,13 @@ func streamAnthropicMessages(ctx context.Context, endpoint string, apiKey string
 			}
 			continue
 		}
-		if text := firstNonEmpty(chunk.Delta.Thinking, chunk.ContentBlock.Thinking); text != "" {
+		if text := firstNonEmptyRaw(chunk.Delta.Thinking, chunk.ContentBlock.Thinking); text != "" {
 			reasoningBuilder.WriteString(text)
 			if err := write(aiStreamEvent{Type: "thinking", Text: text}); err != nil {
 				return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
 			}
 		}
-		if text := firstNonEmpty(chunk.Delta.Text, chunk.ContentBlock.Text); text != "" {
+		if text := firstNonEmptyRaw(chunk.Delta.Text, chunk.ContentBlock.Text); text != "" {
 			contentBuilder.WriteString(text)
 			if err := write(aiStreamEvent{Type: "content", Text: text}); err != nil {
 				return contentBuilder.String(), reasoningBuilder.String(), finishReason, err
@@ -1726,6 +1726,15 @@ func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
 			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func firstNonEmptyRaw(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
 		}
 	}
 	return ""
