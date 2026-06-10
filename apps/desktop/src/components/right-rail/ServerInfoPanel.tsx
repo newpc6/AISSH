@@ -112,6 +112,27 @@ export function ServerInfoPanel({
           {activeSession ? (
             <div className="metric-stack">
               <div className="metric-card">
+                <div>
+                  <span>{t('serverInfo.network')}</span>
+                  <strong>
+                    {latestMetricSample
+                      ? t('serverInfo.networkRate', {
+                          rx: formatRate(latestMetricSample.networkRxRateBytes),
+                          tx: formatRate(latestMetricSample.networkTxRateBytes),
+                        })
+                      : '-'}
+                  </strong>
+                </div>
+                <small>
+                  {serverMetrics
+                    ? t('serverInfo.networkTotal', {
+                        rx: formatBytes(serverMetrics.networkRxBytes),
+                        tx: formatBytes(serverMetrics.networkTxBytes),
+                      })
+                    : t('serverInfo.waitingSample')}
+                </small>
+              </div>
+              <div className="metric-card">
                 <MetricChart
                   compact
                   compactPointLimit={metricCompactPointLimit}
@@ -153,25 +174,6 @@ export function ServerInfoPanel({
                 </div>
               </div>
               <div className="metric-card">
-                <div>
-                  <span>{t('serverInfo.network')}</span>
-                  <strong>
-                    {latestMetricSample
-                      ? t('serverInfo.networkRate', {
-                          rx: formatRate(latestMetricSample.networkRxRateBytes),
-                          tx: formatRate(latestMetricSample.networkTxRateBytes),
-                        })
-                      : '-'}
-                  </strong>
-                </div>
-                <small>
-                  {serverMetrics
-                    ? t('serverInfo.networkTotal', {
-                        rx: formatBytes(serverMetrics.networkRxBytes),
-                        tx: formatBytes(serverMetrics.networkTxBytes),
-                      })
-                    : t('serverInfo.waitingSample')}
-                </small>
               </div>
             </div>
           ) : null}
