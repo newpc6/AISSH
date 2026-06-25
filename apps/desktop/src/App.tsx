@@ -61,6 +61,7 @@ import {
   type AIPredictionRequest,
   type AIAssistRequest,
   type AIAssistResponse,
+  type AIAgentMode,
   type AIModelConfig,
   type AIModelListResponse,
   type AIModelReplaceRequest,
@@ -239,6 +240,7 @@ export function App() {
   const [batchMode, setBatchMode] = useState(false)
   const [batchActive, setBatchActive] = useState(false)
   const [batchTask, setBatchTask] = useState('')
+  const [batchAgentMode, setBatchAgentMode] = useState<AIAgentMode>('auto')
   const [batchHostIndex, setBatchHostIndex] = useState(0)
   const [batchHostResults, setBatchHostResults] = useState<BatchHostResult[]>([])
   const [serverSearch, setServerSearch] = useState('')
@@ -1913,6 +1915,7 @@ export function App() {
     batchSelectedHosts,
     clearBatchSelection,
     removeBatchSelectedHost,
+    setBatchHostsSelected,
     toggleBatchHostSelection,
   } = useBatchSelection(hosts)
   useEffect(() => {
@@ -1975,6 +1978,7 @@ export function App() {
   const agentState = activeAgentState.state
   const agentMessage = activeAgentState.message
   const activeAgentMode = activeAgentState.mode
+  const displayedAgentMode = batchMode ? batchAgentMode : activeAgentMode
   const agentSteps = activeAgentSessionId ? getAgentStepsForSession(activeAgentSessionId) : []
   const pendingAgentStepId = activeAgentState.pendingStepId
 
@@ -2915,7 +2919,7 @@ export function App() {
 
       updateSessionAgentState(sessionId, {
         goal: task,
-        mode: 'auto',
+        mode: batchAgentMode,
         state: 'loading',
         running: true,
         message: `[${index + 1}/${total}] 正在 ${hostName} 上执行：${task}`,
@@ -3018,7 +3022,8 @@ export function App() {
       const conversation = await createAIConversation(`批量任务：${task.slice(0, 18) || '执行'}`)
       batchConversationIdRef.current = conversation.id
       await appendAIMessage('user', `批量任务：${task}`, {}, conversation.id)
-      await appendAIMessage('status', `批量任务开始：共 ${hosts.length} 台服务器，将按勾选顺序逐台执行。`, {}, conversation.id)
+      const modeText = batchAgentMode === 'review' ? '审核模式' : batchAgentMode === 'full-auto' ? '完全自动模式' : '自动模式'
+      await appendAIMessage('status', `批量任务开始：共 ${hosts.length} 台服务器，将按勾选顺序逐台执行，当前模式：${modeText}。`, {}, conversation.id)
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建批量任务对话失败'
       setAiAssistantError(message)
@@ -5995,6 +6000,7 @@ export function App() {
                 setCollapsedHostGroups((current) => ({ ...current, [groupName]: !current[groupName] }))
               }}
               onServerSearchChange={setServerSearch}
+              onSetBatchHostsSelected={setBatchHostsSelected}
               onToggleBatchHost={toggleBatchHostSelection}
               onToggleBatchMode={toggleBatchMode}
             />
@@ -6216,7 +6222,7 @@ export function App() {
                 activeAIModelTitle={activeAIAgentModelConfig
                   ? t('appMenu.currentModel', { model: activeAIAgentModelConfig.model || activeAIAgentModelConfig.name })
                   : t('appMenu.unconfiguredModel')}
-                agentMode={activeAgentMode}
+                agentMode={displayedAgentMode}
                 agentState={agentState}
                 aiAssistantError={aiAssistantError}
                 aiAssistantState={aiAssistantState}
@@ -6281,6 +6287,10 @@ export function App() {
                   ))
                 }}
                 onSetAgentMode={(mode) => {
+                  if (batchMode) {
+                    setBatchAgentMode(mode)
+                    return
+                  }
                   if (!activeAgentSessionId) {
                     return
                   }

@@ -261,46 +261,44 @@ export function AIWorkspacePanel({
           />
         ) : null}
 
+        {!isAIInputCollapsed && batchMode && batchSelectedHosts.length > 0 ? (
+          <div className="batch-mode-summary">
+            <span className="batch-mode-hint">{t('aiWorkspace.batch.modeSummary', { count: batchSelectedHosts.length })}</span>
+            <div className="batch-selected-tags" title={batchSelectedHosts.map((host) => host.name).join('、')}>
+              {batchSelectedHosts.map((host) => (
+                <span className="batch-selected-tag" key={host.id} title={host.name}>
+                  <span>{host.name}</span>
+                  <button
+                    type="button"
+                    aria-label={t('aiWorkspace.batch.removeHost', { name: host.name })}
+                    title={t('aiWorkspace.batch.removeHost', { name: host.name })}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRemoveBatchSelectedHost(host.id)
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {!isAIInputCollapsed ? (
           <div className="agent-mode-row">
-            {batchMode && batchSelectedHosts.length > 0 ? (
-              <div className="batch-mode-summary">
-                <span className="batch-mode-hint">{t('aiWorkspace.batch.modeSummary', { count: batchSelectedHosts.length })}</span>
-                <div className="batch-selected-tags" title={batchSelectedHosts.map((host) => host.name).join('、')}>
-                  {batchSelectedHosts.map((host) => (
-                    <span className="batch-selected-tag" key={host.id} title={host.name}>
-                      <span>{host.name}</span>
-                      <button
-                        type="button"
-                        aria-label={t('aiWorkspace.batch.removeHost', { name: host.name })}
-                        title={t('aiWorkspace.batch.removeHost', { name: host.name })}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onRemoveBatchSelectedHost(host.id)
-                        }}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <>
-                <label title={t('aiWorkspace.modes.review.title')}>
-                  <input checked={agentMode === 'review'} type="radio" onChange={() => onSetAgentMode('review')} />
-                  <span>{t('aiWorkspace.modes.review.label')}</span>
-                </label>
-                <label title={t('aiWorkspace.modes.auto.title')}>
-                  <input checked={agentMode === 'auto'} type="radio" onChange={() => onSetAgentMode('auto')} />
-                  <span>{t('aiWorkspace.modes.auto.label')}</span>
-                </label>
-                <label title={t('aiWorkspace.modes.fullAuto.title')}>
-                  <input checked={agentMode === 'full-auto'} type="radio" onChange={() => onSetAgentMode('full-auto')} />
-                  <span>{t('aiWorkspace.modes.fullAuto.label')}</span>
-                </label>
-              </>
-            )}
+            <label title={t('aiWorkspace.modes.review.title')}>
+              <input checked={agentMode === 'review'} type="radio" onChange={() => onSetAgentMode('review')} />
+              <span>{t('aiWorkspace.modes.review.label')}</span>
+            </label>
+            <label title={t('aiWorkspace.modes.auto.title')}>
+              <input checked={agentMode === 'auto'} type="radio" onChange={() => onSetAgentMode('auto')} />
+              <span>{t('aiWorkspace.modes.auto.label')}</span>
+            </label>
+            <label title={t('aiWorkspace.modes.fullAuto.title')}>
+              <input checked={agentMode === 'full-auto'} type="radio" onChange={() => onSetAgentMode('full-auto')} />
+              <span>{t('aiWorkspace.modes.fullAuto.label')}</span>
+            </label>
           </div>
         ) : null}
 

@@ -445,6 +445,12 @@ button {
   overflow: auto;
 }
 
+.servers-content {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+}
+
 .panel-toolbar {
   display: flex;
   align-items: center;
@@ -522,9 +528,12 @@ button {
 }
 
 .server-groups {
+  min-height: 0;
   display: grid;
   gap: 14px;
   align-content: start;
+  overflow-y: auto;
+  padding-right: 3px;
 }
 
 .server-group p,
@@ -541,8 +550,17 @@ button {
   gap: 8px;
 }
 
+.server-group-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .server-group-toggle {
   width: 100%;
+  min-width: 0;
   border: 0;
   padding: 2px 0;
   margin: 0;
@@ -555,6 +573,49 @@ button {
   line-height: 1.2;
   cursor: pointer;
   text-align: left;
+}
+
+.batch-select-all,
+.batch-group-select {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #9fb2c8;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.batch-select-all {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.06);
+  color: #fcd34d;
+}
+
+.batch-group-select {
+  flex: 0 0 auto;
+  color: #fbbf24;
+  font-size: 11px;
+}
+
+.batch-select-all input,
+.batch-group-select input {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  accent-color: #f59e0b;
+}
+
+.batch-select-all span,
+.batch-group-select span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .server-group-toggle:hover {
@@ -858,22 +919,26 @@ button {
 
 .batch-mode-summary {
   min-width: 0;
+  max-width: 100%;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .batch-selected-tags {
   min-width: 0;
+  max-height: 54px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 5px;
-  overflow: hidden;
-  white-space: nowrap;
+  overflow: auto;
+  padding-bottom: 2px;
 }
 
 .batch-selected-tag {
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: 76px;
   max-width: 120px;
   height: 22px;
   display: inline-flex;

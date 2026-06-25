@@ -34,6 +34,17 @@ export function useBatchSelection(hosts: HostRecord[]) {
     setSelectedHostIds((current) => current.filter((id) => id !== hostId))
   }
 
+  const setBatchHostsSelected = (hostIds: string[], selected: boolean) => {
+    const uniqueHostIds = Array.from(new Set(hostIds))
+    setSelectedHostIds((current) => {
+      if (selected) {
+        return Array.from(new Set([...current, ...uniqueHostIds]))
+      }
+      const removeSet = new Set(uniqueHostIds)
+      return current.filter((id) => !removeSet.has(id))
+    })
+  }
+
   const clearBatchSelection = () => {
     setSelectedHostIds([])
   }
@@ -44,6 +55,7 @@ export function useBatchSelection(hosts: HostRecord[]) {
     batchSelectedHosts,
     clearBatchSelection,
     removeBatchSelectedHost,
+    setBatchHostsSelected,
     setBatchSelectedHostIds: setSelectedHostIds,
     toggleBatchHostSelection,
   }

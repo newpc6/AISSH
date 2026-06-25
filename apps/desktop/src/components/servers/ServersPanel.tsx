@@ -25,6 +25,7 @@ type ServersPanelProps = {
   onOpenHostMenuChange: (hostId: string) => void
   onSelectHost: (hostId: string) => void
   onServerSearchChange: (value: string) => void
+  onSetBatchHostsSelected: (hostIds: string[], selected: boolean) => void
   onToggleHostGroupCollapsed: (groupName: string) => void
   onToggleBatchHost: (hostId: string) => void
   onToggleBatchMode: () => void
@@ -51,6 +52,7 @@ export function ServersPanel({
   onOpenHostMenuChange,
   onSelectHost,
   onServerSearchChange,
+  onSetBatchHostsSelected,
   onToggleHostGroupCollapsed,
   onToggleBatchHost,
   onToggleBatchMode,
@@ -67,9 +69,12 @@ export function ServersPanel({
   const flatHostIds = showMoveButtons
     ? visibleHostGroups.flatMap((group) => group.hosts.map((host) => host.id))
     : []
+  const visibleHostIds = visibleHostGroups.flatMap((group) => group.hosts.map((host) => host.id))
+  const selectedVisibleCount = visibleHostIds.filter((hostId) => batchSelectedHostIds.includes(hostId)).length
+  const allVisibleBatchSelected = visibleHostIds.length > 0 && selectedVisibleCount === visibleHostIds.length
 
   return (
-    <div className="left-content">
+    <div className="left-content servers-content">
       <div className="panel-toolbar">
         <strong>{t('servers.title')}</strong>
         <div className="toolbar-actions">
@@ -110,6 +115,19 @@ export function ServersPanel({
       </label>
 
       <div className="server-groups">
+        {batchMode && visibleHostIds.length > 0 ? (
+          <label className="batch-select-all">
+            <input
+              type="checkbox"
+              checked={allVisibleBatchSelected}
+              ref={(input) => {
+                if (input) input.indeterminate = selectedVisibleCount > 0 && !allVisibleBatchSelected
+              }}
+              onChange={(event) => onSetBatchHostsSelected(visibleHostIds, event.target.checked)}
+            />
+            <span>{t('serversPanel.selectAllVisible', { count: visibleHostIds.length })}</span>
+          </label>
+        ) : null}
         {visibleHostCount === 0 ? (
           <p className="server-search-empty">
             {serverSearch.trim() ? t('serversPanel.noMatch') : t('serversPanel.empty')}
@@ -117,19 +135,37 @@ export function ServersPanel({
         ) : null}
         {visibleHostGroups.map((group) => {
           const isCollapsed = Boolean(collapsedHostGroups[group.name])
+          const groupHostIds = group.hosts.map((host) => host.id)
+          const selectedGroupCount = groupHostIds.filter((hostId) => batchSelectedHostIds.includes(hostId)).length
+          const allGroupSelected = groupHostIds.length > 0 && selectedGroupCount === groupHostIds.length
           return (
           <section className={`server-group ${isCollapsed ? 'collapsed' : ''}`} key={group.name}>
-            <button
-              type="button"
-              className="server-group-toggle"
-              aria-expanded={!isCollapsed}
-              title={isCollapsed ? t('serversPanel.expandGroup', { name: group.name }) : t('serversPanel.collapseGroup', { name: group.name })}
-              onClick={() => onToggleHostGroupCollapsed(group.name)}
-            >
-              <span className={`server-group-chevron ${isCollapsed ? 'collapsed' : ''}`} aria-hidden="true">▾</span>
-              <span className="server-group-name">{group.name}</span>
-              <span className="server-group-count">{group.hosts.length}</span>
-            </button>
+            <div className="server-group-header">
+              <button
+                type="button"
+                className="server-group-toggle"
+                aria-expanded={!isCollapsed}
+                title={isCollapsed ? t('serversPanel.expandGroup', { name: group.name }) : t('serversPanel.collapseGroup', { name: group.name })}
+                onClick={() => onToggleHostGroupCollapsed(group.name)}
+              >
+                <span className={`server-group-chevron ${isCollapsed ? 'collapsed' : ''}`} aria-hidden="true">▾</span>
+                <span className="server-group-name">{group.name}</span>
+                <span className="server-group-count">{group.hosts.length}</span>
+              </button>
+              {batchMode && group.hosts.length > 0 ? (
+                <label className="batch-group-select" title={t('serversPanel.selectGroupBatch', { name: group.name })}>
+                  <input
+                    type="checkbox"
+                    checked={allGroupSelected}
+                    ref={(input) => {
+                      if (input) input.indeterminate = selectedGroupCount > 0 && !allGroupSelected
+                    }}
+                    onChange={(event) => onSetBatchHostsSelected(groupHostIds, event.target.checked)}
+                  />
+                  <span>{t('serversPanel.selectGroup')}</span>
+                </label>
+              ) : null}
+            </div>
             {!isCollapsed && group.hosts.length === 0 ? <small className="empty-group-text">{t('serversPanel.emptyGroup')}</small> : null}
             {!isCollapsed ? group.hosts.map((host) => {
               const isSystemWSL = (host.protocol ?? 'ssh') === 'wsl' && host.id.startsWith('wsl-')
