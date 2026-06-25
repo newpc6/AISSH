@@ -2750,6 +2750,9 @@ export function App() {
   const hasIncompleteAgentStep = (steps: AIAgentPlanStep[]) =>
     steps.some((step) => step.status === 'pending' || step.status === 'approved' || step.status === 'running')
 
+  const hasBatchBlockingStep = (steps: AIAgentPlanStep[]) =>
+    steps.some((step) => step.status === 'pending' || step.status === 'approved' || step.status === 'running')
+
   const summarizeFailedBatchHostSteps = (steps: AIAgentPlanStep[]) => {
     if (steps.some((step) => step.status === 'failed')) {
       return `执行 ${steps.length} 步，存在失败命令`
@@ -2897,6 +2900,10 @@ export function App() {
       updateBatchHostResults((current) =>
         current.map((r) => (r.hostId === hostId ? { ...r, sessionId } : r)),
       )
+      if (batchConversationIdRef.current) {
+        setLiveConversationId(sessionId, batchConversationIdRef.current)
+        clearPreviewConversationId(sessionId)
+      }
       void appendBatchStatusMessage(hostName, 'SSH 会话已创建，等待连接成功...', index, total)
 
       await new Promise<void>((resolve, reject) => {
@@ -2935,16 +2942,29 @@ export function App() {
       await new Promise<void>((resolve) => {
         const lastStepCountRef = { value: 0 }
         const check = () => {
-          if (batchAbortRef.current || !getSessionAgentState(sessionId).running) {
+          const steps = getAgentStepsForSession(sessionId)
+          const sessionAgentState = getSessionAgentState(sessionId)
+          if (batchAbortRef.current || (!sessionAgentState.running && !hasBatchBlockingStep(steps))) {
             setBatchHostSteps(hostId, sessionId)
             resolve()
             return
           }
-          const steps = getAgentStepsForSession(sessionId)
           if (steps.length !== lastStepCountRef.value) {
             lastStepCountRef.value = steps.length
+            const waitingForManualAction = !sessionAgentState.running && hasBatchBlockingStep(steps)
             updateBatchHostResults((current) =>
-              current.map((r) => (r.hostId === hostId ? { ...r, stepCount: steps.length } : r)),
+              current.map((r) =>
+                r.hostId === hostId
+                  ? {
+                      ...r,
+                      status: waitingForManualAction ? 'running' as const : r.status,
+                      stepCount: steps.length,
+                      summary: waitingForManualAction
+                        ? '等待人工执行或确认'
+                        : r.summary,
+                    }
+                  : r,
+              ),
             )
           }
           window.setTimeout(check, 500)
@@ -4643,6 +4663,18 @@ export function App() {
     )
   }
 
+  const appendAgentStepForSession = async (
+    step: AIAgentPlanStep,
+    sessionId: string,
+    conversationId: string,
+    existingSteps = getAgentStepsForSession(sessionId),
+  ) => {
+    const stepMessage = await appendAIMessage('agent_step', step.command, { step }, conversationId)
+    const messageStep = { ...step, id: stepMessage.id }
+    setAgentStepsForSession(sessionId, [messageStep, ...existingSteps].slice(0, 30))
+    return messageStep
+  }
+
   const addAgentStepFromAIResponse = (
     response: AIAssistResponse,
     sessionId = activeSessionIdRef.current,
@@ -4686,14 +4718,15 @@ export function App() {
       state: 'success',
       message: response.answer || response.agentReason || 'AI 已给出下一步命令',
     })
-    if (currentAgentState.mode === 'review' || !currentAgentState.running) {
-      updateSessionAgentState(sessionId, { running: false })
-      return
-    }
-    void appendAIMessage('agent_step', command, { step }, conversationId).then((message) => {
-      const messageStep = { ...step, id: message.id }
-      setAgentStepsForSession(sessionId, (current) => [messageStep, ...current].slice(0, 30))
+    void appendAgentStepForSession(step, sessionId, conversationId).then((messageStep) => {
       const latestAgentState = getSessionAgentState(sessionId)
+      if (currentAgentState.mode === 'review' || !latestAgentState.running) {
+        updateSessionAgentState(sessionId, {
+          running: false,
+          message: response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。',
+        })
+        return
+      }
       if (
         latestAgentState.running &&
         (latestAgentState.mode === 'full-auto' || (latestAgentState.mode === 'auto' && riskLevel !== 'high'))
@@ -4883,22 +4916,18 @@ export function App() {
         await persistStreamingArtifacts(liveConversationId)
         await appendAIMessage('command', response.answer || response.agentReason || 'Agent 已给出下一步命令。', { response }, liveConversationId)
       }
+      const stepConversationId = isBatchSession ? batchConversationId : liveConversationId
+      const messageStep = await appendAgentStepForSession(step, sessionId, stepConversationId, steps)
       const latestAgentState = getSessionAgentState(sessionId)
       if (latestAgentState.mode === 'review' || !latestAgentState.running) {
         updateSessionAgentState(sessionId, {
           running: false,
-          message: response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。',
+          message: isBatchSession
+            ? `${batchPrefix} Agent 已给出下一步命令，批量任务暂停等待人工执行。`
+            : response.answer || response.agentReason || 'Agent 已给出下一步命令，等待人工执行。',
         })
         return
       }
-      if (isBatchSession) {
-        const stepMessage = await appendAIMessage('agent_step', command, { step }, batchConversationId)
-        step.id = stepMessage.id
-      } else {
-        const stepMessage = await appendAIMessage('agent_step', command, { step }, liveConversationId)
-        step.id = stepMessage.id
-      }
-      setAgentStepsForSession(sessionId, [step, ...steps].slice(0, 30))
       updateSessionAgentState(sessionId, {
         message: response.answer || response.agentReason || 'Agent 已给出下一步命令',
       })
@@ -4908,11 +4937,11 @@ export function App() {
         (latestAutoState.mode === 'full-auto' || (latestAutoState.mode === 'auto' && riskLevel !== 'high'))
       ) {
         updateSessionAgentState(sessionId, { running: true })
-        void executeAgentStep(step.id, true, true)
+        void executeAgentStep(messageStep.id, true, true)
       } else if (riskLevel === 'high') {
         updateSessionAgentState(sessionId, {
           running: false,
-          pendingStepId: step.id,
+          pendingStepId: messageStep.id,
         })
       }
     } catch (error) {
@@ -4940,6 +4969,13 @@ export function App() {
   }
 
   const stopAgentTask = (sessionId = activeSessionIdRef.current) => {
+    setAgentStepsForSession(sessionId, (steps) =>
+      steps.map((step) =>
+        step.status === 'pending' || step.status === 'approved' || step.status === 'running'
+          ? { ...step, status: 'skipped' as const }
+          : step,
+      ),
+    )
     updateSessionAgentState(sessionId, {
       running: false,
       state: 'idle',
@@ -5535,8 +5571,8 @@ export function App() {
         displayedStep &&
         displayedStep.status !== 'executed' &&
         displayedStep.status !== 'running' &&
-        activeSession &&
-        activeSession.status === 'connected'
+        stepSession &&
+        stepSession.status === 'connected'
       return (
         <article className={`agent-step ai-message-card message-agent-step risk-${displayedStep?.riskLevel ?? 'low'}`} key={message.id}>
           {renderAIMessageHeader(
