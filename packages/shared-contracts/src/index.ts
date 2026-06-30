@@ -343,6 +343,10 @@ export interface AIAgentStep {
   output?: string
   exitCode?: number
   createdAt?: string
+  startedAt?: string
+  completedAt?: string
+  timeoutSeconds?: number
+  timedOut?: boolean
 }
 
 export interface AIAgentAuditEvent {

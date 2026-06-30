@@ -86,10 +86,13 @@ export function useAgentExecution({
     const output = marker ? stripAgentMarker(rawOutput, marker) : rawOutput
     const exitedWithError = exitCode !== undefined && exitCode !== 0
     const failed = timedOut
+    const completedAt = new Date().toISOString()
     updateAgentStep(stepId, {
       status: failed ? 'failed' : 'executed',
       output: output.trim().slice(-8000),
       exitCode,
+      completedAt,
+      timedOut,
     })
     const completedStep = getAgentStepsForSession(sessionId).find((step) => step.id === stepId)
     if (completedStep) {
@@ -230,7 +233,15 @@ export function useAgentExecution({
       actor: fromAuto ? 'system' : 'user',
       reason: fromAuto ? 'Agent 自动模式批准执行' : '用户批准执行',
     }, sessionId)
-    updateAgentStep(step.id, { status: 'running', riskLevel, sessionId })
+    updateAgentStep(step.id, {
+      status: 'running',
+      riskLevel,
+      sessionId,
+      startedAt: new Date().toISOString(),
+      completedAt: undefined,
+      timeoutSeconds,
+      timedOut: false,
+    })
     onAuditEvent({
       eventType: 'started',
       messageId: step.id,

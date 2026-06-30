@@ -195,6 +195,10 @@ type aiAgentStep struct {
 	Output      string `json:"output,omitempty"`
 	ExitCode    *int   `json:"exitCode,omitempty"`
 	CreatedAt   string `json:"createdAt,omitempty"`
+	StartedAt   string `json:"startedAt,omitempty"`
+	CompletedAt string `json:"completedAt,omitempty"`
+	TimeoutSecs *int   `json:"timeoutSeconds,omitempty"`
+	TimedOut    bool   `json:"timedOut,omitempty"`
 }
 
 type aiAssistResponse struct {

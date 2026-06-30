@@ -36,6 +36,7 @@
 - `/api/ai/agent-audit` 支持 `POST` 写入审计事件，支持 `GET` 按 `conversationId` 或 `sessionId` 查询。
 - 审计事件覆盖 AI 建议、用户批准、自动批准、开始执行、完成、失败、超时、跳过和阻断。
 - 审计表只保存命令、风险、退出码和输出摘要，不保存完整终端上下文。
+- AI 对话消息中的 Agent step 支持透传执行观察字段：`startedAt`、`completedAt`、`timeoutSeconds`、`timedOut`。
 
 ## 验证方式
 
@@ -56,3 +57,4 @@ npm run build:core
 
 - 2026-06-30：补充 SSH agent 认证、known_hosts 策略说明；涉及 `remote.go`、`server.go`、`server_test.go`。验证命令：`npm run test:core`。
 - 2026-06-30：新增 AI Agent 命令级审计存储和 `/api/ai/agent-audit` API；涉及 `ai_agent_audit_store.go`、`http.go`、`server.go`、`server_test.go`。验证命令：`npm run test:core`。
+- 2026-06-30：同步 Agent step 执行观察字段的 Go JSON 结构，支持前端持久化步骤开始/完成时间、超时阈值和超时状态。验证命令：`npm run test:core`。

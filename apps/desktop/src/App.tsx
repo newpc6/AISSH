@@ -5523,6 +5523,85 @@ export function App() {
     : false
   const shouldRenderAgentMessageCard = Boolean(normalizedAgentMessage) && !isAgentMessageDuplicated
 
+  const formatAgentDuration = (step?: AIAgentPlanStep) => {
+    if (!step?.startedAt) {
+      return ''
+    }
+    const started = Date.parse(step.startedAt)
+    const ended = step.completedAt ? Date.parse(step.completedAt) : Date.now()
+    if (!Number.isFinite(started) || !Number.isFinite(ended) || ended < started) {
+      return ''
+    }
+    const seconds = Math.max(1, Math.round((ended - started) / 1000))
+    if (seconds < 60) {
+      return `${seconds} 秒`
+    }
+    const minutes = Math.floor(seconds / 60)
+    const rest = seconds % 60
+    return rest > 0 ? `${minutes} 分 ${rest} 秒` : `${minutes} 分`
+  }
+
+  const agentStepStatusLabel = (step?: AIAgentPlanStep) => {
+    if (!step) {
+      return '未知'
+    }
+    if (step.timedOut) {
+      return '超时暂停'
+    }
+    if (step.status === 'executed' && typeof step.exitCode === 'number' && step.exitCode !== 0) {
+      return '已完成（非 0）'
+    }
+    const labels: Record<AIAgentPlanStep['status'], string> = {
+      approved: '已批准',
+      executed: '已完成',
+      failed: '执行失败',
+      pending: '待执行',
+      running: '执行中',
+      skipped: '已跳过',
+    }
+    return labels[step.status] || step.status
+  }
+
+  const renderAgentStepObservation = (step?: AIAgentPlanStep, hostName = '') => {
+    if (!step) {
+      return null
+    }
+    const duration = formatAgentDuration(step)
+    const outputSummary = step.output?.trim().slice(-1200)
+    const facts = [
+      ['状态', agentStepStatusLabel(step)],
+      ['主机', hostName],
+      ['风险', riskLabel(step.riskLevel)],
+      ['退出码', typeof step.exitCode === 'number' ? String(step.exitCode) : '待采集'],
+      ['耗时', duration],
+      ['超时阈值', step.timeoutSeconds ? `${step.timeoutSeconds} 秒` : ''],
+    ].filter(([, value]) => Boolean(value))
+    const note = step.timedOut
+      ? '命令等待超时，Agent 已暂停；确认终端状态后可继续。'
+      : step.status === 'running'
+        ? '正在等待远端完成标记和退出码。'
+        : typeof step.exitCode === 'number' && step.exitCode !== 0
+          ? '退出码非 0，结果会继续交给 AI 判断。'
+          : ''
+    return (
+      <section className={`agent-step-observation status-${step.timedOut ? 'timed-out' : step.status}`}>
+        <dl className="agent-step-observation-grid">
+          {facts.map(([factLabel, value]) => (
+            <div key={factLabel}>
+              <dt>{factLabel}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {step.riskReason ? <p className="agent-step-observation-note">{step.riskReason}</p> : null}
+        {note ? <p className="agent-step-observation-note">{note}</p> : null}
+        {outputSummary ? (
+          <pre className="agent-step-output" title="命令输出尾部摘要">{outputSummary}</pre>
+        ) : null}
+      </section>
+    )
+  }
+
   const renderAIResponseMessage = (message: AIChatMessageDraft, label: string) => {
     const response = message.response
     const commands = normalizeAssistCommands(response?.commands)
@@ -5645,9 +5724,7 @@ export function App() {
             <>
               <code>{displayedStep?.command ?? message.content}</code>
               {displayedStep?.explanation ? renderMarkdown(displayedStep.explanation) : null}
-              {displayedStep?.riskReason ? <small>{displayedStep.riskReason}</small> : null}
-              {typeof displayedStep?.exitCode === 'number' ? <small>退出码：{displayedStep.exitCode}</small> : null}
-              {displayedStep?.output ? <pre className="agent-step-output">{displayedStep.output}</pre> : null}
+              {renderAgentStepObservation(displayedStep, stepHostName)}
               {displayedStep ? (
                 <div className="agent-step-actions">
                   <button

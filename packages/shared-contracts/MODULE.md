@@ -16,6 +16,7 @@
 - 可选字段用 `?` 表达向后兼容。
 - 枚举类型新增值时，前端 UI、默认值、i18n 和后端归一化逻辑都要同步。
 - Agent 审计类型包括 `AIAgentAuditEvent`、`AIAgentAuditEventCreateRequest` 和 `AIAgentAuditListResponse`。
+- `AIAgentStep` 的执行观察字段包括 `startedAt`、`completedAt`、`timeoutSeconds` 和 `timedOut`，用于前端展示步骤执行摘要并随 AI 消息持久化。
 
 ## 验证方式
 
@@ -28,3 +29,4 @@ npm run build:desktop
 
 - 2026-06-30：新增 `HostKeyPolicy` 类型，并为 `HostRecord`、`HostUpsertRequest`、`TransientHostConfig` 增加 `hostKeyPolicy` 可选字段。验证命令：`npm run typecheck:desktop`。
 - 2026-06-30：新增 AI Agent 命令级审计事件类型和创建/列表响应契约。验证命令：`npm run typecheck:desktop`。
+- 2026-06-30：为 `AIAgentStep` 增加执行观察字段，用于记录开始/完成时间、超时阈值和超时状态。验证命令：`npm run typecheck:desktop`。
