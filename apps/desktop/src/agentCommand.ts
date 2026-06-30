@@ -23,11 +23,15 @@ export function isAgentInternalLine(line: string, marker?: string) {
   if (!trimmed) return false
   if (marker && trimmed.includes(marker)) return true
   if (trimmed.includes('__AI_SSH_AGENT_DONE_')) return true
+  const promptIndex = Math.max(trimmed.lastIndexOf('$ '), trimmed.lastIndexOf('# '), trimmed.lastIndexOf('> '))
+  const shellInput = promptIndex >= 0 ? trimmed.slice(promptIndex + 2).trim() : trimmed
+  const hasPromptPrefix = shellInput !== trimmed
   return (
-    trimmed === '__ai_ssh_agent_exit_code=$?' ||
-    trimmed === 'unset __ai_ssh_agent_exit_code' ||
-    /^command\s+printf\s+['"]?\\n__AI_SSH_AGENT_DONE_/.test(trimmed) ||
-    /^printf\s+['"]?__AI_SSH_AGENT_DONE_/.test(trimmed)
+    (hasPromptPrefix && (shellInput === '{' || shellInput === '}')) ||
+    shellInput === '__ai_ssh_agent_exit_code=$?' ||
+    shellInput === 'unset __ai_ssh_agent_exit_code' ||
+    /^command\s+printf\s+['"]?\\n__AI_SSH_AGENT_DONE_/.test(shellInput) ||
+    /^printf\s+['"]?__AI_SSH_AGENT_DONE_/.test(shellInput)
   )
 }
 

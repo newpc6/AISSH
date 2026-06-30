@@ -836,7 +836,8 @@ export function App() {
         combined.includes('__AI_SSH_AGENT_DONE') ||
         combined.includes("printf '__AI_SSH_AGENT_DONE_") ||
         combined.includes("command printf '\\n__AI_SSH_AGENT_DONE_") ||
-        combined.includes('__ai_ssh_agent_exit_code')
+        combined.includes('__ai_ssh_agent_exit_code') ||
+        isAgentInternalLine(combined)
       if (isMarkerFragment) {
         terminalLineBufferRef.current[sessionId] = combined
       } else {
@@ -5485,7 +5486,47 @@ export function App() {
     setCollapsedAIMessageIds((current) => ({ ...current, [messageId]: !current[messageId] }))
   }
 
-  const renderAIMessageHeader = (messageId: string, label: string, createdAt: string, badge?: string, extra?: ReactNode) => {
+  const buildAIMessageCopyText = (message: AIChatMessageDraft) => {
+    const parts = [message.content]
+    if (message.step) {
+      parts.push(`命令：${message.step.command}`)
+      if (message.step.explanation) parts.push(`说明：${message.step.explanation}`)
+      if (message.step.riskReason) parts.push(`风险：${message.step.riskReason}`)
+      if (typeof message.step.exitCode === 'number') parts.push(`退出码：${message.step.exitCode}`)
+      if (message.step.output) parts.push(`输出：\n${message.step.output}`)
+    }
+    if (message.response?.answer && message.response.answer !== message.content) parts.push(message.response.answer)
+    if (message.response?.summary) parts.push(`摘要：${message.response.summary}`)
+    if (message.response?.agentReason) parts.push(`Agent：${message.response.agentReason}`)
+    return parts.map((part) => part?.trim()).filter(Boolean).join('\n\n')
+  }
+
+  const copyAIMessage = async (message: AIChatMessageDraft) => {
+    const text = buildAIMessageCopyText(message)
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      clearErrorForRequest('clipboard', 'COPY')
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      appendLog('warn', 'ui.ai', 'copy ai message failed', { messageID: message.id, error: detail })
+      setErrorMessage(detail || '浏览器阻止了剪贴板写入', {
+        method: 'COPY',
+        path: 'clipboard',
+        source: 'AI 消息复制',
+        title: '复制失败',
+      })
+    }
+  }
+
+  const renderAIMessageHeader = (
+    messageId: string,
+    label: string,
+    createdAt: string,
+    badge?: string,
+    extra?: ReactNode,
+    message?: AIChatMessageDraft,
+  ) => {
     const collapsed = Boolean(collapsedAIMessageIds[messageId])
     return (
     <header className="ai-message-header">
@@ -5502,6 +5543,11 @@ export function App() {
       <span className="ai-message-header-meta">
         <time dateTime={createdAt}>{formatFullDateTime(createdAt)}</time>
         {extra}
+        {message ? (
+          <button className="ai-message-copy-button" type="button" title="复制这条消息" onClick={() => void copyAIMessage(message)}>
+            ⧉
+          </button>
+        ) : null}
       </span>
     </header>
   )
@@ -5611,7 +5657,7 @@ export function App() {
     const messageKindClass = message.kind === 'command' ? 'message-command' : 'message-assistant'
     return (
       <article className={`ai-response-card ai-message-card ${messageKindClass} ${response?.agentStatus === 'command' ? `risk-${response.riskLevel ?? 'low'}` : ''}`}>
-        {renderAIMessageHeader(message.id, label, message.createdAt, message.kind === 'command' ? 'CMD' : 'AI')}
+        {renderAIMessageHeader(message.id, label, message.createdAt, message.kind === 'command' ? 'CMD' : 'AI', undefined, message)}
         {!collapsed ? (
           <>
             {message.content ? renderMarkdown(message.content) : null}
@@ -5657,10 +5703,12 @@ export function App() {
 
   const renderAIMessage = (message: AIChatMessageDraft) => {
     const collapsed = isAIMessageCollapsed(message.id)
+    const latestStatusMessageId = [...aiMessages].reverse().find((item) => item.kind === 'status')?.id
+    const showStatusSpinner = aiAssistantState === 'loading' && message.id === latestStatusMessageId
     if (message.kind === 'user') {
       return (
         <article className="ai-message-card user-message" key={message.id}>
-          {renderAIMessageHeader(message.id, '我', message.createdAt, 'YOU')}
+          {renderAIMessageHeader(message.id, '我', message.createdAt, 'YOU', undefined, message)}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
@@ -5668,7 +5716,7 @@ export function App() {
     if (message.kind === 'thinking') {
       return (
         <article className="ai-stream-card ai-message-card message-thinking" key={message.id} data-ai-message-id={message.id}>
-          {renderAIMessageHeader(message.id, '思考', message.createdAt, 'THINK')}
+          {renderAIMessageHeader(message.id, '思考', message.createdAt, 'THINK', undefined, message)}
           {!collapsed ? renderMarkdown(message.content, '思考中...') : null}
         </article>
       )
@@ -5676,7 +5724,7 @@ export function App() {
     if (message.kind === 'content') {
       return (
         <article className="ai-stream-card ai-message-card message-content" key={message.id}>
-          {renderAIMessageHeader(message.id, '实时输出', message.createdAt, 'LIVE')}
+          {renderAIMessageHeader(message.id, '实时输出', message.createdAt, 'LIVE', undefined, message)}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
@@ -5687,7 +5735,7 @@ export function App() {
     if (message.kind === 'agent_result') {
       return (
         <article className="ai-response-card agent-final-card ai-message-card message-agent-result" key={message.id}>
-          {renderAIMessageHeader(message.id, '执行结论', message.createdAt, 'DONE')}
+          {renderAIMessageHeader(message.id, '执行结论', message.createdAt, 'DONE', undefined, message)}
           {!collapsed ? (
             <>
               {renderMarkdown(message.content)}
@@ -5721,6 +5769,7 @@ export function App() {
             message.createdAt,
             'STEP',
             <small>{stepMeta}</small>,
+            message,
           )}
           {!collapsed ? (
             <>
@@ -5803,7 +5852,7 @@ export function App() {
     if (message.kind === 'error') {
       return (
         <article className="ai-message-card ai-error-card message-error" key={message.id}>
-          {renderAIMessageHeader(message.id, '错误', message.createdAt, 'ERR')}
+          {renderAIMessageHeader(message.id, '错误', message.createdAt, 'ERR', undefined, message)}
           {!collapsed ? renderMarkdown(message.content) : null}
         </article>
       )
@@ -5811,10 +5860,10 @@ export function App() {
     if (message.kind === 'status') {
       return (
         <article className="ai-message-card ai-status-line message-status" key={message.id}>
-          {renderAIMessageHeader(message.id, '状态', message.createdAt, 'STAT')}
+          {renderAIMessageHeader(message.id, '状态', message.createdAt, 'STAT', undefined, message)}
           {!collapsed ? (
-            <div className="ai-status-content loading">
-              <span aria-hidden="true" className="file-loading-spinner" />
+            <div className={`ai-status-content ${showStatusSpinner ? 'loading' : ''}`}>
+              {showStatusSpinner ? <span aria-hidden="true" className="file-loading-spinner" /> : null}
               {renderMarkdown(message.content)}
             </div>
           ) : null}

@@ -130,6 +130,13 @@ unset __ai_ssh_agent_exit_code
 - **修改 `wrapAgentCommand` 时**：确保新格式向后兼容旧 marker 解析逻辑；或同步更新 `extractAgentExitCode` / `isAgentInternalLine` / `handleAgentPrompt`
 - **命令历史完整性**：包装后的内部行不应进入历史命令记录和终端回显缓存
 
+### 近期修复约束
+
+- 内部行过滤必须同时识别裸内部行和带 shell prompt 前缀的回显行，例如 `(base) user@host:~$ unset __ai_ssh_agent_exit_code`、`> command printf ...`。
+- 批量执行状态消息只有最新进行中的状态卡显示 spinner，历史状态卡必须静态展示。
+- 批量模式下模型角标不再重复显示当前主机名，已选主机只在批量选择区域展示。
+- 每条 AI 消息卡片 header 提供复制按钮，复制内容应包含该卡片的主要文本、Agent step 命令/退出码/输出摘要。
+
 ### 涉及文件
 
 | 文件 | 相关函数/职责 |
@@ -186,3 +193,4 @@ Agent 步骤观察 UI 手动验证要点：
 - 2026-06-30：新增 Agent 步骤观察 UI 维护说明，记录步骤卡片展示内容、涉及文件、与审计写入的关系、边界和验证命令；涉及 `src/App.tsx`、`src/hooks/useAgentExecution.ts`、`src/styles/ai.css`。验证命令：`npm run typecheck:desktop`、`npm run build:desktop`。
 
 - 2026-06-30：新增 Agent 命令包装与退出码标记维护说明，记录包装格式（`wrapAgentCommand`/`agentExitMarker`）、输出解析（`extractAgentExitCode`/`stripAgentMarker`/`isAgentInternalLine`）、执行等待流程、改动注意事项和手动验证要点；涉及 `src/agentCommand.ts`、`src/utils.ts`、`src/hooks/useAgentExecution.ts`、`src/App.tsx`、`src/types.ts`。验证方式：`npm run test:desktop:agent-command`、`npm run typecheck:desktop`。
+- 2026-06-30：修复批量执行状态卡 spinner、AI 消息卡复制、批量模式模型角标重复主机名和 Agent 内部命令回显过滤；涉及 `App.tsx`、`AIWorkspacePanel.tsx`、`agentCommand.ts`、`useAIMessageStore.ts`、`styles`。验证命令：`npm run test:desktop:agent-command`、`npm run typecheck:desktop`、`npm run build:desktop`。

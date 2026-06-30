@@ -45,6 +45,13 @@ export function useAIMessageStore({
     element.scrollTop = element.scrollHeight
   }
 
+  const scheduleMessageListScrollToBottom = () => {
+    if (!isPinnedToBottomRef.current) {
+      return
+    }
+    window.requestAnimationFrame(scrollMessageListToBottom)
+  }
+
   useEffect(() => {
     aiMessagesRef.current = aiMessages
     aiMessageConversationIdsRef.current = aiMessages.reduce<Record<string, string>>((map, message) => {
@@ -138,11 +145,13 @@ export function useAIMessageStore({
       const local = makeLocalAIMessage(kind, content, extras, conversationId)
       aiMessageConversationIdsRef.current[local.id] = local.conversationId
       setAiMessages((current) => [...current, local])
+      scheduleMessageListScrollToBottom()
       return local
     }
     const local = { ...makeLocalAIMessage(kind, content, extras, conversationId), pending: true }
     aiMessageConversationIdsRef.current[local.id] = conversationId
     setAiMessages((current) => [...current, local])
+    scheduleMessageListScrollToBottom()
     try {
       const persisted = await persistAIMessageRequest(conversationId, {
         kind,
@@ -153,6 +162,7 @@ export function useAIMessageStore({
       delete aiMessageConversationIdsRef.current[local.id]
       aiMessageConversationIdsRef.current[persisted.id] = persisted.conversationId
       setAiMessages((current) => current.map((item) => (item.id === local.id ? persisted : item)))
+      scheduleMessageListScrollToBottom()
       void loadAIConversations()
       return persisted
     } catch (error) {

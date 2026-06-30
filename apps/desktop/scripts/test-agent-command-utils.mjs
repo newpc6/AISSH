@@ -54,16 +54,24 @@ try {
   assert.equal(isAgentInternalLine('{'), false)
   assert.equal(isAgentInternalLine('}'), false)
   assert.equal(isAgentInternalLine('__ai_ssh_agent_exit_code=$?'), true)
+  assert.equal(isAgentInternalLine('(base) user@host:~$ __ai_ssh_agent_exit_code=$?'), true)
+  assert.equal(isAgentInternalLine('(base) user@host:~$ unset __ai_ssh_agent_exit_code'), true)
+  assert.equal(isAgentInternalLine('(base) user@host:~$ {'), true)
+  assert.equal(isAgentInternalLine('> }'), true)
+  assert.equal(isAgentInternalLine(`> command printf '\\n${marker}%s\\n' "$__ai_ssh_agent_exit_code"`), true)
 
   const rawOutput = [
     'echo before',
     '{',
+    '(base) user@host:~$ {',
     '__ai_ssh_agent_exit_code=$?',
+    '(base) user@host:~$ __ai_ssh_agent_exit_code=$?',
     `command printf '\\n${marker}%s\\n' "$__ai_ssh_agent_exit_code"`,
     'visible output',
     '}',
+    '> }',
     `${marker}2`,
-    'unset __ai_ssh_agent_exit_code',
+    '(base) user@host:~$ unset __ai_ssh_agent_exit_code',
   ].join('\n')
   assert.equal(stripAgentMarker(rawOutput, marker), 'echo before\n{\nvisible output\n}')
   assert.equal(

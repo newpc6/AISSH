@@ -157,10 +157,10 @@ export function AIWorkspacePanel({
     }
   }, [aiSkills.length, isAIInputCollapsed])
 
-  const batchStatusText = (result: BatchHostResult) => {
+  const batchStatusText = (result: BatchHostResult, isCurrent = false) => {
     if (result.status === 'pending') return t('aiWorkspace.batch.status.pending')
     if (result.status === 'connecting') return t('aiWorkspace.batch.status.connecting')
-    if (result.status === 'running') return t('aiWorkspace.batch.status.running', { steps: result.stepCount })
+    if (result.status === 'running') return isCurrent ? t('aiWorkspace.batch.status.running', { steps: result.stepCount }) : t('aiWorkspace.batch.status.success', { steps: result.stepCount })
     if (result.status === 'success') return t('aiWorkspace.batch.status.success', { steps: result.stepCount })
     return t('aiWorkspace.batch.status.error')
   }
@@ -412,7 +412,7 @@ export function AIWorkspacePanel({
               return (
                 <div
                   key={result.hostId}
-                  className={`batch-exec-card batch-${result.status} ${isCurrent ? 'batch-current' : ''}`}
+                  className={`batch-exec-card batch-${isCurrent ? result.status : result.status === 'running' ? 'success' : result.status} ${isCurrent ? 'batch-current' : ''}`}
                 >
                   <div className="batch-card-header">
                     <span className="batch-card-host">{result.hostName}</span>
@@ -420,7 +420,7 @@ export function AIWorkspacePanel({
                       ×
                     </button>
                   </div>
-                  <span className="batch-card-status">{batchStatusText(result)}</span>
+                  <span className="batch-card-status">{batchStatusText(result, isCurrent)}</span>
                 </div>
               )
             })}
@@ -428,7 +428,7 @@ export function AIWorkspacePanel({
         </div>
       ) : null}
 
-      <div className="ai-corner-badges">
+      <div className={`ai-corner-badges${batchMode ? ' batch-mode' : ''}`}>
         {selectedSkills.length > 0 ? (
           <div
             className="ai-skill-corner-badge"
@@ -440,10 +440,10 @@ export function AIWorkspacePanel({
         ) : null}
         <div
           className={`ai-model-corner-badge${isAIProviderConfigured ? '' : ' unconfigured'}`}
-          title={activeSessionName ? `${activeAIModelTitle} | ${activeSessionName}` : activeAIModelTitle}
+          title={!batchMode && activeSessionName ? `${activeAIModelTitle} | ${activeSessionName}` : activeAIModelTitle}
         >
           <span>{activeAIModelLabel}</span>
-          {activeSessionName ? <span className="ai-model-session-tag">{activeSessionName}</span> : null}
+          {!batchMode && activeSessionName ? <span className="ai-model-session-tag">{activeSessionName}</span> : null}
         </div>
       </div>
     </div>

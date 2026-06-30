@@ -83,6 +83,10 @@
   pointer-events: none;
 }
 
+.ai-corner-badges.batch-mode {
+  bottom: 150px;
+}
+
 .ai-model-corner-badge,
 .ai-skill-corner-badge {
   max-width: min(320px, calc(100vw - 32px));
@@ -268,6 +272,7 @@
 
 .ai-message-toggle {
   min-width: 0;
+  flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -313,6 +318,25 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.ai-message-copy-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.38);
+  color: #9fb2c8;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.ai-message-copy-button:hover {
+  border-color: rgba(96, 165, 250, 0.38);
+  color: #dbeafe;
 }
 
 .ai-message-header strong,
