@@ -55,3 +55,4 @@
 | 2026-06-30 | 同步 SSH agent 认证和 known_hosts 策略进度说明 | `docs/development-plan.md`, `docs/run-and-preview.md` | 人工核对 |
 | 2026-06-30 | 同步 AI Agent 命令级审计设计：补充持久审计 API/事件记录设计说明，更新中英文产品设计/开发计划文档 | `docs/development-plan.md`, `docs/product-design.md`, `docs/development-plan-en.md`, `docs/product-design-en.md` | 人工核对 |
 | 2026-06-30 | Agent 执行流式 UI 观察增强：拆分开发计划勾选项（基础步骤观察卡片已完成 / 实时流式 tail 待办），desktop 模块新增 Agent 步骤观察 UI 维护说明 | `docs/development-plan.md`, `apps/desktop/MODULE.md`, `docs/MODULE.md` | 人工核对 |
+| 2026-06-30 | Agent 退出码标记兼容性文档同步：开发计划拆分基础兼容（已完成）与进阶兼容（待办）；desktop 模块新增命令包装/退出码标记维护说明（包装格式、输出解析、执行流程、改动注意事项、验证要点） | `docs/development-plan.md`, `apps/desktop/MODULE.md`, `docs/MODULE.md` | `npm run test:desktop:agent-command`、人工核对 |

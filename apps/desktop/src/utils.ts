@@ -31,6 +31,15 @@ import {
 } from '@ai-ssh/shared-contracts'
 import type { AIStreamEvent, DesktopWindow, FilePreviewKind, FileSortKey, FileSortState, LoadState, MetricChartKey, MetricSample, TerminalCache, WindowWithSaveFilePicker } from './types'
 import { currentLocaleTag, normalizeAppLanguage } from './i18n'
+export {
+  agentExitMarker,
+  escapeRegExp,
+  extractAgentExitCode,
+  isAgentInternalLine,
+  stripAgentMarker,
+  stripVisibleAgentMarkers,
+  wrapAgentCommand,
+} from './agentCommand'
 
 export const CORE_API_FALLBACK_BASE = `http://127.0.0.1:${CORE_DEFAULT_PORT}/api`
 export const AI_PREDICT_STREAM_API_PATH = '/api/ai/predict/stream'
@@ -858,39 +867,6 @@ export function firstString(values: unknown) {
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return ''
-}
-
-export function agentExitMarker(stepId: string) {
-  return `__AI_SSH_AGENT_DONE_${stepId.replace(/[^A-Za-z0-9_]/g, '_')}__`
-}
-
-export function wrapAgentCommand(command: string, marker: string) {
-  return `${command}\nprintf '${marker}%s\\n' "$?"`
-}
-
-export function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-export function extractAgentExitCode(output: string, marker: string) {
-  const match = output.match(new RegExp(`${escapeRegExp(marker)}(\\d+)`))
-  if (!match) return undefined
-  const code = Number(match[1])
-  return Number.isFinite(code) ? code : undefined
-}
-
-export function stripAgentMarker(output: string, marker: string) {
-  return output
-    .split(/\r?\n/)
-    .filter((line) => !line.includes(marker) && !line.includes(`printf '${marker}`))
-    .join('\n')
-}
-
-export function stripVisibleAgentMarkers(output: string) {
-  return output
-    .split(/\r?\n/)
-    .filter((line) => !line.includes('__AI_SSH_AGENT_DONE_') && !/^\s*printf '__AI_SSH_AGENT_DONE_/.test(line))
-    .join('\r\n')
 }
 
 export function clampPredictionPanelHeight(value: number) {

@@ -17,6 +17,7 @@
     "typecheck:desktop": "npm run typecheck -w apps/desktop",
     "dev:core": "powershell -ExecutionPolicy Bypass -File scripts/start-core.ps1",
     "serve:web": "npm run build:desktop && powershell -ExecutionPolicy Bypass -File scripts/start-core.ps1 -WebRoot apps/desktop/dist",
+    "test:desktop:agent-command": "npm run test:agent-command -w apps/desktop",
     "test:core": "go test ./apps/core-go/..."
   }
 }

@@ -159,6 +159,7 @@ import {
   formatEditableText,
   formatFullDateTime,
   inferRemotePathFromCommand,
+  isAgentInternalLine,
   isLikelyStatic405,
   joinRemotePath,
   localFileName,
@@ -833,7 +834,9 @@ export function App() {
     if (segments.length === 1) {
       const isMarkerFragment =
         combined.includes('__AI_SSH_AGENT_DONE') ||
-        combined.includes("printf '__AI_SSH_AGENT_DONE_")
+        combined.includes("printf '__AI_SSH_AGENT_DONE_") ||
+        combined.includes("command printf '\\n__AI_SSH_AGENT_DONE_") ||
+        combined.includes('__ai_ssh_agent_exit_code')
       if (isMarkerFragment) {
         terminalLineBufferRef.current[sessionId] = combined
       } else {
@@ -845,8 +848,7 @@ export function App() {
 
     const last = segments[segments.length - 1]
     const completeLines = segments.slice(0, -1)
-    const isAgentMarkerLine = (line: string) => line.includes('__AI_SSH_AGENT_DONE_') || /^\s*printf '__AI_SSH_AGENT_DONE_/.test(line)
-    const filtered = completeLines.filter((line) => !isAgentMarkerLine(line))
+    const filtered = completeLines.filter((line) => !isAgentInternalLine(line))
     const visibleOutput: string[] = []
     if (filtered.length > 0) {
       visibleOutput.push(`${filtered.join('\r\n')}\r\n`)
@@ -854,7 +856,7 @@ export function App() {
 
     if (last === '') {
       terminalLineBufferRef.current[sessionId] = ''
-    } else if (isAgentMarkerLine(last)) {
+    } else if (isAgentInternalLine(last)) {
       terminalLineBufferRef.current[sessionId] = last
     } else {
       visibleOutput.push(last)
