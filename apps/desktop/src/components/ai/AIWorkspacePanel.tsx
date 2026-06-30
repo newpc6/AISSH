@@ -21,6 +21,7 @@ type AIWorkspacePanelProps = {
   isAIProviderConfigured: boolean
   aiMessages: AIChatMessageDraft[]
   aiAssistantState: LoadState
+  suppressAssistantLoadingIndicator: boolean
   shouldRenderAgentMessageCard: boolean
   agentState: LoadState
   normalizedAgentMessage: string
@@ -76,6 +77,7 @@ export function AIWorkspacePanel({
   isAIProviderConfigured,
   aiMessages,
   aiAssistantState,
+  suppressAssistantLoadingIndicator,
   shouldRenderAgentMessageCard,
   agentState,
   normalizedAgentMessage,
@@ -224,7 +226,7 @@ export function AIWorkspacePanel({
           ) : null}
           {aiMessages.length === 0 ? <p className="hint-text">{t('aiWorkspace.emptyConversation')}</p> : null}
           {aiMessages.map((message) => renderAIMessage(message))}
-          {aiAssistantState === 'loading' ? (
+          {aiAssistantState === 'loading' && !suppressAssistantLoadingIndicator ? (
             <div className="prediction-loading">
               <span aria-hidden="true" className="file-loading-spinner" />
               <span>{t('aiWorkspace.streaming')}</span>

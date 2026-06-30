@@ -5555,6 +5555,8 @@ export function App() {
 
   const isAIMessageCollapsed = (messageId: string) => Boolean(collapsedAIMessageIds[messageId])
   const normalizedAgentMessage = agentMessage.trim()
+  const latestAIMessage = aiMessages[aiMessages.length - 1]
+  const latestStatusMessageOwnsLoading = aiAssistantState === 'loading' && latestAIMessage?.kind === 'status'
   const isAgentMessageDuplicated = normalizedAgentMessage
     ? aiMessages.slice(-6).some((message) => {
       const candidates = [
@@ -5566,10 +5568,17 @@ export function App() {
         message.step?.explanation,
         message.step?.riskReason,
       ]
-      return candidates.some((candidate) => candidate?.trim() === normalizedAgentMessage)
+      return candidates.some((candidate) => {
+        const text = candidate?.trim()
+        if (!text) return false
+        return text === normalizedAgentMessage || text.includes(normalizedAgentMessage) || normalizedAgentMessage.includes(text)
+      })
     })
     : false
-  const shouldRenderAgentMessageCard = Boolean(normalizedAgentMessage) && !isAgentMessageDuplicated
+  const shouldRenderAgentMessageCard =
+    Boolean(normalizedAgentMessage) &&
+    !isAgentMessageDuplicated &&
+    !(latestStatusMessageOwnsLoading && agentState !== 'error')
 
   const formatAgentDuration = (step?: AIAgentPlanStep) => {
     if (!step?.startedAt) {
@@ -5703,8 +5712,7 @@ export function App() {
 
   const renderAIMessage = (message: AIChatMessageDraft) => {
     const collapsed = isAIMessageCollapsed(message.id)
-    const latestStatusMessageId = [...aiMessages].reverse().find((item) => item.kind === 'status')?.id
-    const showStatusSpinner = aiAssistantState === 'loading' && message.id === latestStatusMessageId
+    const showStatusSpinner = aiAssistantState === 'loading' && message.kind === 'status' && message.id === latestAIMessage?.id
     if (message.kind === 'user') {
       return (
         <article className="ai-message-card user-message" key={message.id}>
@@ -6492,6 +6500,7 @@ export function App() {
                 selectedAISkillIds={selectedAISkillIds}
                 settingsAiEnabled={settings.aiEnabled && settings.aiAgentEnabled}
                 shouldRenderAgentMessageCard={shouldRenderAgentMessageCard}
+                suppressAssistantLoadingIndicator={latestStatusMessageOwnsLoading}
                 onClearAiInput={() => { updateAiUnifiedInputValue(''); setAiAssistantError('') }}
                 onCloseBatchHostCard={closeBatchHostCard}
                 onContinueAgentTask={() => continueAgentTask(activeAgentSessionId)}
