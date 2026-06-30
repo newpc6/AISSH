@@ -248,6 +248,50 @@ type aiChatMessageUpdateRequest struct {
 	Step     *aiAgentStep      `json:"step,omitempty"`
 }
 
+type aiAgentAuditEvent struct {
+	ID             string `json:"id"`
+	ConversationID string `json:"conversationId,omitempty"`
+	MessageID      string `json:"messageId,omitempty"`
+	SessionID      string `json:"sessionId,omitempty"`
+	HostID         string `json:"hostId,omitempty"`
+	HostName       string `json:"hostName,omitempty"`
+	EventType      string `json:"eventType"`
+	AgentMode      string `json:"agentMode,omitempty"`
+	Command        string `json:"command,omitempty"`
+	RiskLevel      string `json:"riskLevel,omitempty"`
+	RiskReason     string `json:"riskReason,omitempty"`
+	Status         string `json:"status,omitempty"`
+	ExitCode       *int   `json:"exitCode,omitempty"`
+	OutputSummary  string `json:"outputSummary,omitempty"`
+	Actor          string `json:"actor,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	CreatedAt      string `json:"createdAt"`
+}
+
+type aiAgentAuditEventCreateRequest struct {
+	ConversationID string `json:"conversationId,omitempty"`
+	MessageID      string `json:"messageId,omitempty"`
+	SessionID      string `json:"sessionId,omitempty"`
+	HostID         string `json:"hostId,omitempty"`
+	HostName       string `json:"hostName,omitempty"`
+	EventType      string `json:"eventType"`
+	AgentMode      string `json:"agentMode,omitempty"`
+	Command        string `json:"command,omitempty"`
+	RiskLevel      string `json:"riskLevel,omitempty"`
+	RiskReason     string `json:"riskReason,omitempty"`
+	Status         string `json:"status,omitempty"`
+	ExitCode       *int   `json:"exitCode,omitempty"`
+	OutputSummary  string `json:"outputSummary,omitempty"`
+	Actor          string `json:"actor,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+}
+
+type aiAgentAuditListRequest struct {
+	ConversationID string
+	SessionID      string
+	Limit          int
+}
+
 type sessionReconnectResponse struct {
 	PreviousSessionID string        `json:"previousSessionId"`
 	Session           sessionRecord `json:"session"`

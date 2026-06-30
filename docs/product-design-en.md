@@ -179,7 +179,7 @@ Remote Servers (SSH / SFTP)
 - Credential storage in system keychain
 - Host key verification
 - Encrypted configuration export
-- Audit logging
+- Audit logging (including Agent command-level audit: each Agent command persistently recorded to SQLite with session ID, chat ID, command text, execution time, exit code, and output summary)
 - Permission boundaries
 
 ## 8. Non-functional Requirements
@@ -203,7 +203,7 @@ Remote Servers (SSH / SFTP)
 - No plaintext credential storage
 - Secure IPC communication
 - Input validation and sanitization
-- Audit trail for sensitive operations
+- Agent command-level audit trail for all Agent-executed commands
 
 ### 8.4 Usability
 

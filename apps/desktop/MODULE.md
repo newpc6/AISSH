@@ -23,6 +23,15 @@
 
 WSL 连接不使用 SSH host key 校验。
 
+## Agent 审计写入
+
+前端在 Agent 执行链路中向 Go core `/api/ai/agent-audit` 写入命令级审计事件。写入点包括：
+
+- AI 生成下一步命令。
+- 用户确认或自动模式批准执行。
+- 命令开始、完成、超时、阻断和跳过。
+- 审计写入失败只记录运行日志，不阻断当前 SSH/Agent 操作。
+
 ## 验证方式
 
 ```powershell
@@ -48,3 +57,4 @@ npm run dev:tauri
 ## 改动记录
 
 - 2026-06-30：主机弹窗新增 host key 校验策略选择，并同步中英文文案；涉及 `App.tsx`、`HostDialog.tsx`、`useHostDialogState.ts`、`utils.ts`、`locales`。验证命令：`npm run typecheck:desktop`、`npm run build:desktop`。
+- 2026-06-30：Agent 执行链路接入命令级审计事件写入；涉及 `App.tsx`、`useAgentExecution.ts`、`utils.ts`。验证命令：`npm run typecheck:desktop`、`npm run build:desktop`。

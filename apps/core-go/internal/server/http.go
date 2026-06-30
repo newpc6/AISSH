@@ -22,6 +22,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 	logger := manager.logger
 	authenticator := newWebAuthenticator(logger)
 	aiChats := newAIChatStore(logger)
+	aiAgentAudit := newAIAgentAuditStore(logger)
 	aiSkills := newAISkillStore(logger)
 	aiModels := newAIModelStore(logger)
 
@@ -46,6 +47,7 @@ func newServer(port string, manager *sessionManager) *http.Server {
 				"ai-stream",
 				"ai-unified",
 				"ai-chat-history",
+				"ai-agent-audit",
 			},
 		})
 	}
@@ -448,6 +450,43 @@ func newServer(port string, manager *sessionManager) *http.Server {
 			return
 		}
 		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/api/ai/agent-audit", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			limit := 200
+			if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+				if parsed, err := fmt.Sscanf(rawLimit, "%d", &limit); err == nil && parsed == 1 && limit > 0 {
+					if limit > 500 {
+						limit = 500
+					}
+				}
+			}
+			events, err := aiAgentAudit.listEvents(aiAgentAuditListRequest{
+				ConversationID: r.URL.Query().Get("conversationId"),
+				SessionID:      r.URL.Query().Get("sessionId"),
+				Limit:          limit,
+			})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string][]aiAgentAuditEvent{"events": events})
+		case http.MethodPost:
+			var request aiAgentAuditEventCreateRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			event, err := aiAgentAudit.addEvent(request)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, event)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	})
 	mux.HandleFunc("/api/ai/skills", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

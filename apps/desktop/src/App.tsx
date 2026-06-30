@@ -61,6 +61,7 @@ import {
   type AIPredictionRequest,
   type AIAssistRequest,
   type AIAssistResponse,
+  type AIAgentAuditEventCreateRequest,
   type AIAgentMode,
   type AIModelConfig,
   type AIModelListResponse,
@@ -4665,6 +4666,34 @@ export function App() {
     )
   }
 
+  const recordAgentAuditEvent = (event: AIAgentAuditEventCreateRequest, sessionId = event.sessionId || activeSessionIdRef.current) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId)
+    const conversationId = event.conversationId || getLiveConversationId(sessionId) || activeAIConversationIdRef.current
+    const payload: AIAgentAuditEventCreateRequest = {
+      ...event,
+      sessionId: event.sessionId || sessionId,
+      hostId: event.hostId || session?.hostId,
+      hostName: event.hostName || session?.hostName,
+      conversationId,
+    }
+    void apiFetch('/ai/agent-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error((await readResponseErrorDetail(response)) || `HTTP ${response.status}`)
+      }
+    }).catch((error) => {
+      appendLog('warn', 'ui.agent.audit', 'persist agent audit event failed', {
+        eventType: event.eventType,
+        messageID: event.messageId,
+        sessionID: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
+  }
+
   const appendAgentStepForSession = async (
     step: AIAgentPlanStep,
     sessionId: string,
@@ -4674,6 +4703,19 @@ export function App() {
     const stepMessage = await appendAIMessage('agent_step', step.command, { step }, conversationId)
     const messageStep = { ...step, id: stepMessage.id }
     setAgentStepsForSession(sessionId, [messageStep, ...existingSteps].slice(0, 30))
+    recordAgentAuditEvent({
+      eventType: 'suggested',
+      conversationId,
+      messageId: messageStep.id,
+      sessionId,
+      command: messageStep.command,
+      agentMode: getSessionAgentState(sessionId).mode,
+      riskLevel: messageStep.riskLevel,
+      riskReason: messageStep.riskReason,
+      status: messageStep.status,
+      actor: 'ai',
+      reason: messageStep.explanation,
+    }, sessionId)
     return messageStep
   }
 
@@ -4971,6 +5013,20 @@ export function App() {
   }
 
   const stopAgentTask = (sessionId = activeSessionIdRef.current) => {
+    getAgentStepsForSession(sessionId)
+      .filter((step) => step.status === 'pending' || step.status === 'approved' || step.status === 'running')
+      .forEach((step) => recordAgentAuditEvent({
+        eventType: 'skipped',
+        messageId: step.id,
+        sessionId,
+        command: step.command,
+        agentMode: getSessionAgentState(sessionId).mode,
+        riskLevel: step.riskLevel,
+        riskReason: step.riskReason,
+        status: 'skipped',
+        actor: 'user',
+        reason: '用户停止 Agent 任务',
+      }, sessionId))
     setAgentStepsForSession(sessionId, (steps) =>
       steps.map((step) =>
         step.status === 'pending' || step.status === 'approved' || step.status === 'running'
@@ -5325,6 +5381,7 @@ export function App() {
     onStepCompleted: (stepId, completedStep) => {
       replaceAndPersistAIMessage(stepId, { content: completedStep.command, step: completedStep })
     },
+    onAuditEvent: recordAgentAuditEvent,
     setAgentStatusMessage,
     sessionsRef,
     stripAgentMarker,
@@ -5635,7 +5692,26 @@ export function App() {
                       ↻
                     </button>
                   ) : null}
-                  <button className="ai-icon-button" type="button" title="跳过这一步" onClick={() => updateAgentStep(displayedStep.id, { status: 'skipped' })}>
+                  <button
+                    className="ai-icon-button"
+                    type="button"
+                    title="跳过这一步"
+                    onClick={() => {
+                      updateAgentStep(displayedStep.id, { status: 'skipped' })
+                      recordAgentAuditEvent({
+                        eventType: 'skipped',
+                        messageId: displayedStep.id,
+                        sessionId: displayedStep.sessionId,
+                        command: displayedStep.command,
+                        agentMode: displayedStep.sessionId ? getSessionAgentState(displayedStep.sessionId).mode : undefined,
+                        riskLevel: displayedStep.riskLevel,
+                        riskReason: displayedStep.riskReason,
+                        status: 'skipped',
+                        actor: 'user',
+                        reason: '用户跳过 Agent 步骤',
+                      }, displayedStep.sessionId)
+                    }}
+                  >
                     ⤼
                   </button>
                 </div>

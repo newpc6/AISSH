@@ -330,6 +330,8 @@ export type AIAgentMode = 'review' | 'auto' | 'full-auto'
 export type AIRiskLevel = 'low' | 'medium' | 'high'
 export type AIAgentStatus = 'command' | 'done' | 'question'
 export type AIAgentStepStatus = 'pending' | 'approved' | 'running' | 'executed' | 'skipped' | 'failed'
+export type AIAgentAuditEventType = 'suggested' | 'approved' | 'auto_approved' | 'started' | 'completed' | 'failed' | 'timed_out' | 'skipped' | 'blocked'
+export type AIAgentAuditActor = 'ai' | 'user' | 'system'
 
 export interface AIAgentStep {
   command: string
@@ -341,6 +343,48 @@ export interface AIAgentStep {
   output?: string
   exitCode?: number
   createdAt?: string
+}
+
+export interface AIAgentAuditEvent {
+  id: string
+  conversationId?: string
+  messageId?: string
+  sessionId?: string
+  hostId?: string
+  hostName?: string
+  eventType: AIAgentAuditEventType
+  agentMode?: AIAgentMode
+  command?: string
+  riskLevel?: AIRiskLevel
+  riskReason?: string
+  status?: AIAgentStepStatus
+  exitCode?: number
+  outputSummary?: string
+  actor?: AIAgentAuditActor
+  reason?: string
+  createdAt: string
+}
+
+export interface AIAgentAuditEventCreateRequest {
+  conversationId?: string
+  messageId?: string
+  sessionId?: string
+  hostId?: string
+  hostName?: string
+  eventType: AIAgentAuditEventType
+  agentMode?: AIAgentMode
+  command?: string
+  riskLevel?: AIRiskLevel
+  riskReason?: string
+  status?: AIAgentStepStatus
+  exitCode?: number
+  outputSummary?: string
+  actor?: AIAgentAuditActor
+  reason?: string
+}
+
+export interface AIAgentAuditListResponse {
+  events: AIAgentAuditEvent[]
 }
 
 export interface AIAssistConversationMessage {

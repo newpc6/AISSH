@@ -1433,6 +1433,56 @@ func TestSavedPrivateKeyCredentialCanBeLarge(t *testing.T) {
 	}
 }
 
+func TestAIAgentAuditStorePersistsAndFiltersEvents(t *testing.T) {
+	t.Setenv("AI_SSH_AI_CHAT_STORE_PATH", filepath.Join(t.TempDir(), "ai-chat.sqlite3"))
+	store := newAIAgentAuditStore(newAppLogger())
+	defer store.close()
+	exitCode := 0
+	created, err := store.addEvent(aiAgentAuditEventCreateRequest{
+		ConversationID: "chat-1",
+		MessageID:      "msg-1",
+		SessionID:      "session-1",
+		HostID:         "host-1",
+		HostName:       "Prod API",
+		EventType:      "completed",
+		AgentMode:      "auto",
+		Command:        "systemctl status nginx",
+		RiskLevel:      "low",
+		Status:         "executed",
+		ExitCode:       &exitCode,
+		OutputSummary:  "active",
+		Actor:          "system",
+		Reason:         "命令执行完成",
+	})
+	if err != nil {
+		t.Fatalf("expected addEvent without error, got %v", err)
+	}
+	if created.ID == "" || created.EventType != "completed" || created.ExitCode == nil || *created.ExitCode != 0 {
+		t.Fatalf("expected persisted completed event with exit code, got %+v", created)
+	}
+
+	events, err := store.listEvents(aiAgentAuditListRequest{
+		ConversationID: "chat-1",
+		Limit:          20,
+	})
+	if err != nil {
+		t.Fatalf("expected listEvents without error, got %v", err)
+	}
+	if len(events) != 1 || events[0].MessageID != "msg-1" {
+		t.Fatalf("expected one filtered audit event, got %+v", events)
+	}
+}
+
+func TestAIAgentAuditStoreRejectsInvalidEventType(t *testing.T) {
+	t.Setenv("AI_SSH_AI_CHAT_STORE_PATH", filepath.Join(t.TempDir(), "ai-chat.sqlite3"))
+	store := newAIAgentAuditStore(newAppLogger())
+	defer store.close()
+
+	if _, err := store.addEvent(aiAgentAuditEventCreateRequest{EventType: "unknown"}); err == nil {
+		t.Fatal("expected invalid audit event type to fail")
+	}
+}
+
 func TestCreateSessionEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	body := []byte(`{"hostId":"local-demo"}`)

@@ -309,7 +309,7 @@
 - Milestone 0：已完成
 - Milestone 1：进行中
 - Milestone 2：进行中
-- Milestone 3：进行中（已接入 OpenAI 兼容命令预测、统一 AI 输入、流式 AI 预测 / 助手、Agent 任务执行 MVP，命令级审计、长任务完成检测仍需增强）
+- Milestone 3：进行中（已接入 OpenAI 兼容命令预测、统一 AI 输入、流式 AI 预测 / 助手、Agent 任务执行 MVP、Agent 命令级持久审计 API；流式 UI 观察、退出码兼容性仍需增强）
 - Milestone 4：未开始
 - Milestone 5：未开始
 
@@ -495,7 +495,9 @@
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
 - [x] 接入 agent 认证
 - [x] 接入 known_hosts 严格校验，并在新增/编辑连接中提供首次信任、严格校验和关闭校验策略
-- [ ] 继续增强 Agent 流式观察、命令级审计日志和复杂 shell 场景下的退出码标记兼容性
+- [x] Agent 命令级持久审计：Go core 新增审计事件记录与查询 API，Agent 执行的每条命令写入持久审计记录（会话 ID、对话 ID、命令文本、执行时间、退出码、输出摘要），前端可调用 API 获取审计列表
+- [ ] Agent 执行流式 UI 观察：前端实时展示 Agent 步骤进度、命令执行状态和审计摘要卡片
+- [ ] 复杂 Shell 场景下的退出码标记兼容性
 
 ## 8. Git 提交约定
 

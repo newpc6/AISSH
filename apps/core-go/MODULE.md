@@ -12,6 +12,7 @@
 - `internal/server/remote.go`：SSH/SFTP、WSL、远程文件、指标采集。
 - `internal/server/credentials.go`：系统安全存储凭据读写。
 - `internal/server/ai*.go`：AI 预测、统一助手、模型/技能/对话存储。
+- `internal/server/ai_agent_audit_store.go`：AI Agent 命令级审计事件存储与查询。
 
 ## SSH 安全与认证
 
@@ -27,7 +28,14 @@
 - 主机配置默认保存在 Go core 可执行文件所在目录下 `data/hosts.json`。
 - 网页登录配置保存在 `data/web-auth.json`。
 - AI 对话历史保存在 `data/ai-chat.sqlite3`。
+- Agent 命令级审计事件也保存在 `data/ai-chat.sqlite3`，表名为 `agent_audit_events`。
 - 密码和私钥不写入 `hosts.json`，只写入 OS Keychain / Credential Manager。
+
+## Agent 审计
+
+- `/api/ai/agent-audit` 支持 `POST` 写入审计事件，支持 `GET` 按 `conversationId` 或 `sessionId` 查询。
+- 审计事件覆盖 AI 建议、用户批准、自动批准、开始执行、完成、失败、超时、跳过和阻断。
+- 审计表只保存命令、风险、退出码和输出摘要，不保存完整终端上下文。
 
 ## 验证方式
 
@@ -47,3 +55,4 @@ npm run build:core
 ## 改动记录
 
 - 2026-06-30：补充 SSH agent 认证、known_hosts 策略说明；涉及 `remote.go`、`server.go`、`server_test.go`。验证命令：`npm run test:core`。
+- 2026-06-30：新增 AI Agent 命令级审计存储和 `/api/ai/agent-audit` API；涉及 `ai_agent_audit_store.go`、`http.go`、`server.go`、`server_test.go`。验证命令：`npm run test:core`。

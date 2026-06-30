@@ -53,3 +53,4 @@
 |------|------|----------|----------|
 | 2026-06-30 | 初始化 docs 模块文档，创建 MODULE.md、MODULE_INDEX.md | `docs/MODULE.md`, `docs/MODULE_INDEX.md` | 人工核对 |
 | 2026-06-30 | 同步 SSH agent 认证和 known_hosts 策略进度说明 | `docs/development-plan.md`, `docs/run-and-preview.md` | 人工核对 |
+| 2026-06-30 | 同步 AI Agent 命令级审计设计：补充持久审计 API/事件记录设计说明，更新中英文产品设计/开发计划文档 | `docs/development-plan.md`, `docs/product-design.md`, `docs/development-plan-en.md`, `docs/product-design-en.md` | 人工核对 |

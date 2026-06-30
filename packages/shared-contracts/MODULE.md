@@ -15,6 +15,7 @@
 - 旧字段不能随意删除；需要兼容已有本地数据和旧前端状态。
 - 可选字段用 `?` 表达向后兼容。
 - 枚举类型新增值时，前端 UI、默认值、i18n 和后端归一化逻辑都要同步。
+- Agent 审计类型包括 `AIAgentAuditEvent`、`AIAgentAuditEventCreateRequest` 和 `AIAgentAuditListResponse`。
 
 ## 验证方式
 
@@ -26,3 +27,4 @@ npm run build:desktop
 ## 改动记录
 
 - 2026-06-30：新增 `HostKeyPolicy` 类型，并为 `HostRecord`、`HostUpsertRequest`、`TransientHostConfig` 增加 `hostKeyPolicy` 可选字段。验证命令：`npm run typecheck:desktop`。
+- 2026-06-30：新增 AI Agent 命令级审计事件类型和创建/列表响应契约。验证命令：`npm run typecheck:desktop`。

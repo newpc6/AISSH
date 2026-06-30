@@ -1,5 +1,5 @@
 import { useRef, type RefObject } from 'react'
-import type { AIRiskLevel, SessionRecord } from '@ai-ssh/shared-contracts'
+import type { AIAgentAuditEventCreateRequest, AIRiskLevel, SessionRecord } from '@ai-ssh/shared-contracts'
 import type { AgentCommandWaiter, AIAgentPlanStep, SessionAgentState } from '../types'
 
 type UseAgentExecutionArgs = {
@@ -17,6 +17,7 @@ type UseAgentExecutionArgs = {
   normalizeAgentTimeoutSeconds: () => number
   onRequestNextStep: (steps: AIAgentPlanStep[], sessionId: string) => void
   onStepCompleted: (stepId: string, completedStep: AIAgentPlanStep) => void
+  onAuditEvent: (event: AIAgentAuditEventCreateRequest, sessionId?: string) => void
   setAgentStatusMessage: (message: string, sessionId?: string) => void
   sessionsRef: RefObject<SessionRecord[]>
   stripAgentMarker: (output: string, marker: string) => string
@@ -46,6 +47,7 @@ export function useAgentExecution({
   normalizeAgentTimeoutSeconds,
   onRequestNextStep,
   onStepCompleted,
+  onAuditEvent,
   setAgentStatusMessage,
   sessionsRef,
   stripAgentMarker,
@@ -100,6 +102,20 @@ export function useAgentExecution({
       exitCode,
       timedOut,
     })
+    onAuditEvent({
+      eventType: timedOut ? 'timed_out' : 'completed',
+      messageId: stepId,
+      sessionId,
+      command: completedStep?.command,
+      agentMode: getSessionAgentState(sessionId).mode,
+      riskLevel: completedStep?.riskLevel,
+      riskReason: completedStep?.riskReason,
+      status: failed ? 'failed' : 'executed',
+      exitCode,
+      outputSummary: output.trim().slice(-8000),
+      actor: 'system',
+      reason: timedOut ? '命令等待超时，Agent 暂停' : exitedWithError ? `命令退出码 ${exitCode}` : '命令执行完成',
+    }, sessionId)
     if (timedOut) {
       updateSessionAgentState(sessionId, {
         running: false,
@@ -177,6 +193,18 @@ export function useAgentExecution({
     }
     const riskLevel = step.riskLevel || classifyCommandRisk(step.command)
     if (riskLevel === 'high' && !confirmed && getSessionAgentState(sessionId).mode !== 'full-auto') {
+      onAuditEvent({
+        eventType: 'blocked',
+        messageId: step.id,
+        sessionId,
+        command: step.command,
+        agentMode: getSessionAgentState(sessionId).mode,
+        riskLevel,
+        riskReason: step.riskReason,
+        status: step.status,
+        actor: 'system',
+        reason: fromAuto ? '自动执行遇到高风险命令，等待人工确认' : '高风险命令需要人工确认',
+      }, sessionId)
       updateSessionAgentState(sessionId, {
         running: false,
         pendingStepId: step.id,
@@ -190,7 +218,31 @@ export function useAgentExecution({
     const timeoutSeconds = classifyAgentCommandTimeout(step.command, baseTimeoutSeconds)
     const timeoutMs = timeoutSeconds * 1000
     clearAgentWaiter(sessionId)
+    onAuditEvent({
+      eventType: fromAuto ? 'auto_approved' : 'approved',
+      messageId: step.id,
+      sessionId,
+      command: step.command,
+      agentMode: getSessionAgentState(sessionId).mode,
+      riskLevel,
+      riskReason: step.riskReason,
+      status: 'approved',
+      actor: fromAuto ? 'system' : 'user',
+      reason: fromAuto ? 'Agent 自动模式批准执行' : '用户批准执行',
+    }, sessionId)
     updateAgentStep(step.id, { status: 'running', riskLevel, sessionId })
+    onAuditEvent({
+      eventType: 'started',
+      messageId: step.id,
+      sessionId,
+      command: step.command,
+      agentMode: getSessionAgentState(sessionId).mode,
+      riskLevel,
+      riskReason: step.riskReason,
+      status: 'running',
+      actor: 'system',
+      reason: `等待超时 ${timeoutSeconds} 秒`,
+    }, sessionId)
     updateSessionAgentState(sessionId, {
       state: 'loading',
       message: '命令执行中，等待远端命令完成...',

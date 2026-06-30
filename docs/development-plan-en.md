@@ -100,6 +100,7 @@ Deliverables:
 - Context-aware suggestions
 - Error diagnosis
 - Customizable prompts
+- Agent command-level audit logging
 
 ### Milestone 4: Polish and Release
 
@@ -126,6 +127,7 @@ Currently working on:
 - File management enhancement
 - AI capability expansion
 - Multi-language support
+- Agent command-level audit logging
 
 ## 6. Risk Management
 
