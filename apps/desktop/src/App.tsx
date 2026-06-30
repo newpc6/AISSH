@@ -183,6 +183,7 @@ import {
   resolveApiUrl,
   riskLabel,
   saveBlobWithFilePicker,
+  shouldPreserveNewlineForHiddenAgentLine,
   shouldRecordCommand,
   statusToLabel,
   stripAgentMarker,
@@ -849,10 +850,15 @@ export function App() {
 
     const last = segments[segments.length - 1]
     const completeLines = segments.slice(0, -1)
-    const filtered = completeLines.filter((line) => !isAgentInternalLine(line))
     const visibleOutput: string[] = []
-    if (filtered.length > 0) {
-      visibleOutput.push(`${filtered.join('\r\n')}\r\n`)
+    for (const line of completeLines) {
+      if (isAgentInternalLine(line)) {
+        if (shouldPreserveNewlineForHiddenAgentLine(line)) {
+          visibleOutput.push('\r\n')
+        }
+        continue
+      }
+      visibleOutput.push(`${line}\r\n`)
     }
 
     if (last === '') {

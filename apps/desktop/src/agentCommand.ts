@@ -35,6 +35,21 @@ export function isAgentInternalLine(line: string, marker?: string) {
   )
 }
 
+export function isPromptPrefixedAgentInternalLine(line: string) {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  const promptIndex = Math.max(trimmed.lastIndexOf('$ '), trimmed.lastIndexOf('# '), trimmed.lastIndexOf('> '))
+  if (promptIndex < 0) return false
+  return isAgentInternalLine(trimmed) && trimmed.slice(promptIndex + 2).trim() !== trimmed
+}
+
+export function shouldPreserveNewlineForHiddenAgentLine(line: string) {
+  const trimmed = line.trim()
+  if (!trimmed || !isAgentInternalLine(line)) return false
+  if (trimmed.includes('__AI_SSH_AGENT_DONE_')) return false
+  return true
+}
+
 export function stripAgentMarker(output: string, marker: string) {
   return output
     .split(/\r?\n/)

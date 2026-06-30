@@ -36,6 +36,8 @@ export {
   escapeRegExp,
   extractAgentExitCode,
   isAgentInternalLine,
+  isPromptPrefixedAgentInternalLine,
+  shouldPreserveNewlineForHiddenAgentLine,
   stripAgentMarker,
   stripVisibleAgentMarkers,
   wrapAgentCommand,

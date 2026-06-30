@@ -35,6 +35,7 @@ try {
     agentExitMarker,
     extractAgentExitCode,
     isAgentInternalLine,
+    shouldPreserveNewlineForHiddenAgentLine,
     stripAgentMarker,
     stripVisibleAgentMarkers,
     wrapAgentCommand,
@@ -59,6 +60,9 @@ try {
   assert.equal(isAgentInternalLine('(base) user@host:~$ {'), true)
   assert.equal(isAgentInternalLine('> }'), true)
   assert.equal(isAgentInternalLine(`> command printf '\\n${marker}%s\\n' "$__ai_ssh_agent_exit_code"`), true)
+  assert.equal(shouldPreserveNewlineForHiddenAgentLine('__ai_ssh_agent_exit_code=$?'), true)
+  assert.equal(shouldPreserveNewlineForHiddenAgentLine('(base) user@host:~$ unset __ai_ssh_agent_exit_code'), true)
+  assert.equal(shouldPreserveNewlineForHiddenAgentLine(`${marker}0`), false)
 
   const rawOutput = [
     'echo before',
