@@ -5,6 +5,7 @@ export type HealthStatus = 'ok'
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error' | 'closed'
 export type HostProtocol = 'ssh' | 'wsl'
 export type HostAuthType = 'password' | 'privateKey' | 'agent'
+export type HostKeyPolicy = 'accept-new' | 'strict' | 'off'
 
 export interface HealthResponse {
   status: HealthStatus
@@ -157,6 +158,7 @@ export interface HostRecord {
   port: number
   username: string
   authType: HostAuthType
+  hostKeyPolicy?: HostKeyPolicy
   group?: string
   description?: string
   hasPassword?: boolean
@@ -171,6 +173,7 @@ export interface HostUpsertRequest {
   port: number
   username: string
   authType: HostAuthType
+  hostKeyPolicy?: HostKeyPolicy
   group?: string
   description?: string
   password?: string
@@ -288,6 +291,7 @@ export interface TransientHostConfig {
   password?: string
   privateKey?: string
   authType: HostAuthType
+  hostKeyPolicy?: HostKeyPolicy
   wslDistro?: string
 }
 

@@ -187,7 +187,8 @@ http://127.0.0.1:1420
 - SSH Key 会分片写入系统安全存储，以兼容较长私钥内容
 - 带 `exportKey` 的导出文件可以恢复凭据，请只在可信设备和可信人员之间传递
 - 如果系统安全存储不可用或保存失败，新增对话框会显示具体错误
-- 当前为了先打通连接链路，host key 使用临时宽松校验；后续会补 known\_hosts 校验和 agent 认证
+- SSH 连接支持 `accept-new`、`strict` 和 `off` 三种 host key 策略：默认 `accept-new` 会首次信任并写入本机 `known_hosts`，`strict` 只允许已信任指纹，`off` 仅用于临时调试
+- Agent 认证会通过本机 `SSH_AUTH_SOCK` 连接 SSH agent；如果环境变量缺失或 agent 不可用，连接会失败并在界面/日志中显示错误
 
 ### 文件浏览与传输
 

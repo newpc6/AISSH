@@ -493,8 +493,8 @@
 - [x] 修正 Tauri 生产运行时 API 地址识别：桌面端在 `tauri.localhost` 或 Tauri 注入对象可用时统一请求随包 Go core `127.0.0.1:18555`，避免登录页误请求静态资源或显示 `Failed to fetch`
 - [x] 修正 Go core JSON / SSE 响应覆盖 CORS Origin 的问题，避免 Tauri 生产窗口携带凭据访问本机 API 时被浏览器拦截
 - [ ] 评估 Tauri/Rust 原生文件 promise，继续增强不同平台拖出下载到系统目标文件夹的兼容性
-- [ ] 接入 agent 认证
-- [ ] 接入 known_hosts 严格校验
+- [x] 接入 agent 认证
+- [x] 接入 known_hosts 严格校验，并在新增/编辑连接中提供首次信任、严格校验和关闭校验策略
 - [ ] 继续增强 Agent 流式观察、命令级审计日志和复杂 shell 场景下的退出码标记兼容性
 
 ## 8. Git 提交约定

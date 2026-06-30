@@ -34,11 +34,11 @@ The project is currently in transition from Milestone 0 to Milestone 1. What you
 - SFTP file browsing, path input entry, parent directory, directory entry, upload, download, and basic transfer progress
 - Current server CPU current usage, memory used/total, CPU/memory coordinate trend, hover point details and zoom view, card collapse, disk list, network real-time uplink/downlink bandwidth display; metrics parsed by Go core from remote `/proc` and `df` raw data
 - AI large model address, Key, model settings entry, and OpenAI compatible command prediction
+- SSH agent authentication through `SSH_AUTH_SOCK`
+- SSH host key policies: trust first use, strict `known_hosts` verification, and unsafe off mode for temporary debugging
 
 Not yet completed:
 
-- agent authentication
-- known_hosts strict verification
 - Desktop native drag-out download experience
 
 So what you see now is "engineering skeleton + integration basic interface", not the final product.

@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	pathpkg "path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,11 +20,14 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func newSSHClient(host hostRecord) (*ssh.Client, error) {
 	addr := fmt.Sprintf("%s:%d", host.Address, host.Port)
 	authMethods := []ssh.AuthMethod{}
+
 	if host.AuthType == "password" && host.Password != "" {
 		authMethods = append(authMethods, ssh.Password(host.Password))
 	}
@@ -32,15 +38,118 @@ func newSSHClient(host hostRecord) (*ssh.Client, error) {
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
+	if host.AuthType == "agent" {
+		agentAuth, err := sshAgentAuth()
+		if err != nil {
+			return nil, fmt.Errorf("ssh agent auth failed: %w", err)
+		}
+		authMethods = append(authMethods, agentAuth)
+	}
+
+	hostKeyCallback, err := buildHostKeyCallback(host)
+	if err != nil {
+		return nil, fmt.Errorf("host key verification setup failed: %w", err)
+	}
 
 	return ssh.Dial("tcp", addr, &ssh.ClientConfig{
 		User:            host.Username,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         8 * time.Second,
 	})
 }
 
+func sshAgentAuth() (ssh.AuthMethod, error) {
+	socketPath := os.Getenv("SSH_AUTH_SOCK")
+	if socketPath == "" {
+		return nil, fmt.Errorf("SSH_AUTH_SOCK is not set")
+	}
+
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to SSH agent: %w", err)
+	}
+
+	agentClient := agent.NewClient(conn)
+	return ssh.PublicKeysCallback(agentClient.Signers), nil
+}
+
+func knownHostsPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".ssh", "known_hosts")
+	}
+	return filepath.Join(homeDir, ".ssh", "known_hosts")
+}
+
+func buildHostKeyCallback(host hostRecord) (ssh.HostKeyCallback, error) {
+	policy := host.HostKeyPolicy
+	if policy == "" {
+		policy = HostKeyPolicyAcceptNew
+	}
+
+	if policy == HostKeyPolicyOff {
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
+
+	knownHostsFile := knownHostsPath()
+
+	baseCallback, err := knownhosts.New(knownHostsFile)
+	if err != nil {
+		if policy == HostKeyPolicyStrict {
+			return nil, fmt.Errorf("cannot read known_hosts (%s): %w", knownHostsFile, err)
+		}
+		if policy == HostKeyPolicyAcceptNew {
+			baseCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+				return new(knownhosts.KeyError)
+			}
+		}
+	}
+
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := baseCallback(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+
+		var keyErr *knownhosts.KeyError
+		if !errors.As(err, &keyErr) {
+			return err
+		}
+
+		if policy == HostKeyPolicyAcceptNew {
+			if len(keyErr.Want) > 0 {
+				return fmt.Errorf("host key mismatch for %s: %w", hostname, err)
+			}
+			if appendErr := appendKnownHost(knownHostsFile, hostname, remote, key); appendErr != nil {
+				return fmt.Errorf("host key not in known_hosts and failed to save: %w (original error: %v)", appendErr, err)
+			}
+			return nil
+		}
+
+		return fmt.Errorf("host key not in known_hosts (policy: %s): %w", policy, err)
+	}, nil
+}
+
+func appendKnownHost(filePath string, hostname string, remote net.Addr, key ssh.PublicKey) error {
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	normalizedHost := knownhosts.Normalize(hostname)
+	address := knownhosts.Normalize(remote.String())
+	line := knownhosts.Line([]string{normalizedHost, address}, key)
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		return err
+	}
+	return nil
+}
 func runWSLCommand(host hostRecord, command string) (string, error) {
 	args := []string{}
 	if distro := strings.TrimSpace(host.WSLDistro); distro != "" {
@@ -292,7 +401,7 @@ func uploadRemoteFileChunk(host hostRecord, remoteDir string, r *http.Request) e
 		}
 		var (
 			target *sftp.File
-			err error
+			err    error
 		)
 		if appendMode {
 			target, err = client.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND)

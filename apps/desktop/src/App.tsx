@@ -2202,6 +2202,7 @@ export function App() {
             address: 'wsl.local',
             port: 0,
             authType: 'agent',
+            hostKeyPolicy: undefined,
             password: '',
             privateKey: '',
             wslDistro: String(hostForm.wslDistro ?? '').trim(),
@@ -2210,6 +2211,7 @@ export function App() {
             ...hostForm,
             protocol: 'ssh',
             port: Number(hostForm.port) || 22,
+            hostKeyPolicy: hostForm.hostKeyPolicy ?? 'accept-new',
             password: hostForm.authType === 'password' && savePassword ? hostForm.password : '',
             privateKey: hostForm.authType === 'privateKey' && savePrivateKey ? hostForm.privateKey : '',
           }

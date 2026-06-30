@@ -163,6 +163,8 @@ AI SSH 现在已经具备一个完整的桌面工作台轮廓，重点在于：
 
 ## 项目文档
 
+- [项目协作规则](AGENTS.md)
+- [模块索引](docs/MODULE_INDEX.md)
 - [产品设计文档](docs/product-design.md)
 - [开发计划文档](docs/development-plan.md)
 - [启动与查看效果说明](docs/run-and-preview.md)

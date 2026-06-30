@@ -179,8 +179,7 @@ Currently working on:
 
 ### 9.1 Planned Features
 
-- Agent authentication
-- known_hosts strict verification
+- Stronger host key management UI and diagnostics
 - Desktop native drag-out download experience
 - Team collaboration
 - Plugin system

@@ -734,6 +734,7 @@
       "wslDistro": "WSL distro",
       "username": "User",
       "authType": "Authentication",
+      "hostKeyPolicy": "Host key policy",
       "port": "Port",
       "address": "Address",
       "description": "Description",
@@ -749,6 +750,12 @@
       "privateKey": "SSH Key",
       "agent": "Agent"
     },
+    "hostKeyPolicies": {
+      "acceptNew": "Trust first use",
+      "strict": "Strict known_hosts check",
+      "off": "Disable check (unsafe)"
+    },
+    "hostKeyPolicyHint": "Trust first use saves new host fingerprints to local known_hosts. Strict mode only allows already trusted fingerprints.",
     "placeholders": {
       "sshName": "Server name",
       "wslName": "For example: Ubuntu dev environment",

@@ -58,6 +58,7 @@ export function HostDialog({
       ...current,
       protocol: nextProtocol,
       authType: nextProtocol === 'wsl' ? 'agent' : 'password',
+      hostKeyPolicy: nextProtocol === 'wsl' ? undefined : current.hostKeyPolicy ?? 'accept-new',
       address: nextProtocol === 'wsl' ? 'wsl.local' : '',
       port: nextProtocol === 'wsl' ? 0 : 22,
       password: '',
@@ -183,6 +184,23 @@ export function HostDialog({
                 onChange={(event) => onHostFormChange((current) => ({ ...current, username: event.target.value }))}
                 placeholder="root"
               />
+            </label>
+            <label>
+              <span>{t('hostDialog.fields.hostKeyPolicy')}</span>
+              <select
+                value={hostForm.hostKeyPolicy ?? 'accept-new'}
+                onChange={(event) =>
+                  onHostFormChange((current) => ({
+                    ...current,
+                    hostKeyPolicy: event.target.value as HostUpsertRequest['hostKeyPolicy'],
+                  }))
+                }
+              >
+                <option value="accept-new">{t('hostDialog.hostKeyPolicies.acceptNew')}</option>
+                <option value="strict">{t('hostDialog.hostKeyPolicies.strict')}</option>
+                <option value="off">{t('hostDialog.hostKeyPolicies.off')}</option>
+              </select>
+              <small>{t('hostDialog.hostKeyPolicyHint')}</small>
             </label>
           </>
         )}

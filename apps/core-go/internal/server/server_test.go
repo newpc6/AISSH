@@ -3,9 +3,12 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	_ "modernc.org/sqlite"
 )
 
@@ -915,6 +919,7 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 		"port":22,
 		"username":"root",
 		"authType":"password",
+		"hostKeyPolicy":"strict",
 		"group":"测试",
 		"password":"secret"
 	}`)
@@ -938,6 +943,9 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 	}
 	if created["hasPassword"] != true {
 		t.Fatalf("expected saved password flag, got %v", created["hasPassword"])
+	}
+	if created["hostKeyPolicy"] != HostKeyPolicyStrict {
+		t.Fatalf("expected strict host key policy, got %v", created["hostKeyPolicy"])
 	}
 
 	hostID := created["id"].(string)
@@ -966,6 +974,9 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 	if updated["hasPassword"] != true {
 		t.Fatalf("expected password flag to be retained, got %v", updated["hasPassword"])
 	}
+	if updated["hostKeyPolicy"] != HostKeyPolicyAcceptNew {
+		t.Fatalf("expected missing update policy to default to accept-new, got %v", updated["hostKeyPolicy"])
+	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/hosts/"+hostID, nil)
 	deleteRecorder := httptest.NewRecorder()
@@ -974,6 +985,106 @@ func TestCreateUpdateDeleteHostEndpoints(t *testing.T) {
 
 	if deleteRecorder.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", deleteRecorder.Code)
+	}
+}
+
+func TestHostFromRequestNormalizesHostKeyPolicy(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "missing", input: "", expected: HostKeyPolicyAcceptNew},
+		{name: "accept new", input: HostKeyPolicyAcceptNew, expected: HostKeyPolicyAcceptNew},
+		{name: "strict", input: HostKeyPolicyStrict, expected: HostKeyPolicyStrict},
+		{name: "off", input: HostKeyPolicyOff, expected: HostKeyPolicyOff},
+		{name: "invalid", input: "legacy", expected: HostKeyPolicyAcceptNew},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host := hostFromRequest(hostUpsertRequest{
+				Name:          "Host",
+				Address:       "192.168.1.10",
+				Port:          22,
+				Username:      "root",
+				AuthType:      "agent",
+				HostKeyPolicy: tt.input,
+			})
+			if host.HostKeyPolicy != tt.expected {
+				t.Fatalf("expected policy %q, got %q", tt.expected, host.HostKeyPolicy)
+			}
+		})
+	}
+}
+
+func TestAppendKnownHostWritesNormalizedHostAndAddress(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("expected rsa key generation without error, got %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatalf("expected signer without error, got %v", err)
+	}
+
+	homeDir := t.TempDir()
+	knownHostsFile := filepath.Join(homeDir, ".ssh", "known_hosts")
+	remoteAddr := &net.TCPAddr{IP: net.ParseIP("192.168.1.10"), Port: 2222}
+	if err := appendKnownHost(knownHostsFile, "example.com:2222", remoteAddr, signer.PublicKey()); err != nil {
+		t.Fatalf("expected appendKnownHost without error, got %v", err)
+	}
+
+	data, err := os.ReadFile(knownHostsFile)
+	if err != nil {
+		t.Fatalf("expected known_hosts file, got %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "[example.com]:2222") {
+		t.Fatalf("expected normalized hostname in known_hosts, got %q", content)
+	}
+	if !strings.Contains(content, "[192.168.1.10]:2222") {
+		t.Fatalf("expected normalized remote address in known_hosts, got %q", content)
+	}
+	if !strings.Contains(content, "ssh-rsa") {
+		t.Fatalf("expected public key in known_hosts, got %q", content)
+	}
+}
+
+func TestAcceptNewHostKeyPolicyRejectsChangedKnownKey(t *testing.T) {
+	knownKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("expected rsa key generation without error, got %v", err)
+	}
+	knownSigner, err := ssh.NewSignerFromKey(knownKey)
+	if err != nil {
+		t.Fatalf("expected known signer without error, got %v", err)
+	}
+	changedKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("expected changed rsa key generation without error, got %v", err)
+	}
+	changedSigner, err := ssh.NewSignerFromKey(changedKey)
+	if err != nil {
+		t.Fatalf("expected changed signer without error, got %v", err)
+	}
+
+	homeDir := t.TempDir()
+	knownHostsFile := filepath.Join(homeDir, ".ssh", "known_hosts")
+	remoteAddr := &net.TCPAddr{IP: net.ParseIP("192.168.1.10"), Port: 22}
+	if err := appendKnownHost(knownHostsFile, "example.com:22", remoteAddr, knownSigner.PublicKey()); err != nil {
+		t.Fatalf("expected appendKnownHost without error, got %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	callback, err := buildHostKeyCallback(hostRecord{HostKeyPolicy: HostKeyPolicyAcceptNew})
+	if err != nil {
+		t.Fatalf("expected callback without error, got %v", err)
+	}
+
+	if err := callback("example.com:22", remoteAddr, changedSigner.PublicKey()); err == nil {
+		t.Fatal("expected changed host key to be rejected")
 	}
 }
 

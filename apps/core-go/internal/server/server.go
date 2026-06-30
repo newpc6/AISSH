@@ -31,6 +31,18 @@ type healthResponse struct {
 	HostStore    string   `json:"hostStore,omitempty"`
 }
 
+// HostKeyPolicy controls SSH host key verification behavior.
+type HostKeyPolicy = string
+
+const (
+	// HostKeyPolicyAcceptNew trusts the host key on first connection and saves it.
+	HostKeyPolicyAcceptNew HostKeyPolicy = "accept-new"
+	// HostKeyPolicyStrict requires the host key to match a known_hosts entry.
+	HostKeyPolicyStrict HostKeyPolicy = "strict"
+	// HostKeyPolicyOff disables host key verification (insecure).
+	HostKeyPolicyOff HostKeyPolicy = "off"
+)
+
 type hostRecord struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
@@ -39,6 +51,7 @@ type hostRecord struct {
 	Port          int    `json:"port"`
 	Username      string `json:"username"`
 	AuthType      string `json:"authType"`
+	HostKeyPolicy string `json:"hostKeyPolicy,omitempty"`
 	Group         string `json:"group,omitempty"`
 	Password      string `json:"password,omitempty"`
 	PrivateKey    string `json:"privateKey,omitempty"`
@@ -71,17 +84,18 @@ type hostsExportResponse struct {
 }
 
 type hostUpsertRequest struct {
-	Name        string `json:"name"`
-	Protocol    string `json:"protocol,omitempty"`
-	Address     string `json:"address"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	AuthType    string `json:"authType"`
-	Group       string `json:"group,omitempty"`
-	Password    string `json:"password,omitempty"`
-	PrivateKey  string `json:"privateKey,omitempty"`
-	Description string `json:"description,omitempty"`
-	WSLDistro   string `json:"wslDistro,omitempty"`
+	Name          string `json:"name"`
+	Protocol      string `json:"protocol,omitempty"`
+	Address       string `json:"address"`
+	Port          int    `json:"port"`
+	Username      string `json:"username"`
+	AuthType      string `json:"authType"`
+	HostKeyPolicy string `json:"hostKeyPolicy,omitempty"`
+	Group         string `json:"group,omitempty"`
+	Password      string `json:"password,omitempty"`
+	PrivateKey    string `json:"privateKey,omitempty"`
+	Description   string `json:"description,omitempty"`
+	WSLDistro     string `json:"wslDistro,omitempty"`
 }
 
 type hostsImportRequest struct {
@@ -833,6 +847,7 @@ func hostFromRequest(request hostUpsertRequest) hostRecord {
 			authType = "password"
 		}
 	}
+	hostKeyPolicy := normalizeHostKeyPolicy(request.HostKeyPolicy)
 	address := request.Address
 	username := request.Username
 	wslDistro := strings.TrimSpace(request.WSLDistro)
@@ -845,17 +860,18 @@ func hostFromRequest(request hostUpsertRequest) hostRecord {
 		username = strings.TrimSpace(username)
 	}
 	return hostRecord{
-		Name:        request.Name,
-		Protocol:    protocol,
-		Address:     address,
-		Port:        port,
-		Username:    username,
-		AuthType:    authType,
-		Group:       request.Group,
-		Password:    request.Password,
-		PrivateKey:  request.PrivateKey,
-		Description: request.Description,
-		WSLDistro:   wslDistro,
+		Name:          request.Name,
+		Protocol:      protocol,
+		Address:       address,
+		Port:          port,
+		Username:      username,
+		AuthType:      authType,
+		HostKeyPolicy: hostKeyPolicy,
+		Group:         request.Group,
+		Password:      request.Password,
+		PrivateKey:    request.PrivateKey,
+		Description:   request.Description,
+		WSLDistro:     wslDistro,
 	}
 }
 
@@ -864,6 +880,17 @@ func normalizeHostProtocol(value string) string {
 		return "wsl"
 	}
 	return "ssh"
+}
+
+func normalizeHostKeyPolicy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case HostKeyPolicyStrict:
+		return HostKeyPolicyStrict
+	case HostKeyPolicyOff:
+		return HostKeyPolicyOff
+	default:
+		return HostKeyPolicyAcceptNew
+	}
 }
 
 func (h hostRecord) sanitized() hostRecord {

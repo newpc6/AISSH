@@ -734,6 +734,7 @@
       "wslDistro": "WSL 发行版",
       "username": "用户",
       "authType": "认证方式",
+      "hostKeyPolicy": "Host Key 校验",
       "port": "端口",
       "address": "地址",
       "description": "备注",
@@ -749,6 +750,12 @@
       "privateKey": "SSH Key",
       "agent": "Agent"
     },
+    "hostKeyPolicies": {
+      "acceptNew": "首次信任并保存",
+      "strict": "严格校验 known_hosts",
+      "off": "关闭校验（不安全）"
+    },
+    "hostKeyPolicyHint": "首次信任会把新主机指纹写入本机 known_hosts；严格模式只允许已信任的指纹。",
     "placeholders": {
       "sshName": "服务器名称",
       "wslName": "例如：Ubuntu 开发环境",

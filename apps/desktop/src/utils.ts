@@ -101,6 +101,7 @@ export const emptyHostForm: HostUpsertRequest = {
   port: 22,
   username: '',
   authType: 'password',
+  hostKeyPolicy: 'accept-new',
   group: '默认',
   description: '',
   password: '',
